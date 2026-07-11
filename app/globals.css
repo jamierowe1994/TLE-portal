@@ -1,0 +1,185 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   TLE Portal design tokens — light theme, white cards, red accent.
+   Tailwind v4 CSS-first setup (no tailwind.config): tokens live here and are
+   exposed to Tailwind utilities via @theme inline.
+--------------------------------------------------------------------------- */
+
+:root {
+  --font-body: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+
+  /* Brand — The Lettings Expert */
+  --accent: #e31f36;
+  --accent-dark: #c11a2e;
+  --accent-soft: #fef2f2;
+
+  /* Neutrals */
+  --ink: #101014;
+  --muted: #6b6b76;
+  --line: #e7e7ec;
+  --page: #f6f6f7;
+  --card: #ffffff;
+
+  --radius-card: 16px;
+}
+
+@theme inline {
+  --color-accent: var(--accent);
+  --color-accent-dark: var(--accent-dark);
+  --color-accent-soft: var(--accent-soft);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-page: var(--page);
+  --color-card: var(--card);
+  --font-sans: var(--font-body);
+  --radius-card: 1rem;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  font-family: var(--font-heading);
+}
+
+/* Accent helpers (TEG pattern) */
+.accent-bg { background-color: var(--accent); }
+.accent-text { color: var(--accent); }
+.accent-soft-bg { background-color: var(--accent-soft); }
+
+/* Figures always line up */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Standard card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+/* Stat card number — scaled up in presentation mode */
+.stat-value {
+  font-size: clamp(28px, 2.6vw, 36px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.stat-value--big {
+  font-size: clamp(34px, 3.2vw, 44px);
+}
+
+/* Buttons */
+.btn-press {
+  transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+.btn-press:hover { transform: translateY(-2px); }
+.btn-press:active { transform: translateY(0) scale(0.95); }
+
+/* Minimal scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+/* Animation vocabulary */
+.fade-up { animation: fade-up 0.35s ease both; }
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-pop { animation: modal-pop 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes modal-pop {
+  from { opacity: 0; transform: translateY(16px) scale(0.975); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Scroll-reveal (components/Reveal.tsx) */
+.reveal,
+.reveal-left,
+.reveal-right {
+  opacity: 0;
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.reveal { transform: translateY(18px); }
+.reveal-left { transform: translateX(-24px); }
+.reveal-right { transform: translateX(24px); }
+.reveal.revealed,
+.reveal-left.revealed,
+.reveal-right.revealed {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Presentation mode — <body class="presenting"> set by components/PresentMode.
+   Near-black background, white text, stats scaled up ~1.4x, chrome hidden.
+   Designed to read well on a TV.
+--------------------------------------------------------------------------- */
+
+body.presenting {
+  background: #0c0c10;
+  color: #ffffff;
+}
+
+body.presenting .hide-when-presenting {
+  display: none !important;
+}
+
+body.presenting .stat-value {
+  font-size: clamp(40px, 3.8vw, 52px);
+}
+body.presenting .stat-value--big {
+  font-size: clamp(48px, 4.6vw, 64px);
+}
+
+/* Cards go dark-slate with white text; borders stay subtle */
+body.presenting .card {
+  background: #15151a;
+  border-color: #26262e;
+  color: #ffffff;
+}
+
+/* Muted copy lifts a touch for contrast on dark */
+body.presenting .text-muted,
+body.presenting .stat-label {
+  color: #a3a3af;
+}
+
+/* Source badges are workaday chrome — hide them on the big screen */
+body.presenting .source-badge {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up,
+  .modal-pop {
+    animation: none;
+  }
+  .reveal,
+  .reveal-left,
+  .reveal-right {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .btn-press,
+  .btn-press:hover,
+  .btn-press:active {
+    transition: none;
+    transform: none;
+  }
+}

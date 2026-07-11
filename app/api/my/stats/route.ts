@@ -1,0 +1,221 @@
+import { NextRequest, NextResponse } from "next/server";
+import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { findById } from "@/lib/users-store";
+import { getAgentFunnel } from "@/lib/rex-stats";
+import { getAgentMetaStats } from "@/lib/meta";
+import { getOverrides } from "@/lib/actuals-store";
+import { resolveStat, pct, type ManualOverride } from "@/lib/stats";
+import {
+  agentSeedStats,
+  agentMoveIns,
+  agentPipeline,
+  agentCompliance,
+  agentNetIncomeYtd,
+  SNAPSHOT_DATE,
+} from "@/lib/seed-data";
+import { formatGBP, formatPct, currentMonth } from "@/lib/format";
+import type { ActualOverride, ConversionStats, FunnelStats, StatValue } from "@/lib/types";
+
+// GET /api/my/stats?month=YYYY-MM — the signed-in agent's funnel + conversion
+// stats for one month, assembled with the live → manual → snapshot precedence:
+//   live     = best-effort REX pull (skipped when no rexUserId is linked)
+//   manual   = admin overrides from the actuals store (scope agent + agentKey)
+//   snapshot = Susan's Base44 dashboard capture via agentSeedStats(agentKey)
+// Plus the agent's seed move-ins / pipeline / compliance / net-income rows.
+// Defensive throughout: an integration failure NEVER breaks the response —
+// every stat degrades to the snapshot (or a null StatValue).
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+const FUNNEL_FIELDS = [
+  "marketAppraisals",
+  "listings",
+  "viewings",
+  "applications",
+  "moveIns",
+  "pipeline",
+  "liveListings",
+  "gci",
+] as const;
+
+type FunnelField = (typeof FUNNEL_FIELDS)[number];
+
+function nullStat(): StatValue {
+  return { value: null, source: "snapshot", asOf: SNAPSHOT_DATE };
+}
+
+function nullFunnel(): FunnelStats {
+  return {
+    marketAppraisals: nullStat(),
+    listings: nullStat(),
+    viewings: nullStat(),
+    applications: nullStat(),
+    moveIns: nullStat(),
+    pipeline: nullStat(),
+    gci: nullStat(),
+  };
+}
+
+/**
+ * Merge one funnel stat. A live StatValue from rex-stats already carries the
+ * right source/note/asOf, so it wins as-is; otherwise fall through
+ * manual → snapshot via resolveStat.
+ */
+function mergeStat(
+  live: StatValue | undefined,
+  manual: ManualOverride | null,
+  snapshot: StatValue | undefined
+): StatValue {
+  if (live && live.value != null && !Number.isNaN(live.value)) return live;
+  return resolveStat(null, manual, snapshot ?? nullStat());
+}
+
+/** Manual override for one funnel field, from the actuals store rows. */
+function overrideFor(
+  overrides: ActualOverride[],
+  agentKey: string | null,
+  field: FunnelField
+): ManualOverride | null {
+  if (!agentKey) return null;
+  const metric = `funnel.${field}`;
+  const row = overrides.find(
+    (o) => o.scope === "agent" && o.agentKey === agentKey && o.metric === metric
+  );
+  return row ? { value: row.value, note: row.note ?? "Admin-entered figure" } : null;
+}
+
+/**
+ * A conversion derived from other stats inherits the WEAKEST source involved:
+ * derived-from-anything-live/manual → "derived"; all-snapshot inputs → the
+ * badge stays "snapshot" so nobody mistakes it for a live calculation.
+ */
+function conversionStat(
+  value: number | null,
+  inputs: StatValue[],
+  note: string
+): StatValue {
+  const allSnapshot =
+    inputs.length > 0 && inputs.every((s) => s.source === "snapshot");
+  return {
+    value,
+    display: formatPct(value),
+    source: allSnapshot ? "snapshot" : "derived",
+    note,
+    asOf: allSnapshot ? SNAPSHOT_DATE : new Date().toISOString().slice(0, 10),
+  };
+}
+
+export async function GET(req: NextRequest) {
+  const userId = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  }
+  const user = await findById(userId);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  }
+
+  const monthParam = req.nextUrl.searchParams.get("month");
+  const month =
+    monthParam && MONTH_RE.test(monthParam) ? monthParam : currentMonth();
+  const agentKey = user.agentKey;
+
+  // Gather the three layers in parallel — each one degrades to null/[] alone.
+  const [live, meta, overrides] = await Promise.all([
+    user.rexUserId
+      ? getAgentFunnel(user.rexUserId, month).catch(() => null)
+      : Promise.resolve(null),
+    getAgentMetaStats(user).catch(() => ({ configured: false as const })),
+    getOverrides(month).catch(() => [] as ActualOverride[]),
+  ]);
+
+  const snapshot = agentKey ? agentSeedStats(agentKey) : nullFunnel();
+
+  // ---- Funnel: field-by-field live → manual → snapshot merge ----
+  const funnel = {} as FunnelStats;
+  for (const field of FUNNEL_FIELDS) {
+    const merged = mergeStat(
+      live?.[field],
+      overrideFor(overrides, agentKey, field),
+      snapshot[field]
+    );
+    if (field === "liveListings") {
+      if (merged.value != null || snapshot.liveListings) funnel.liveListings = merged;
+      continue;
+    }
+    funnel[field as Exclude<FunnelField, "liveListings">] = merged;
+  }
+  // GCI is money — make sure it renders as £ even when live/manual (no display).
+  if (funnel.gci && !funnel.gci.display && funnel.gci.value != null) {
+    funnel.gci = { ...funnel.gci, display: formatGBP(funnel.gci.value) };
+  }
+
+  // ---- Conversions (derived; badge inherits the weakest input source) ----
+  const mas = funnel.marketAppraisals;
+  const listings = funnel.listings;
+  const moveIns = funnel.moveIns;
+
+  const metaLeads =
+    meta.configured && "snapshot" in meta && meta.snapshot
+      ? meta.snapshot.leads
+      : null;
+  const metaLeadsStat: StatValue | null =
+    metaLeads != null
+      ? {
+          value: metaLeads,
+          source: "live-meta",
+          asOf: new Date().toISOString().slice(0, 10),
+        }
+      : null;
+
+  const leadToMa: StatValue = metaLeadsStat
+    ? conversionStat(
+        pct(mas.value, metaLeadsStat.value),
+        [mas, metaLeadsStat],
+        `${mas.value ?? "—"} MAs from ${metaLeads} Meta leads (last 30 days)`
+      )
+    : {
+        value: null,
+        source: "derived",
+        note:
+          "Needs your live Meta leads count — ask the admin to link your ad campaign to see this.",
+      };
+
+  const conversions: ConversionStats = {
+    leadToMa,
+    maToListing: conversionStat(
+      pct(listings.value, mas.value),
+      [listings, mas],
+      `${listings.value ?? "—"} listings from ${mas.value ?? "—"} market appraisals`
+    ),
+    listingToMoveIn: conversionStat(
+      pct(moveIns.value, listings.value),
+      [moveIns, listings],
+      `${moveIns.value ?? "—"} move-ins from ${listings.value ?? "—"} listings`
+    ),
+  };
+
+  if (funnel.gci?.value != null && moveIns.value != null && moveIns.value > 0) {
+    const perMoveIn = funnel.gci.value / moveIns.value;
+    const allSnapshot =
+      funnel.gci.source === "snapshot" && moveIns.source === "snapshot";
+    conversions.gciPerMoveIn = {
+      value: perMoveIn,
+      display: formatGBP(perMoveIn),
+      source: allSnapshot ? "snapshot" : "derived",
+      note: `${formatGBP(funnel.gci.value)} GCI ÷ ${moveIns.value} move-ins`,
+      asOf: allSnapshot ? SNAPSHOT_DATE : new Date().toISOString().slice(0, 10),
+    };
+  }
+
+  return NextResponse.json({
+    month,
+    agentKey,
+    funnel,
+    conversions,
+    moveIns: agentKey ? agentMoveIns(agentKey) : [],
+    pipeline: agentKey ? agentPipeline(agentKey) : [],
+    compliance: agentKey ? agentCompliance(agentKey) : null,
+    netIncomeYtd: agentKey ? agentNetIncomeYtd(agentKey) : null,
+  });
+}

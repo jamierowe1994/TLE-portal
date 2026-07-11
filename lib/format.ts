@@ -1,0 +1,99 @@
+// British formatting helpers — every figure in the UI goes through these.
+// Pure functions, safe on server and client.
+
+const GBP = new Intl.NumberFormat("en-GB", {
+  style: "currency",
+  currency: "GBP",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+const GBP_PENCE = new Intl.NumberFormat("en-GB", {
+  style: "currency",
+  currency: "GBP",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** "£12,000" — or "£12,000.50" with pence=true. null/undefined → "—". */
+export function formatGBP(
+  value: number | null | undefined,
+  pence = false
+): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return pence ? GBP_PENCE.format(value) : GBP.format(value);
+}
+
+/** "90%" (dp decimal places, default 0). null/undefined → "—". */
+export function formatPct(
+  value: number | null | undefined,
+  dp = 0
+): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return `${value.toFixed(dp)}%`;
+}
+
+/** "12,345" with en-GB thousands separators. null/undefined → "—". */
+export function formatNum(
+  value: number | null | undefined,
+  dp = 0
+): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return value.toLocaleString("en-GB", {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp,
+  });
+}
+
+/** "11 Jul 2026" from an ISO date/datetime string or Date. Invalid → "—". */
+export function formatDate(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** "11 Jul" — short form used by SourceBadge. Invalid → "". */
+export function formatDateShort(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+/** monthLabel("2026-07") → "July 2026". Malformed input returned as-is. */
+export function monthLabel(month: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(month ?? "");
+  if (!m) return month ?? "";
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+/** Current month as "2026-07". */
+export function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Fraction of the given month ("2026-07") that has elapsed, 0..1.
+ * Past months → 1, future months → 0, current month → daysElapsed/daysInMonth.
+ * Used for month-end run-rate predictions (actual / fraction).
+ */
+export function daysElapsedFraction(month: string): number {
+  const m = /^(\d{4})-(\d{2})$/.exec(month ?? "");
+  if (!m) return 1;
+  const year = Number(m[1]);
+  const mon = Number(m[2]); // 1-based
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMon = now.getMonth() + 1;
+  if (year < curYear || (year === curYear && mon < curMon)) return 1;
+  if (year > curYear || (year === curYear && mon > curMon)) return 0;
+  const daysInMonth = new Date(year, mon, 0).getDate();
+  return Math.min(1, Math.max(0, now.getDate() / daysInMonth));
+}
