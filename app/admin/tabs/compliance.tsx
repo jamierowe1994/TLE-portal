@@ -6,7 +6,7 @@
 
 import StatCard from "@/components/StatCard";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
-import { SEED } from "@/lib/seed-data";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { ComplianceAgentRow, ComplianceTypeRow } from "@/lib/seed-types";
 import { formatPct, monthLabel } from "@/lib/format";
 
@@ -67,8 +67,8 @@ const AGENT_COLUMNS: DataTableColumn<ComplianceAgentRow & Record<string, unknown
   },
 ];
 
-export default function ComplianceTab({ month }: { month: string }) {
-  const c = SEED.compliance;
+export default function ComplianceTab({ month, seed }: { month: string; seed: SeedData }) {
+  const c = seed.compliance;
   const isSnapshotMonth = month === "2026-07";
 
   return (

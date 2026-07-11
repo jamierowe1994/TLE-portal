@@ -1,14 +1,36 @@
 "use client";
 
-// Admin · Overview tab — mirrors the Base44 "KPI Overview" tab, all figures
-// from SEED (snapshot, 11 Jul 2026) rendered through StatCard/SourceBadge.
+// Admin · Overview tab — mirrors the Base44 "KPI Overview" tab. Figures come
+// from GET /api/admin/overview (admin-gated), which merges admin manual
+// overrides (actuals-store) into the snapshot through the live → manual →
+// snapshot resolveStat chain — so a figure keyed in on another tab (e.g. the
+// July move-in count on Move-ins) shows here with the same MANUAL badge.
 
+import { useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
 import FunnelBar from "@/components/charts/FunnelBar";
 import Donut from "@/components/charts/Donut";
 import Bars from "@/components/charts/Bars";
-import { SEED } from "@/lib/seed-data";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import { monthLabel } from "@/lib/format";
+
+interface OverviewPayload {
+  month: string;
+  headline: SeedData["headline"];
+  headcount: SeedData["headcount"];
+  partnerRamp: SeedData["partnerRamp"];
+  funnel: SeedData["businessFunnel"];
+  conversions: SeedData["conversions"];
+  masByPartnerType: SeedData["masByPartnerType"];
+  yoyGrowth: SeedData["yoyGrowth"];
+  gciByMonth: {
+    labels: string[];
+    actual: (number | null)[];
+    budget: null;
+    budgetNote: string;
+  };
+  sources: SeedData["sources"];
+}
 
 function SectionTitle({
   children,
@@ -30,7 +52,42 @@ function SectionTitle({
 }
 
 export default function Overview({ month }: { month: string }) {
-  const funnelStat = SEED.businessFunnel;
+  const [data, setData] = useState<OverviewPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/admin/overview?month=${encodeURIComponent(month)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error(`Overview fetch failed (${res.status})`);
+        const payload = (await res.json()) as OverviewPayload;
+        if (!cancelled) setData(payload);
+      } catch {
+        if (!cancelled) setError("Couldn't load the business overview.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  if (error) {
+    return (
+      <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+        {error}
+      </p>
+    );
+  }
+  if (!data) {
+    return <p className="text-sm text-muted">Loading overview…</p>;
+  }
+
+  const funnelStat = data.funnel;
 
   const funnelStages = [
     { label: "Market Appraisals", value: funnelStat.marketAppraisals.value ?? 0 },
@@ -40,14 +97,9 @@ export default function Overview({ month }: { month: string }) {
     { label: "Move-ins", value: funnelStat.moveIns.value ?? 0 },
   ];
 
-  // Jan–Jun actual GCI reconstructed from the income table. No 2026 budget
-  // series was captured from the source dashboard — actual only, with a note.
-  const gciRow = SEED.income.monthlyTable.find(
-    (r) => r.metric === "Combined GCI (exc VAT)"
-  );
-  const gciSeries = gciRow
-    ? [gciRow.jan, gciRow.feb, gciRow.mar, gciRow.apr, gciRow.may, gciRow.jun]
-    : [];
+  // Jan–Jun actual GCI, assembled server-side from the income table. No 2026
+  // budget series was captured from the source dashboard — actual only.
+  const gciSeries = data.gciByMonth.actual;
 
   return (
     <div>
@@ -60,79 +112,80 @@ export default function Overview({ month }: { month: string }) {
       ) : null}
 
       <SectionTitle source="REX KPI reports · Lettings Support - Move In Report · PayProp fee reports">
-        Headline — {SEED.headline.label} (last updated {SEED.headline.lastUpdated})
+        Headline — {data.headline.label} (last updated {data.headline.lastUpdated})
       </SectionTitle>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        <StatCard label="Jun YTD MAs" stat={SEED.headline.mas} />
-        <StatCard label="Jun YTD Listings" stat={SEED.headline.listings} />
-        <StatCard label="Jun YTD Applications" stat={SEED.headline.applications} />
-        <StatCard label="Jun YTD Move-ins" stat={SEED.headline.moveIns} />
-        <StatCard label="Jun YTD GCI exc VAT" stat={SEED.headline.gciExcVat} />
-        <StatCard label="Jun YTD Total Income" stat={SEED.headline.totalIncome} />
-        <StatCard label="Jun YTD Pipeline" stat={SEED.headline.pipeline} />
+        <StatCard label="Jun YTD MAs" stat={data.headline.mas} />
+        <StatCard label="Jun YTD Listings" stat={data.headline.listings} />
+        <StatCard label="Jun YTD Applications" stat={data.headline.applications} />
+        <StatCard label="Jun YTD Move-ins" stat={data.headline.moveIns} />
+        <StatCard label="Jun YTD GCI exc VAT" stat={data.headline.gciExcVat} />
+        <StatCard label="Jun YTD Total Income" stat={data.headline.totalIncome} />
+        <StatCard label="Jun YTD Pipeline" stat={data.headline.pipeline} />
       </div>
 
-      <SectionTitle source={SEED.sources.businessFunnel}>
+      <SectionTitle source={data.sources.businessFunnel}>
         Sales Funnel — July MTD
       </SectionTitle>
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="card p-5">
-          <FunnelBar stages={funnelStages} />
+          <FunnelBar stages={funnelStages} showSteps={false} />
         </div>
         <div className="grid content-start gap-3">
+          <StatCard label="Move-ins" stat={funnelStat.moveIns} />
           <StatCard label="Live Listings" stat={funnelStat.liveListings ?? { value: null, source: "snapshot" }} />
           <StatCard label="Forward Pipeline" stat={funnelStat.pipeline} />
           <StatCard label="GCI (est · exc VAT)" stat={funnelStat.gci ?? { value: null, source: "snapshot" }} />
         </div>
       </div>
 
-      <SectionTitle source={SEED.sources.conversions}>
+      <SectionTitle source={data.sources.conversions}>
         Conversion Rates — July MTD
       </SectionTitle>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="MA → Listing" stat={SEED.conversions.maToListing} />
-        <StatCard label="Listing → Move-in" stat={SEED.conversions.listingToMoveIn} />
-        <StatCard label="RLP Conversion" stat={SEED.conversions.rlpConversion} />
-        <StatCard label="GCI per Move-in" stat={SEED.conversions.gciPerMoveIn} />
-        <StatCard label="GCI per Agent" stat={SEED.conversions.gciPerAgent} />
+        <StatCard label="MA → Listing" stat={data.conversions.maToListing} />
+        <StatCard label="Listing → Move-in" stat={data.conversions.listingToMoveIn} />
+        <StatCard label="RLP Conversion" stat={data.conversions.rlpConversion} />
+        <StatCard label="GCI per Move-in" stat={data.conversions.gciPerMoveIn} />
+        <StatCard label="GCI per Agent" stat={data.conversions.gciPerAgent} />
       </div>
 
-      <SectionTitle source={SEED.sources.headcount}>
+      <SectionTitle source={data.sources.headcount}>
         Agent Headcount — July 2026
       </SectionTitle>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <StatCard label="Active Agents" stat={SEED.headcount.activeAgents} sub="Managing portfolio" />
-        <StatCard label="TLE" stat={SEED.headcount.tle} sub="Full partner" />
-        <StatCard label="TLE Dual" stat={SEED.headcount.tleDual} sub="Dual brand" />
-        <StatCard label="Lettings Lite" stat={SEED.headcount.lettingsLite} sub="Lite service" />
-        <StatCard label="Starting Soon" stat={SEED.headcount.startingSoon} sub="Signed, building pipeline" />
-        <StatCard label="Starters YTD" stat={SEED.headcount.startersYtd} sub="TLE / TLE Dual" />
-        <StatCard label="Leavers YTD" stat={SEED.headcount.leaversYtd} sub="TLE / TLE Dual" />
-        <StatCard label="Variance YTD" stat={SEED.headcount.varianceYtd} sub="Net change" />
+        <StatCard label="Active Agents" stat={data.headcount.activeAgents} sub="Managing portfolio" />
+        <StatCard label="TLE" stat={data.headcount.tle} sub="Full partner" />
+        <StatCard label="TLE Dual" stat={data.headcount.tleDual} sub="Dual brand" />
+        <StatCard label="Lettings Lite" stat={data.headcount.lettingsLite} sub="Lite service" />
+        <StatCard label="Starting Soon" stat={data.headcount.startingSoon} sub="Signed, building pipeline" />
+        <StatCard label="Starters YTD" stat={data.headcount.startersYtd} sub="TLE / TLE Dual" />
+        <StatCard label="Leavers YTD" stat={data.headcount.leaversYtd} sub="TLE / TLE Dual" />
+        <StatCard label="Variance YTD" stat={data.headcount.varianceYtd} sub="Net change" />
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <div>
-          <SectionTitle source={SEED.sources.masByPartnerType}>
+          <SectionTitle source={data.sources.masByPartnerType}>
             MAs by Partner Type — July MTD
           </SectionTitle>
           <div className="card p-5">
             <Donut
               segments={[
-                { label: "TLE Partners", value: SEED.masByPartnerType.tle.value ?? 0, color: "#E31F36" },
-                { label: "TLE Dual", value: SEED.masByPartnerType.tleDual.value ?? 0, color: "#101014" },
-                { label: "Lettings Lite", value: SEED.masByPartnerType.lettingsLite.value ?? 0, color: "#6B6B76" },
+                { label: "TLE Partners", value: data.masByPartnerType.tle.value ?? 0, color: "#E31F36" },
+                { label: "TLE Dual", value: data.masByPartnerType.tleDual.value ?? 0, color: "#101014" },
+                { label: "Lettings Lite", value: data.masByPartnerType.lettingsLite.value ?? 0, color: "#6B6B76" },
               ]}
-              centerLabel={`${SEED.masByPartnerType.total.value ?? "—"} MAs`}
+              centerLabel={`${data.masByPartnerType.total.value ?? "—"} MAs`}
             />
           </div>
         </div>
         <div>
-          <SectionTitle source={SEED.sources.yoyGrowth}>
+          <SectionTitle source={data.sources.yoyGrowth}>
             Year on Year Growth
           </SectionTitle>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {SEED.yoyGrowth.map((entry) => (
+            {data.yoyGrowth.map((entry) => (
               <StatCard
                 key={entry.label}
                 label={entry.label}
@@ -144,22 +197,17 @@ export default function Overview({ month }: { month: string }) {
         </div>
       </div>
 
-      <SectionTitle source={SEED.sources.income}>
+      <SectionTitle source={data.sources.income}>
         Monthly GCI — Jan–Jun 2026 actuals
       </SectionTitle>
       <div className="card p-5">
         <Bars
-          labels={["Jan", "Feb", "Mar", "Apr", "May", "Jun"]}
+          labels={data.gciByMonth.labels}
           series={[{ name: "Actual GCI (exc VAT)", color: "#E31F36", values: gciSeries }]}
           format={(n) => `£${Math.round(n / 1000)}k`}
           height={240}
         />
-        <p className="mt-3 text-[11px] text-muted">
-          The 2026 budget series was not captured from the source dashboard —
-          actual combined GCI only (E&W + Glasgow · exc VAT · snapshot 11 Jul
-          2026). Budget bars will appear once the 2026 Budget Report figures
-          are keyed in.
-        </p>
+        <p className="mt-3 text-[11px] text-muted">{data.gciByMonth.budgetNote}</p>
       </div>
 
       <SectionTitle source="Agent Headcount report · REX KPI reports">
@@ -167,12 +215,12 @@ export default function Overview({ month }: { month: string }) {
       </SectionTitle>
       <div className="card p-5">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <StatCard label="New Starters" stat={SEED.partnerRamp.newStarters} />
-          <StatCard label="MA in Months 1–2" stat={SEED.partnerRamp.maInMonths1To2} />
-          <StatCard label="Listing in Months 1–2" stat={SEED.partnerRamp.listingInMonths1To2} />
-          <StatCard label="Move-in within 60 Days" stat={SEED.partnerRamp.moveInWithin60Days} />
+          <StatCard label="New Starters" stat={data.partnerRamp.newStarters} />
+          <StatCard label="MA in Months 1–2" stat={data.partnerRamp.maInMonths1To2} />
+          <StatCard label="Listing in Months 1–2" stat={data.partnerRamp.listingInMonths1To2} />
+          <StatCard label="Move-in within 60 Days" stat={data.partnerRamp.moveInWithin60Days} />
         </div>
-        <p className="mt-3 text-xs text-muted">{SEED.partnerRamp.note}</p>
+        <p className="mt-3 text-xs text-muted">{data.partnerRamp.note}</p>
       </div>
     </div>
   );

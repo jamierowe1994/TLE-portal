@@ -5,7 +5,7 @@
 // source yet (so Susan/James can work through them one by one).
 
 import { useEffect, useState } from "react";
-import { SOURCES } from "@/lib/seed-data";
+import { SOURCES } from "@/lib/roster";
 import { formatDate } from "@/lib/format";
 
 /* ------------------------------ status payload ------------------------------ */

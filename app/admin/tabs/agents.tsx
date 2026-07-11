@@ -1,16 +1,20 @@
 "use client";
 
-// Admin · Agents tab — per-agent July MTD KPI table (SEED) merged with live
-// portal-account links, the Partner Net Income YTD table, and the user
-// management panel (link account ↔ agentKey / REX / Meta, reset password).
+// Admin · Agents tab — per-agent July MTD KPI table (seed, via the admin-gated
+// /api/admin/seed fetch in the shell) merged with live portal-account links,
+// the Partner Net Income YTD table, a row-click agent drill-down (forecast,
+// ads link, portfolio, compliance), and the user management panel (link
+// account ↔ agentKey / REX / Meta, reset password).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import DataTable from "@/components/DataTable";
 import SourceBadge from "@/components/SourceBadge";
-import { SEED, ROSTER, agentKeysForName } from "@/lib/seed-data";
+import StatCard from "@/components/StatCard";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
+import { ROSTER, agentKeysForName } from "@/lib/roster";
 import type { AgentForecast, UserProfile } from "@/lib/types";
-import { formatDate, formatGBP, formatNum } from "@/lib/format";
+import { formatDate, formatGBP, formatNum, formatPct, monthLabel } from "@/lib/format";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -68,7 +72,14 @@ function SectionTitle({
 /* ------------------------- tolerant API parsing ------------------------- */
 
 type AdminUser = UserProfile & { adminNotes?: { at: string; text: string }[] };
-type ForecastRow = AgentForecast & { user?: Partial<UserProfile> };
+
+/** One row of GET /api/admin/forecasts — forecast nested under `forecast`. */
+interface AdminForecastRow {
+  agentKey: string;
+  displayName: string;
+  userLinked: boolean;
+  forecast: AgentForecast | null;
+}
 
 function extractUsers(payload: unknown): AdminUser[] {
   if (Array.isArray(payload)) return payload as AdminUser[];
@@ -79,13 +90,10 @@ function extractUsers(payload: unknown): AdminUser[] {
   return [];
 }
 
-function extractForecasts(payload: unknown): ForecastRow[] {
-  if (Array.isArray(payload)) return payload as ForecastRow[];
+function extractForecastRows(payload: unknown): AdminForecastRow[] {
   if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
-    for (const key of ["forecasts", "rows", "items"]) {
-      if (Array.isArray(obj[key])) return obj[key] as ForecastRow[];
-    }
+    if (Array.isArray(obj.rows)) return obj.rows as AdminForecastRow[];
   }
   return [];
 }
@@ -267,11 +275,12 @@ function UserRow({
 
 /* --------------------------------- tab --------------------------------- */
 
-export default function Agents({ month }: { month: string }) {
+export default function Agents({ month, seed }: { month: string; seed: SeedData }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [forecasts, setForecasts] = useState<ForecastRow[]>([]);
+  const [forecastRows, setForecastRows] = useState<AdminForecastRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -283,7 +292,7 @@ export default function Agents({ month }: { month: string }) {
       ]);
       if (uRes.ok) setUsers(extractUsers(await uRes.json()));
       else setError("Couldn't load portal accounts.");
-      if (fRes.ok) setForecasts(extractForecasts(await fRes.json()));
+      if (fRes.ok) setForecastRows(extractForecastRows(await fRes.json()));
     } catch {
       setError("Couldn't load portal accounts.");
     } finally {
@@ -301,11 +310,14 @@ export default function Agents({ month }: { month: string }) {
     return map;
   }, [users]);
 
-  const forecastByUserId = useMemo(() => {
-    const map = new Map<string, ForecastRow>();
-    for (const f of forecasts) map.set(f.userId, f);
+  // agentKey → that agent's self-set forecast for the month (where one exists).
+  const forecastByAgentKey = useMemo(() => {
+    const map = new Map<string, AgentForecast>();
+    for (const r of forecastRows) {
+      if (r.forecast) map.set(r.agentKey, r.forecast);
+    }
     return map;
-  }, [forecasts]);
+  }, [forecastRows]);
 
   /** Portal account (if any) for a verbatim KPI-table agent name. */
   function linkedUserForName(name: string): AdminUser | null {
@@ -316,15 +328,24 @@ export default function Agents({ month }: { month: string }) {
     return null;
   }
 
-  const kpiRows = [...SEED.agentKpisJulyMtd.rows, SEED.agentKpisJulyMtd.totals].map(
+  /** Forecast (if any) for a verbatim KPI-table agent name. */
+  function forecastForName(name: string): AgentForecast | null {
+    for (const key of agentKeysForName(name)) {
+      const f = forecastByAgentKey.get(key);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  const kpiRows = [...seed.agentKpisJulyMtd.rows, seed.agentKpisJulyMtd.totals].map(
     (row) => {
       const linked = row.tier === "TOTAL" ? null : linkedUserForName(row.agent);
-      const forecast = linked ? forecastByUserId.get(linked.id) : undefined;
+      const forecast = row.tier === "TOTAL" ? null : forecastForName(row.agent);
       return {
         tier: row.tier,
         agent: row.tier === "TOTAL" ? "TOTAL" : row.agent,
         portal: linked
-          ? forecast
+          ? forecast?.gciTarget != null
             ? `Linked · forecast ${formatGBP(forecast.gciTarget)}`
             : "Linked"
           : row.tier === "TOTAL"
@@ -343,8 +364,8 @@ export default function Agents({ month }: { month: string }) {
   );
 
   const netIncomeRows = [
-    ...SEED.partnerNetIncome.rows,
-    SEED.partnerNetIncome.eAndWTotal,
+    ...seed.partnerNetIncome.rows,
+    seed.partnerNetIncome.eAndWTotal,
   ];
 
   const unlinkedRoster = ROSTER.filter(
@@ -356,9 +377,13 @@ export default function Agents({ month }: { month: string }) {
   return (
     <div>
       {/* ----------------------- per-agent KPI table ----------------------- */}
-      <SectionTitle source={SEED.agentKpisJulyMtd.source}>
+      <SectionTitle source={seed.agentKpisJulyMtd.source}>
         Per-Agent KPIs — July MTD
       </SectionTitle>
+      <p className="mb-2 text-xs text-muted">
+        Click an agent&rsquo;s row to open their drill-down (forecast, ads,
+        portfolio, compliance).
+      </p>
       {error ? (
         <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
           {error}
@@ -400,6 +425,10 @@ export default function Agents({ month }: { month: string }) {
         ]}
         rows={kpiRows as unknown as Record<string, unknown>[]}
         compact
+        onRowClick={(row) => {
+          const name = String(row.agent);
+          if (name !== "TOTAL") setSelectedAgent(name);
+        }}
       />
       <p className="mt-2 flex items-center gap-2 text-[11px] text-muted">
         <SourceBadge source="snapshot" asOf="2026-07-11" />
@@ -409,8 +438,20 @@ export default function Agents({ month }: { month: string }) {
         dashboard.
       </p>
 
+      {/* ------------------------- agent drill-down ------------------------- */}
+      {selectedAgent ? (
+        <AgentDrilldown
+          name={selectedAgent}
+          month={month}
+          seed={seed}
+          user={linkedUserForName(selectedAgent)}
+          forecast={forecastForName(selectedAgent)}
+          onClose={() => setSelectedAgent(null)}
+        />
+      ) : null}
+
       {/* --------------------- partner net income YTD --------------------- */}
-      <SectionTitle source={SEED.partnerNetIncome.source}>
+      <SectionTitle source={seed.partnerNetIncome.source}>
         Partner Net Income — YTD 2026
       </SectionTitle>
       <DataTable
@@ -451,8 +492,12 @@ export default function Agents({ month }: { month: string }) {
         ]}
         rows={netIncomeRows as unknown as Record<string, unknown>[]}
         compact
+        onRowClick={(row) => {
+          const name = String(row.agent);
+          if (name !== "E&W Total" && name !== "TOTAL") setSelectedAgent(name);
+        }}
       />
-      <p className="mt-2 text-[11px] text-muted">{SEED.partnerNetIncome.glasgowNote}</p>
+      <p className="mt-2 text-[11px] text-muted">{seed.partnerNetIncome.glasgowNote}</p>
 
       {/* ------------------------- user management ------------------------- */}
       <SectionTitle>Portal accounts — link & manage</SectionTitle>
@@ -502,5 +547,212 @@ export default function Agents({ month }: { month: string }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/* ------------------------------ drill-down ------------------------------ */
+
+/** Snapshot StatValue wrapper for seed figures shown in the drill-down. */
+function snapStat(
+  value: number | null,
+  display?: string,
+  note?: string
+): { value: number | null; display?: string; source: "snapshot"; note?: string; asOf: string } {
+  return { value, display, source: "snapshot", note, asOf: "2026-07-11" };
+}
+
+function AgentDrilldown({
+  name,
+  month,
+  seed,
+  user,
+  forecast,
+  onClose,
+}: {
+  name: string;
+  month: string;
+  seed: SeedData;
+  user: (UserProfile & { adminNotes?: { at: string; text: string }[] }) | null;
+  forecast: AgentForecast | null;
+  onClose: () => void;
+}) {
+  const keys = agentKeysForName(name);
+  const matches = (rowName: string) =>
+    agentKeysForName(rowName).some((k) => keys.includes(k));
+
+  const roster = ROSTER.filter((r) => keys.includes(r.agentKey));
+  const kpi = seed.agentKpisJulyMtd.rows.find((r) => matches(r.agent)) ?? null;
+  const netIncome = seed.partnerNetIncome.rows.find((r) => matches(r.agent)) ?? null;
+  const portfolio = seed.portfolio.byPartner.find((r) => matches(r.agent)) ?? null;
+  const compliance = seed.compliance.byAgent.find((r) => matches(r.agent)) ?? null;
+  const moveIns = seed.moveInsJuly.rows.filter((r) => matches(r.agent));
+  const pipeline = [...seed.julyPipeline, ...seed.forwardPipeline].filter((r) =>
+    matches(r.agent)
+  );
+
+  return (
+    <section className="card mt-6 border-accent/30 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">{name} — drill-down</h3>
+          <p className="mt-0.5 text-xs text-muted">
+            {roster.length > 0
+              ? roster
+                  .map((r) => `${r.displayName} · ${r.region} · ${r.partnerType}`)
+                  .join("  |  ")
+              : "Not matched to a roster agent."}
+            {user ? ` · Portal account: ${user.email}` : " · No portal account linked."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="btn-press rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Forecast */}
+      <h4 className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        Forecast — {monthLabel(month)} (self-set in the portal)
+      </h4>
+      {forecast ? (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatCard
+            label="GCI target"
+            stat={{
+              value: forecast.gciTarget,
+              display: formatGBP(forecast.gciTarget),
+              source: "manual",
+              note: "Agent-set forecast from the portal forecast store",
+            }}
+          />
+          <StatCard
+            label="Move-ins target"
+            stat={{ value: forecast.moveInsTarget, source: "manual" }}
+          />
+          <StatCard
+            label="MAs target"
+            stat={{ value: forecast.maTarget, source: "manual" }}
+          />
+          <div className="card p-4 text-xs text-muted">
+            {forecast.notes ? `“${forecast.notes}”` : "No notes."}
+            <div className="mt-1.5">Updated {formatDate(forecast.updatedAt)}</div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-muted">
+          No forecast set for {monthLabel(month)}
+          {user ? "" : " — no portal account is linked to this agent yet"}.
+        </p>
+      )}
+
+      {/* July KPIs */}
+      <h4 className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        July MTD KPIs (snapshot)
+      </h4>
+      {kpi ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+          <StatCard label="GCI" stat={snapStat(kpi.gci, formatGBP(kpi.gci))} />
+          <StatCard label="MAs" stat={snapStat(kpi.ma)} />
+          <StatCard label="Listings" stat={snapStat(kpi.li)} />
+          <StatCard label="Viewings" stat={snapStat(kpi.vw)} />
+          <StatCard label="Applications" stat={snapStat(kpi.ap)} />
+          <StatCard label="Move-ins" stat={snapStat(kpi.mi)} />
+          <StatCard label="Pipeline" stat={snapStat(kpi.pn)} />
+        </div>
+      ) : (
+        <p className="text-xs text-muted">
+          Not in the July MTD Agent Detail table (no activity recorded).
+        </p>
+      )}
+
+      {/* Ads / income / portfolio / compliance */}
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div>
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            Meta ads
+          </h4>
+          <div className="card p-4 text-xs">
+            {user?.metaCampaignId ? (
+              <>
+                <span className="inline-flex rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                  Campaign linked
+                </span>
+                <span className="ml-2 tnum">{user.metaCampaignId}</span>
+                <p className="mt-1.5 text-muted">
+                  Live spend / leads / CPL render on the agent&rsquo;s own
+                  dashboard (Ads page) via the Meta Graph API.
+                </p>
+              </>
+            ) : (
+              <p className="text-muted">
+                No Meta campaign linked{user ? "" : " (no portal account)"} —
+                link one in the portal accounts panel below to light up their
+                live ads stats.
+              </p>
+            )}
+          </div>
+          <h4 className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            Net income & activity
+          </h4>
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard
+              label="Net income YTD"
+              stat={snapStat(
+                netIncome ? netIncome.ytdTotal : null,
+                netIncome ? formatGBP(netIncome.ytdTotal) : undefined,
+                seed.partnerNetIncome.source
+              )}
+            />
+            <StatCard
+              label="July move-ins / pipeline"
+              stat={snapStat(moveIns.length, `${moveIns.length} / ${pipeline.length}`)}
+              sub={`${moveIns.length} completed · ${pipeline.length} in pipeline`}
+            />
+          </div>
+        </div>
+        <div>
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            Portfolio (PayProp snapshot)
+          </h4>
+          {portfolio ? (
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard label="Managed" stat={snapStat(portfolio.managed)} />
+              <StatCard label="Let only" stat={snapStat(portfolio.letOnly)} />
+              <StatCard label="Total properties" stat={snapStat(portfolio.total)} />
+              <StatCard
+                label="Rent roll"
+                stat={snapStat(
+                  portfolio.rentRoll,
+                  portfolio.rentRoll != null ? formatGBP(portfolio.rentRoll) : undefined
+                )}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-muted">Not in the portfolio-by-partner table.</p>
+          )}
+          <h4 className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            Compliance (REX PM snapshot)
+          </h4>
+          {compliance ? (
+            <div className="grid grid-cols-3 gap-3">
+              <StatCard label="Items" stat={snapStat(compliance.total)} />
+              <StatCard
+                label="Overdue"
+                stat={snapStat(compliance.overdue)}
+                sub={formatPct(compliance.pctOverdue)}
+              />
+              <StatCard label="Upcoming" stat={snapStat(compliance.upcoming)} />
+            </div>
+          ) : (
+            <p className="text-xs text-muted">
+              No compliance items recorded against this agent.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

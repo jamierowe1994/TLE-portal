@@ -7,10 +7,14 @@ import {
   listUserForecasts,
 } from "@/lib/forecast-store";
 import { currentMonth } from "@/lib/format";
+import { agentNetIncomeYtd } from "@/lib/seed-data";
 import type { AgentForecast } from "@/lib/types";
 
 // The signed-in agent's OWN monthly forecast (targets).
-// GET  ?month=2026-07  → { month, forecast, history } (history = all their months)
+// GET  ?month=2026-07  → { month, forecast, history, actuals }
+//   history = all their months; actuals = { "2026-01": net£ | null, … } from
+//   the partner net income seed for their linked agentKey (server-side —
+//   lib/seed-data.ts is server-only and must not ship in the client bundle).
 // PUT  { month, gciTarget, moveInsTarget, maTarget, notes } → { forecast }
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -31,11 +35,26 @@ export async function GET(req: NextRequest) {
   const monthParam = req.nextUrl.searchParams.get("month");
   const month = monthParam && MONTH_RE.test(monthParam) ? monthParam : currentMonth();
 
-  const [forecast, history] = await Promise.all([
+  const [user, forecast, history] = await Promise.all([
+    findById(userId),
     getForecast(userId, month),
     listUserForecasts(userId),
   ]);
-  return NextResponse.json({ month, forecast, history });
+
+  // Seed actuals (partner net income, Jan–Jun 2026) for the history table.
+  const row = user?.agentKey ? agentNetIncomeYtd(user.agentKey) : null;
+  const actuals: Record<string, number | null> = row
+    ? {
+        "2026-01": row.jan,
+        "2026-02": row.feb,
+        "2026-03": row.mar,
+        "2026-04": row.apr,
+        "2026-05": row.may,
+        "2026-06": row.jun,
+      }
+    : {};
+
+  return NextResponse.json({ month, forecast, history, actuals });
 }
 
 /** null/undefined/"" → null; otherwise must parse to a finite number ≥ 0. */

@@ -7,7 +7,7 @@
 
 import StatCard from "@/components/StatCard";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
-import { SEED } from "@/lib/seed-data";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { PortfolioRow } from "@/lib/seed-types";
 import { formatGBP, monthLabel } from "@/lib/format";
 
@@ -42,8 +42,8 @@ const COLUMNS: DataTableColumn<PortfolioRow & Record<string, unknown>>[] = [
   },
 ];
 
-export default function PortfolioTab({ month }: { month: string }) {
-  const p = SEED.portfolio;
+export default function PortfolioTab({ month, seed }: { month: string; seed: SeedData }) {
+  const p = seed.portfolio;
   const o = p.overview;
   const isSnapshotMonth = month === "2026-07";
   const rows = [...p.byPartner, p.totals];
@@ -68,14 +68,29 @@ export default function PortfolioTab({ month }: { month: string }) {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Portfolio overview</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total properties" stat={o.total} big sub="E&W 442 · Glasgow 83" />
-          <StatCard label="Managed" stat={o.totalManaged} big sub="E&W 279 · Glasgow 83" />
+          <StatCard
+            label="Total properties"
+            stat={o.total}
+            big
+            sub={`E&W ${o.eAndWTotal.value ?? "—"} · Glasgow ${o.glasgowTotal.value ?? "—"}`}
+          />
+          <StatCard
+            label="Managed"
+            stat={o.totalManaged}
+            big
+            sub={`E&W ${o.eAndWManaged.value ?? "—"} · Glasgow ${o.glasgowManaged.value ?? "—"}`}
+          />
           <StatCard
             label="Let only"
             stat={o.eAndWLetOnly}
             sub="All E&W — Glasgow has 0 let-only"
           />
-          <StatCard label="Monthly rent roll" stat={o.rentRollTotal} big sub="E&W £318,806 · Glasgow £38,625" />
+          <StatCard
+            label="Monthly rent roll"
+            stat={o.rentRollTotal}
+            big
+            sub={`E&W ${o.rentRollEAndW.display ?? "—"} · Glasgow ${o.rentRollGlasgow.display ?? "—"}`}
+          />
         </div>
       </section>
 

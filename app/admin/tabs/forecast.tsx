@@ -1,19 +1,21 @@
 "use client";
 
 // Admin · Forecast tab — THE ROLL-UP. Live sum of every agent's self-set
-// forecast for the month (forecast-store via /api/admin/forecasts), actual
-// MTD, predicted month-end at current run rate and variance; plus the
-// Business Value cards, baseline costs and H2 reforecast P&L from SEED.
+// forecast for the month via /api/admin/forecasts, which returns
+// { month, rows, rollup, actualMtd, predictedMonthEnd, varianceVsForecast }
+// with one row per ACTIVE roster agent: { agentKey, displayName, userLinked,
+// forecast: AgentForecast | null }. The roll-up, actual MTD, predicted
+// month-end and variance are computed server-side and rendered as-is here;
+// plus the Business Value cards, baseline costs and H2 reforecast P&L from
+// the (admin-gated) seed.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import StatCard from "@/components/StatCard";
 import DataTable from "@/components/DataTable";
-import SourceBadge from "@/components/SourceBadge";
-import { SEED, ROSTER } from "@/lib/seed-data";
-import type { AgentForecast, StatValue, UserProfile } from "@/lib/types";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
+import type { AgentForecast, StatValue } from "@/lib/types";
 import {
-  daysElapsedFraction,
   formatDate,
   formatGBP,
   formatNum,
@@ -50,54 +52,42 @@ function SectionTitle({
   );
 }
 
-/* -------------------- tolerant /api/admin/forecasts parsing -------------------- */
+/* ----------------------- /api/admin/forecasts payload ----------------------- */
 
-type ForecastRow = AgentForecast & { user?: Partial<UserProfile> };
-
-function extractForecasts(payload: unknown): ForecastRow[] {
-  if (Array.isArray(payload)) return payload as ForecastRow[];
-  if (payload && typeof payload === "object") {
-    const obj = payload as Record<string, unknown>;
-    for (const key of ["forecasts", "rows", "items"]) {
-      if (Array.isArray(obj[key])) return obj[key] as ForecastRow[];
-    }
-  }
-  return [];
+interface AdminForecastRow {
+  agentKey: string;
+  displayName: string;
+  userLinked: boolean;
+  forecast: AgentForecast | null;
 }
 
-function extractUsers(payload: unknown): UserProfile[] {
-  if (Array.isArray(payload)) return payload as UserProfile[];
-  if (payload && typeof payload === "object") {
-    const obj = payload as Record<string, unknown>;
-    if (Array.isArray(obj.users)) return obj.users as UserProfile[];
-  }
-  return [];
+interface ForecastRollup {
+  totalGciTarget: number;
+  totalMoveInsTarget: number;
+  totalMaTarget: number;
+  agentsForecasted: number;
+  agentsTotal: number;
 }
 
-/** Actual MTD combined GCI for the month, from the snapshot. */
-function actualGciStat(month: string): StatValue {
-  if (month === "2026-07") return SEED.income.julyMtd.combinedGci;
-  const key = (
-    { "2026-01": "jan", "2026-02": "feb", "2026-03": "mar", "2026-04": "apr", "2026-05": "may", "2026-06": "jun" } as Record<string, "jan" | "feb" | "mar" | "apr" | "may" | "jun">
-  )[month];
-  const row = SEED.income.monthlyTable.find(
-    (r) => r.metric === "Combined GCI (exc VAT)"
-  );
-  const value = key && row ? row[key] : null;
-  return {
-    value,
-    display: value != null ? formatGBP(value) : "—",
-    source: "snapshot",
-    note: "Combined GCI (exc VAT) — TLE Business Income table, dashboard snapshot 11 Jul 2026",
-    asOf: "2026-07-11",
-  };
+interface ForecastsPayload {
+  month: string;
+  rows: AdminForecastRow[];
+  rollup: ForecastRollup;
+  actualMtd: StatValue;
+  predictedMonthEnd: StatValue;
+  varianceVsForecast: StatValue;
+}
+
+function isForecastsPayload(payload: unknown): payload is ForecastsPayload {
+  if (!payload || typeof payload !== "object") return false;
+  const obj = payload as Record<string, unknown>;
+  return Array.isArray(obj.rows) && !!obj.rollup && typeof obj.rollup === "object";
 }
 
 /* --------------------------------- tab --------------------------------- */
 
-export default function Forecast({ month }: { month: string }) {
-  const [forecasts, setForecasts] = useState<ForecastRow[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
+export default function Forecast({ month, seed }: { month: string; seed: SeedData }) {
+  const [data, setData] = useState<ForecastsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,15 +95,17 @@ export default function Forecast({ month }: { month: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [fRes, uRes] = await Promise.all([
-        fetch(`/api/admin/forecasts?month=${encodeURIComponent(month)}`, { cache: "no-store" }),
-        fetch("/api/admin/users", { cache: "no-store" }),
-      ]);
-      if (fRes.ok) setForecasts(extractForecasts(await fRes.json()));
-      else setError("Couldn't load agent forecasts.");
-      if (uRes.ok) setUsers(extractUsers(await uRes.json()));
+      const res = await fetch(
+        `/api/admin/forecasts?month=${encodeURIComponent(month)}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error(`Forecasts fetch failed (${res.status})`);
+      const payload: unknown = await res.json();
+      if (!isForecastsPayload(payload)) throw new Error("Unexpected payload");
+      setData(payload);
     } catch {
       setError("Couldn't load agent forecasts.");
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -123,57 +115,33 @@ export default function Forecast({ month }: { month: string }) {
     void load();
   }, [load]);
 
-  const usersById = useMemo(() => {
-    const map = new Map<string, UserProfile>();
-    for (const u of users) map.set(u.id, u);
-    return map;
-  }, [users]);
+  const rows = data?.rows ?? [];
+  const rollup: ForecastRollup = data?.rollup ?? {
+    totalGciTarget: 0,
+    totalMoveInsTarget: 0,
+    totalMaTarget: 0,
+    agentsForecasted: 0,
+    agentsTotal: 0,
+  };
 
-  const rosterByKey = useMemo(() => {
-    const map = new Map<string, (typeof ROSTER)[number]>();
-    for (const r of ROSTER) map.set(r.agentKey, r);
-    return map;
-  }, []);
+  const forecastTableRows = rows.map((r) => ({
+    agent: r.displayName,
+    linked: r.userLinked ? "Linked" : "No portal account",
+    isLinked: r.userLinked,
+    gciTarget: r.forecast?.gciTarget ?? null,
+    moveInsTarget: r.forecast?.moveInsTarget ?? null,
+    maTarget: r.forecast?.maTarget ?? null,
+    notes: r.forecast?.notes ?? "",
+    updatedAt: r.forecast?.updatedAt ?? null,
+  }));
 
-  // Roll-up: live sum of self-set forecasts.
-  const totalGciTarget = forecasts.reduce((s, f) => s + (f.gciTarget ?? 0), 0);
-  const totalMiTarget = forecasts.reduce((s, f) => s + (f.moveInsTarget ?? 0), 0);
-  const totalMaTarget = forecasts.reduce((s, f) => s + (f.maTarget ?? 0), 0);
-
-  const actual = actualGciStat(month);
-  const fraction = daysElapsedFraction(month);
-  const predicted =
-    actual.value != null && fraction > 0 ? actual.value / fraction : null;
-  const variance =
-    predicted != null && totalGciTarget > 0 ? predicted - totalGciTarget : null;
-
-  const activeAgents = ROSTER.filter(
-    (r) => r.active && r.agentKey !== "tle-central"
-  ).length;
-
-  const forecastTableRows = forecasts.map((f) => {
-    const user = f.user?.id ? { ...f.user, ...usersById.get(f.user.id) } : usersById.get(f.userId);
-    const agentKey = (user?.agentKey ?? f.user?.agentKey) || null;
-    const roster = agentKey ? rosterByKey.get(agentKey) : undefined;
-    return {
-      agent: roster?.displayName ?? user?.name ?? f.user?.name ?? f.userId,
-      linked: roster ? `Linked · ${roster.agentKey}` : "Not linked",
-      isLinked: !!roster,
-      gciTarget: f.gciTarget,
-      moveInsTarget: f.moveInsTarget,
-      maTarget: f.maTarget,
-      notes: f.notes ?? "",
-      updatedAt: f.updatedAt,
-    };
-  });
-
-  const bv = SEED.businessValue;
-  const h2 = SEED.h2Reforecast;
+  const bv = seed.businessValue;
+  const h2 = seed.h2Reforecast;
 
   return (
     <div>
       {/* ------------------------- roll-up hero ------------------------- */}
-      <SectionTitle source="Agent-set forecasts (live from the portal) · actuals from dashboard snapshot">
+      <SectionTitle source="Agent-set forecasts (live from the portal) · actuals via manual override → dashboard snapshot">
         Partner Forecast Roll-up — {monthLabel(month)}
       </SectionTitle>
 
@@ -188,66 +156,42 @@ export default function Forecast({ month }: { month: string }) {
           big
           label={`Partners forecast for ${monthLabel(month)}`}
           stat={{
-            value: totalGciTarget,
-            display: formatGBP(totalGciTarget),
+            value: rollup.totalGciTarget,
+            display: formatGBP(rollup.totalGciTarget),
             source: "manual",
             note: "Live sum of agent-set GCI targets from the portal forecast store",
           }}
-          sub={`${forecasts.length} forecast${forecasts.length === 1 ? "" : "s"} · ${formatNum(totalMiTarget)} move-ins · ${formatNum(totalMaTarget)} MAs targeted`}
+          sub={`${rollup.agentsForecasted} forecast${rollup.agentsForecasted === 1 ? "" : "s"} · ${formatNum(rollup.totalMoveInsTarget)} move-ins · ${formatNum(rollup.totalMaTarget)} MAs targeted`}
         />
         <StatCard
           big
           label="Actual MTD (combined GCI)"
-          stat={actual}
+          stat={data?.actualMtd ?? { value: null, source: "snapshot" }}
         />
         <StatCard
           big
           label="Predicted month-end"
-          stat={{
-            value: predicted,
-            display: predicted != null ? formatGBP(predicted) : "—",
-            source: "derived",
-            note:
-              fraction > 0
-                ? `Actual MTD ÷ ${formatPct(fraction * 100)} of the month elapsed — straight run rate`
-                : "Month not started — no run rate yet",
-          }}
-          sub={fraction > 0 && fraction < 1 ? `${formatPct(fraction * 100)} of the month elapsed` : undefined}
+          stat={data?.predictedMonthEnd ?? { value: null, source: "derived" }}
+          sub="Actual MTD ÷ fraction of the month elapsed — straight run rate"
         />
-        <div className="card relative p-5">
-          <div className="absolute right-4 top-4">
-            <SourceBadge
-              source="derived"
-              note="Predicted month-end vs partners' summed forecast"
-            />
-          </div>
-          <div className="stat-label pr-16 text-[11px] font-semibold uppercase tracking-wide text-muted">
-            Variance vs forecast
-          </div>
-          <div className="stat-value mt-2">
-            {variance == null ? (
-              "—"
-            ) : (
-              <span className={variance < 0 ? "text-red-600" : "text-green-700"}>
-                {variance < 0 ? "−" : "+"}
-                {formatGBP(Math.abs(variance))}
-              </span>
-            )}
-          </div>
-          <div className="mt-1.5 text-xs text-muted">
-            {variance == null
+        <StatCard
+          big
+          label="Variance vs forecast"
+          stat={data?.varianceVsForecast ?? { value: null, source: "derived" }}
+          sub={
+            data?.varianceVsForecast?.value == null
               ? "Needs both a forecast total and an actual run rate"
-              : variance < 0
+              : data.varianceVsForecast.value < 0
                 ? "Tracking behind partners' forecast at current run rate"
-                : "Tracking ahead of partners' forecast at current run rate"}
-          </div>
-        </div>
+                : "Tracking ahead of partners' forecast at current run rate"
+          }
+        />
       </div>
 
       <p className="mt-3 text-xs text-muted">
         {loading
           ? "Loading forecasts…"
-          : `${forecasts.length} of ${activeAgents} active agents have set a forecast for ${monthLabel(month)}.`}
+          : `${rollup.agentsForecasted} of ${rollup.agentsTotal} active agents have set a forecast for ${monthLabel(month)}.`}
       </p>
 
       <SectionTitle>Agent forecasts — {monthLabel(month)}</SectionTitle>
@@ -256,7 +200,7 @@ export default function Forecast({ month }: { month: string }) {
           { key: "agent", label: "Agent" },
           {
             key: "linked",
-            label: "Linked?",
+            label: "Portal account",
             render: (row) => (
               <span
                 className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
@@ -292,13 +236,14 @@ export default function Forecast({ month }: { month: string }) {
             key: "updatedAt",
             label: "Updated",
             align: "right",
-            render: (row) => formatDate(row.updatedAt as string),
+            render: (row) =>
+              row.updatedAt ? formatDate(row.updatedAt as string) : "—",
           },
         ]}
         rows={forecastTableRows as unknown as Record<string, unknown>[]}
         compact
       />
-      {!loading && forecasts.length === 0 && !error ? (
+      {!loading && rollup.agentsForecasted === 0 && !error ? (
         <p className="mt-2 text-xs text-muted">
           No agent has set a forecast for {monthLabel(month)} yet — agents set
           theirs under Dashboard → Forecast.
@@ -306,7 +251,7 @@ export default function Forecast({ month }: { month: string }) {
       ) : null}
 
       {/* ------------------------- business value ------------------------- */}
-      <SectionTitle source={SEED.sources.businessValue}>
+      <SectionTitle source={seed.sources.businessValue}>
         Business Value — Monthly Rent Roll & Recurring Income (June 2026)
       </SectionTitle>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -374,7 +319,7 @@ export default function Forecast({ month }: { month: string }) {
       </div>
 
       {/* ------------------------ H2 reforecast P&L ------------------------ */}
-      <SectionTitle source={SEED.sources.h2Reforecast}>
+      <SectionTitle source={seed.sources.h2Reforecast}>
         H2 2026 Reforecast — Month-by-Month P&L
       </SectionTitle>
       <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">

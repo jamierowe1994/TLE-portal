@@ -1,12 +1,14 @@
 "use client";
 
 // Admin tab: Arrears — summary, aging buckets, full tenant table.
-// ADMIN ONLY: contains tenant personal data. PayProp-sourced (no API access
-// yet) — figures from the PayProp arrears report 2026-07-06 via the snapshot.
+// ADMIN ONLY: contains tenant personal data. It arrives via the seed prop
+// (fetched from the session+ADMIN_EMAILS-gated /api/admin/seed route) — never
+// import lib/seed-data.ts here, or the tenant data ships in the public bundle.
+// PayProp-sourced (no API access yet) — PayProp arrears report 2026-07-06.
 
 import StatCard from "@/components/StatCard";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
-import { SEED } from "@/lib/seed-data";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { ArrearsTenantRow } from "@/lib/seed-types";
 import { formatDate, formatGBP, formatNum, monthLabel } from "@/lib/format";
 
@@ -27,8 +29,8 @@ const COLUMNS: DataTableColumn<ArrearsTenantRow & Record<string, unknown>>[] = [
   { key: "lastReminder", label: "Last reminder", align: "right", render: (r) => formatDate(r.lastReminder) },
 ];
 
-export default function ArrearsTab({ month }: { month: string }) {
-  const a = SEED.arrears;
+export default function ArrearsTab({ month, seed }: { month: string; seed: SeedData }) {
+  const a = seed.arrears;
   const s = a.summary;
   const isSnapshotMonth = month === "2026-07";
 
@@ -55,10 +57,20 @@ export default function ArrearsTab({ month }: { month: string }) {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Tenants in arrears" stat={s.totalInArrears} big />
         <StatCard label="Total arrears" stat={s.totalValue} big />
-        <StatCard label="E&W" stat={s.eAndWCount} sub="£10,611.07" />
-        <StatCard label="Glasgow" stat={s.glasgowCount} sub="£9,270.97" />
-        <StatCard label="Protected (RLP/LEC)" stat={s.protectedCount} sub="£0.00 claimable — 21 unprotected" />
-        <StatCard label="% of rent roll" stat={s.pctOfRentRoll} sub="£19,882.04 of £357,431" />
+        <StatCard label="E&W" stat={s.eAndWCount} sub={s.eAndWValue.display} />
+        <StatCard label="Glasgow" stat={s.glasgowCount} sub={s.glasgowValue.display} />
+        <StatCard
+          label="Protected (RLP/LEC)"
+          stat={s.protectedCount}
+          sub={`${s.protectedClaimable.display ?? "£0.00"} claimable — ${
+            (s.totalInArrears.value ?? 0) - (s.protectedCount.value ?? 0)
+          } unprotected`}
+        />
+        <StatCard
+          label="% of rent roll"
+          stat={s.pctOfRentRoll}
+          sub={`${s.totalValue.display ?? ""} of ${seed.portfolio.overview.rentRollTotal.display ?? "rent roll"}`}
+        />
       </div>
 
       {/* Aging buckets */}

@@ -6,8 +6,25 @@ import { isAdminEmail } from "@/lib/brand";
 // Ported from TEG PAID ADS. No middleware — every protected route handler
 // verifies the cookie itself; admin routes additionally check isAdminEmail.
 
-const SECRET =
-  process.env.AUTH_SECRET ?? "dev-only-secret-change-me-in-production";
+/**
+ * Session-signing secret. In production a missing AUTH_SECRET is a hard,
+ * loud failure — signing with the known dev fallback would make every
+ * session token (including admin sessions) forgeable. Resolved lazily so
+ * `next build` (which sets NODE_ENV=production but never signs a token)
+ * still passes with zero env vars, per the offline-demo quality bar.
+ */
+function getSecret(): string {
+  const secret = process.env.AUTH_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "AUTH_SECRET is not set — refusing to sign or verify session tokens " +
+        "with the dev fallback secret in production. Set AUTH_SECRET in the " +
+        "Railway variables."
+    );
+  }
+  return "dev-only-secret-change-me-in-production";
+}
 
 export const SESSION_COOKIE = "tle_session";
 const SESSION_DAYS = 30;
@@ -32,7 +49,7 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 function sign(data: string): string {
-  return crypto.createHmac("sha256", SECRET).update(data).digest("base64url");
+  return crypto.createHmac("sha256", getSecret()).update(data).digest("base64url");
 }
 
 /**

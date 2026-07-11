@@ -3,16 +3,18 @@ import { CHART_COLORS, CHART_INK, CHART_MUTED, defaultFormat } from "@/component
 
 interface FunnelBarProps {
   stages: { label: string; value: number }[];
+  /**
+   * Step-conversion % between consecutive stages. Only meaningful when each
+   * stage is a strict subset of the one above (leads → referred → booked);
+   * mixed funnels like MA → listings → viewings produce >100% noise.
+   */
+  showSteps?: boolean;
 }
 
-/**
- * Horizontal funnel: one bar per stage scaled to the max value, with the
- * step-conversion % shown between consecutive stages.
- */
-export function FunnelBar({ stages }: FunnelBarProps) {
+export function FunnelBar({ stages, showSteps = true }: FunnelBarProps) {
   const width = 640;
   const barH = 30;
-  const stepH = 18; // conversion row between bars
+  const stepH = showSteps ? 18 : 8; // conversion row between bars
   const labelW = 130;
   const valueW = 64;
   const plotW = width - labelW - valueW;
@@ -30,7 +32,7 @@ export function FunnelBar({ stages }: FunnelBarProps) {
       {stages.map((stage, i) => {
         const top = i * (barH + stepH) + 2;
         const w = Math.max((stage.value / max) * plotW, stage.value > 0 ? 3 : 0);
-        const prev = i > 0 ? stages[i - 1].value : null;
+        const prev = showSteps && i > 0 ? stages[i - 1].value : null;
         const conv = prev != null && prev > 0 ? (stage.value / prev) * 100 : null;
         return (
           <g key={stage.label}>

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { AgentForecast, UserProfile } from "@/lib/types";
 import { currentMonth, formatGBP, formatNum, monthLabel } from "@/lib/format";
 import { getUser, refreshUser } from "@/lib/session";
-import { agentNetIncomeYtd } from "@/lib/seed-data";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 
 // My Forecast — set/edit monthly targets (GCI £, move-ins, MAs, notes) for the
@@ -22,21 +21,8 @@ function addMonth(month: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Seed actual (partner net income £) for a 2026 month, where the table has it. */
-function seedActualFor(agentKey: string | null, month: string): number | null {
-  if (!agentKey) return null;
-  const row = agentNetIncomeYtd(agentKey);
-  if (!row) return null;
-  const byMonth: Record<string, number | null> = {
-    "2026-01": row.jan,
-    "2026-02": row.feb,
-    "2026-03": row.mar,
-    "2026-04": row.apr,
-    "2026-05": row.may,
-    "2026-06": row.jun,
-  };
-  return byMonth[month] ?? null;
-}
+// Seed actuals (partner net income £ by month) come from GET /api/my/forecast —
+// computed server-side, since the seed data itself is server-only.
 
 /* ------------------------------------------------------------------------ */
 /* Month target editor                                                       */
@@ -233,6 +219,7 @@ interface HistoryRow extends Record<string, unknown> {
 export default function ForecastPage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [history, setHistory] = useState<AgentForecast[]>([]);
+  const [actuals, setActuals] = useState<Record<string, number | null>>({});
   const [loading, setLoading] = useState(true);
 
   const thisMonth = currentMonth();
@@ -242,8 +229,12 @@ export default function ForecastPage() {
     try {
       const res = await fetch("/api/my/forecast", { cache: "no-store" });
       if (res.ok) {
-        const data = (await res.json()) as { history: AgentForecast[] };
+        const data = (await res.json()) as {
+          history: AgentForecast[];
+          actuals?: Record<string, number | null>;
+        };
         setHistory(data.history ?? []);
+        setActuals(data.actuals ?? {});
       }
     } catch {
       // network hiccup — keep whatever we had
@@ -277,7 +268,7 @@ export default function ForecastPage() {
   const historyRows: HistoryRow[] = history
     .filter((h) => h.month <= thisMonth)
     .map((h) => {
-      const actual = seedActualFor(agentKey, h.month);
+      const actual = actuals[h.month] ?? null;
       const hit =
         h.gciTarget != null && actual != null ? actual >= h.gciTarget : null;
       return {

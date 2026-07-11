@@ -8,7 +8,7 @@ import StatCard from "@/components/StatCard";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Donut from "@/components/charts/Donut";
 import Bars from "@/components/charts/Bars";
-import { SEED } from "@/lib/seed-data";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { IncomeMonthlyRow, LicenceFeeRow } from "@/lib/seed-types";
 import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 
@@ -102,8 +102,8 @@ function YoyChips({ label, data }: { label: string; data: Record<string, number>
 
 /* --------------------------------- the tab --------------------------------- */
 
-export default function IncomeTab({ month }: { month: string }) {
-  const inc = SEED.income;
+export default function IncomeTab({ month, seed }: { month: string; seed: SeedData }) {
+  const inc = seed.income;
   const isSnapshotMonth = month === "2026-07";
 
   // GCI vs total income bars, Jan–Jun (from the monthly income table rows)
@@ -160,10 +160,10 @@ export default function IncomeTab({ month }: { month: string }) {
           <div className="mt-4">
             <Donut
               segments={[
-                { label: "TLE net", value: 4800, color: "#E31F36" },
-                { label: "Associates", value: 5400, color: "#101014" },
+                { label: "TLE net", value: inc.julyMtd.tleNetIncome.value ?? 0, color: "#E31F36" },
+                { label: "Associates", value: inc.julyMtd.paidToAssociates.value ?? 0, color: "#101014" },
               ]}
-              centerLabel="£12,000"
+              centerLabel={inc.julyMtd.combinedGci.display ?? ""}
             />
           </div>
           <p className="mt-3 text-xs text-muted">{inc.julyMtd.splitNote}</p>
@@ -180,7 +180,7 @@ export default function IncomeTab({ month }: { month: string }) {
             <StatCard
               label="TLE split of E&W GCI"
               stat={inc.june.tleSplitPct}
-              sub="Partners 53% — £17,686"
+              sub={`Partners ${100 - (inc.june.tleSplitPct.value ?? 0)}% — ${inc.june.partnerNetIncome.display ?? ""}`}
             />
             <StatCard label="Monthly licence" stat={inc.june.monthlyLicence} />
             <StatCard label="Pro licence" stat={inc.june.proLicence} />

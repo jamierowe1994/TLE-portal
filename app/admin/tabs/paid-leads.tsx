@@ -5,11 +5,11 @@
 
 import StatCard from "@/components/StatCard";
 import FunnelBar from "@/components/charts/FunnelBar";
-import { SEED } from "@/lib/seed-data";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import { monthLabel } from "@/lib/format";
 
-export default function PaidLeadsTab({ month }: { month: string }) {
-  const pl = SEED.paidLeads;
+export default function PaidLeadsTab({ month, seed }: { month: string; seed: SeedData }) {
+  const pl = seed.paidLeads;
   const isSnapshotMonth = month === "2026-07";
 
   return (

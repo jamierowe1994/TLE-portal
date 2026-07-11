@@ -115,18 +115,13 @@ export default function ProfilePage() {
     }
     setChangingPw(true);
     try {
-      const res = await fetch("/api/auth/change-password", {
-        method: "POST",
+      // Password change lives on PATCH /api/auth/me (verified currentPassword
+      // + scrypt re-hash server-side).
+      const res = await fetch("/api/auth/me", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
       });
-      if (res.status === 404) {
-        setPwMsg({
-          ok: false,
-          text: "Password change isn't available yet — ask the admin to reset it for you.",
-        });
-        return;
-      }
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setPwMsg({ ok: false, text: data.error ?? "Could not change your password." });

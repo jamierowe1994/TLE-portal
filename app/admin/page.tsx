@@ -11,6 +11,7 @@ import PasswordInput from "@/components/PasswordInput";
 import { PresentProvider, PresentButton, usePresent } from "@/components/PresentMode";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import type { UserProfile } from "@/lib/types";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import { monthLabel } from "@/lib/format";
 
 import Overview from "@/app/admin/tabs/overview";
@@ -27,7 +28,10 @@ import Diagnostics from "@/app/admin/tabs/diagnostics";
 
 /* ------------------------------- tabs ------------------------------- */
 
-type TabComponent = (props: { month: string }) => React.ReactNode;
+// Tabs receive the month and the admin-gated snapshot seed (fetched once from
+// /api/admin/seed — lib/seed-data.ts is server-only, so seed data reaches the
+// client only through that authenticated route, never via the JS bundle).
+type TabComponent = (props: { month: string; seed: SeedData }) => React.ReactNode;
 
 const TABS: { key: string; label: string; Component: TabComponent }[] = [
   { key: "overview", label: "Overview", Component: Overview },
@@ -229,6 +233,30 @@ function AdminShell({
   const [tabIndex, setTabIndex] = useState(0);
   const [month, setMonth] = useState(DEFAULT_MONTH);
   const [autoCycle, setAutoCycle] = useState(false);
+  const [seed, setSeed] = useState<SeedData | null>(null);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  // Load the snapshot seed once via the admin-gated API.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/seed", { cache: "no-store" });
+        if (!res.ok) throw new Error(`Seed fetch failed (${res.status})`);
+        const data = (await res.json()) as { seed: SeedData };
+        if (!cancelled) setSeed(data.seed);
+      } catch {
+        if (!cancelled) {
+          setSeedError(
+            "Couldn't load the business snapshot data — refresh to try again."
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ←/→ move tabs while presenting.
   useEffect(() => {
@@ -355,7 +383,15 @@ function AdminShell({
 
       {/* ------------------------------ content ------------------------------ */}
       <section className="mt-5 pb-16" key={active.key}>
-        <ActiveComponent month={month} />
+        {seed ? (
+          <ActiveComponent month={month} seed={seed} />
+        ) : seedError ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+            {seedError}
+          </p>
+        ) : (
+          <p className="text-sm text-muted">Loading business data…</p>
+        )}
       </section>
 
       {presenting ? (

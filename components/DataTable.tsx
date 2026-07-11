@@ -25,10 +25,14 @@ export default function DataTable<
   columns,
   rows,
   compact = false,
+  onRowClick,
 }: {
   columns: DataTableColumn<Row>[];
   rows: Row[];
   compact?: boolean;
+  /** Optional — makes rows clickable (e.g. admin agent drill-down). */
+  // eslint-disable-next-line no-unused-vars
+  onRowClick?: (row: Row) => void;
 }) {
   const cellPad = compact ? "px-3 py-1.5" : "px-3.5 py-2.5";
 
@@ -63,7 +67,10 @@ export default function DataTable<
             rows.map((row, i) => (
               <tr
                 key={i}
-                className="border-b border-line/60 last:border-b-0 hover:bg-gray-50/60"
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={`border-b border-line/60 last:border-b-0 hover:bg-gray-50/60 ${
+                  onRowClick ? "cursor-pointer" : ""
+                }`}
               >
                 {columns.map((col) => (
                   <td

@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
 import SourceBadge from "@/components/SourceBadge";
-import { SEED, SNAPSHOT_DATE } from "@/lib/seed-data";
+import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
+import { SNAPSHOT_DATE } from "@/lib/roster";
 import type { H2ReforecastRow } from "@/lib/seed-types";
 import { formatGBP, formatNum, formatPct } from "@/lib/format";
 import type { ActualOverride } from "@/lib/types";
@@ -22,9 +23,9 @@ function formatCell(row: H2ReforecastRow, value: number): string {
   return formatNum(value);
 }
 
-export default function PnlTab({ month }: { month: string }) {
+export default function PnlTab({ month, seed }: { month: string; seed: SeedData }) {
   void month; // grid always shows the H2 2026 reforecast (Jul–Dec)
-  const rf = SEED.h2Reforecast;
+  const rf = seed.h2Reforecast;
 
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [editingKey, setEditingKey] = useState<string | null>(null);

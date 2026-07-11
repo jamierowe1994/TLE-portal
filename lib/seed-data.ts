@@ -12,6 +12,13 @@
 // - Viewings: KPI Overview funnel shows 46 for July MTD, the Agent Detail
 //   per-agent table totals 28 — different report cuts on the source dashboard.
 
+// SERVER-ONLY: the full seed contains tenant personal data (arrears) and
+// owner-only business financials (P&L, partner net income). It must never be
+// statically imported by a "use client" component — client code gets it via
+// the admin-gated /api/admin/* routes. Client-safe pieces (ROSTER, name
+// matching, SOURCES, snapshot constants) live in lib/roster.ts.
+import "server-only";
+
 import type { FunnelStats, StatValue } from "@/lib/types";
 import type {
   AgentKpiRow,
@@ -28,15 +35,27 @@ import type {
   PartnerNetIncomeRow,
   PipelineRow,
   PortfolioRow,
-  RosterEntry,
-  SourceInfo,
-  SourceKey,
   YoYGrowthEntry,
 } from "@/lib/seed-types";
+import {
+  ROSTER,
+  SNAPSHOT_DATE,
+  SNAPSHOT_NOTE,
+  SOURCES,
+  agentKeysForName,
+  nameMatchesAgent,
+} from "@/lib/roster";
 
-export const SNAPSHOT_DATE = "2026-07-11";
-export const SNAPSHOT_NOTE =
-  "Figure from Susan's TLE Business Dashboard — we couldn't match a live stat for this yet";
+// Re-export the client-safe pieces so existing server-side imports
+// (`import { ROSTER } from "@/lib/seed-data"`) keep working.
+export {
+  ROSTER,
+  SNAPSHOT_DATE,
+  SNAPSHOT_NOTE,
+  SOURCES,
+  agentKeysForName,
+  nameMatchesAgent,
+};
 
 /** Build a snapshot StatValue. `src` = the source line shown on the dashboard. */
 function snap(value: number | null, display?: string, src?: string): StatValue {
@@ -46,80 +65,6 @@ function snap(value: number | null, display?: string, src?: string): StatValue {
   return stat;
 }
 
-/* ============================== ROSTER ============================== */
-
-export const ROSTER: RosterEntry[] = [
-  // Active partners (appear in July 2026 tables)
-  { agentKey: "rhiannon-dodge", displayName: "Rhiannon Dodge", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "sean-mcmahon-edinburgh", displayName: "Sean McMahon (Edinburgh)", region: "Edinburgh", partnerType: "TLE", active: true },
-  { agentKey: "sean-mcmahon-glasgow", displayName: "Sean Mc Mahon (Glasgow)", region: "Glasgow", partnerType: "TLE", active: true },
-  { agentKey: "lauren-engley", displayName: "Lauren Engley", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "bernadine-williams", displayName: "Bernadine Williams", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "joe-patten", displayName: "Joe Patten", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "stuart-roper", displayName: "Stuart Roper", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "shane-yu", displayName: "Shane Yu", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "kirstie-wallington", displayName: "Kirstie Wallington", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "lianna-denholm", displayName: "Lianna Denholm", region: "Edinburgh", partnerType: "TLE", active: true },
-  { agentKey: "graham-cross", displayName: "Graham Cross", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "rebecca-adams", displayName: "Rebecca Adams", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "james-crumpton", displayName: "James Crumpton", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "tony-poon", displayName: "Tony Poon", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "dan-richards", displayName: "Dan Richards", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "claire-riley", displayName: "Claire Riley", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "kayleigh-wright", displayName: "Kayleigh Wright", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "chris-wilson-slight", displayName: "Chris Wilson-Slight", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "geraldine-mulhern", displayName: "Geraldine Mulhern", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "richard-callow", displayName: "Richard Callow", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "paul-doig", displayName: "Paul Doig", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "zilvinas-navickis", displayName: "Zilvinas Navickis", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "tle-central", displayName: "TLE Central", region: "E&W", partnerType: "TLE", active: true }, // house account
-  // Joined June 2026 (paid joining fees in June)
-  { agentKey: "simon-fan", displayName: "Simon Fan", region: "E&W", partnerType: "TLE", active: true },
-  { agentKey: "rovena-buci", displayName: "Rovena Buci", region: "E&W", partnerType: "TLE", active: true },
-  // Starting Aug 2026 (signed, building pipeline)
-  { agentKey: "chanade-patrick", displayName: "Chanade Patrick", region: "E&W", partnerType: "TLE", active: false },
-  // Left the business
-  { agentKey: "david-quigg", displayName: "David Quigg", region: "E&W", partnerType: "TLE", active: false },
-  { agentKey: "brian-hankins-lewis", displayName: "Brian Hankins-Lewis", region: "E&W", partnerType: "TLE", active: false },
-  { agentKey: "margo-wilson", displayName: "Margo Wilson", region: "Glasgow", partnerType: "TLE", active: false }, // Glasgow Jan–Apr
-];
-
-/* ------------------------- name → agentKey matching ------------------------- */
-// Tables spell agents inconsistently ("Sean McMahon", "Sean Mc Mahon (Glasgow)",
-// "Sean McMahon (Edinburgh)"). Normalise by stripping spaces/hyphens/dots and
-// pulling out any "(qualifier)". An UNQUALIFIED "Sean McMahon" (as in the
-// pipeline + compliance tables) matches BOTH Sean keys — the source dashboard
-// does not split those rows between Edinburgh and Glasgow.
-
-function splitName(raw: string): { base: string; qualifier: string | null } {
-  const m = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
-  const core = m ? m[1] : raw;
-  const qualifier = m ? m[2].toLowerCase().replace(/[^a-z0-9]/g, "") : null;
-  const base = core.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return { base, qualifier };
-}
-
-const BASE_NAME_TO_KEYS: Record<string, string[]> = {};
-for (const entry of ROSTER) {
-  const { base } = splitName(entry.displayName);
-  (BASE_NAME_TO_KEYS[base] ??= []).push(entry.agentKey);
-}
-
-/** All agentKeys a verbatim table name could refer to. */
-export function agentKeysForName(name: string): string[] {
-  const { base, qualifier } = splitName(name);
-  const keys = BASE_NAME_TO_KEYS[base] ?? [];
-  if (qualifier && keys.length > 1) {
-    const filtered = keys.filter((k) => k.includes(qualifier));
-    return filtered.length > 0 ? filtered : keys;
-  }
-  return keys;
-}
-
-/** Does a verbatim table name refer to this agentKey (handles spelling variants)? */
-export function nameMatchesAgent(name: string, agentKey: string): boolean {
-  return agentKeysForName(name).includes(agentKey);
-}
 
 /* ============================== SEED ============================== */
 
@@ -700,30 +645,14 @@ export const SEED = {
   } as Record<string, string>,
 };
 
-/* ============================== SOURCES status map ============================== */
+/* SOURCES status map moved to lib/roster.ts (client-safe) — re-exported above. */
 
-export const SOURCES: Record<SourceKey, SourceInfo> = {
-  rex: {
-    status: "attempting-live",
-    label: "REX CRM",
-    note: "Feeds KPI funnel, agent KPIs and compliance (REX PM). Live integration being attempted — snapshot fallback until endpoints confirmed.",
-  },
-  payprop: {
-    status: "no-access-yet",
-    label: "PayProp",
-    note: "Feeds GCI/income actuals, portfolio, rent roll and arrears. No API access yet — figures from dashboard snapshot.",
-  },
-  ghl: {
-    status: "no-access-yet",
-    label: "Go High Level",
-    note: "Feeds paid leads and lead→MA funnel. No API access yet — figures from dashboard snapshot.",
-  },
-  meta: {
-    status: "live",
-    label: "Meta Ads",
-    note: "Live via Graph API (spend, leads, CPL per agent campaign).",
-  },
-};
+/**
+ * Structural type of the full seed — used via TYPE-ONLY imports (erased at
+ * compile time, so safe alongside "server-only") by the admin client tabs,
+ * which receive the seed data itself through the gated /api/admin/seed route.
+ */
+export type SeedData = typeof SEED;
 
 /* ============================== helpers ============================== */
 

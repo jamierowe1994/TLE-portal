@@ -64,6 +64,12 @@ fill in the values (see the variables table below).
 npm run build && npm start   # production build check
 ```
 
+> **OneDrive gotcha:** this folder lives inside OneDrive, which sometimes turns
+> `.next/` build artifacts into cloud placeholders and breaks the next build or
+> `npm run dev` with `EINVAL: readlink ... .next\...`. Fix: delete `.next` and
+> rebuild (`Remove-Item -Recurse -Force .next`), or right-click the project
+> folder → "Always keep on this device". Railway is unaffected.
+
 ---
 
 ## Deploying to Railway
