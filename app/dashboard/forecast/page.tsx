@@ -1,18 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { AgentForecast, UserProfile } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { AgentForecast, StatValue, UserProfile } from "@/lib/types";
 import { currentMonth, formatGBP, formatNum, monthLabel } from "@/lib/format";
 import { getUser, refreshUser } from "@/lib/session";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
+import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 
-// My Forecast — set/edit monthly targets (GCI £, move-ins, MAs, notes) for the
-// current + next month, and a history table of past months forecast vs actual.
+// My Forecast — the interactive year builder (drag each future month to set your
+// earnings or portfolio-growth forecast), detailed this/next-month target cards
+// (GCI £, move-ins, MAs, notes), and a history table of forecast vs actual.
 // Actuals come from the partner net income seed (Jan–Jun 2026) where known.
 
 /* ------------------------------------------------------------------------ */
 /* Helpers                                                                   */
 /* ------------------------------------------------------------------------ */
+
+const YEAR = "2026";
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_KEYS = MONTH_LABELS.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
+const monthIdx = (m: string) => Number(m.slice(5, 7)) - 1;
+
+// Standard management fee assumption for the estimated-income figure. TLE bills
+// ~9% of rent (inc RLP); the agent's final share is confirmed with head office.
+const MGMT_FEE_RATE = 0.09;
 
 function addMonth(month: string): string {
   const m = /^(\d{4})-(\d{2})$/.exec(month);
@@ -220,6 +231,7 @@ export default function ForecastPage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [history, setHistory] = useState<AgentForecast[]>([]);
   const [actuals, setActuals] = useState<Record<string, number | null>>({});
+  const [portfolio, setPortfolio] = useState<{ managed: number; rentRoll: number }>({ managed: 0, rentRoll: 0 });
   const [loading, setLoading] = useState(true);
 
   const thisMonth = currentMonth();
@@ -227,21 +239,33 @@ export default function ForecastPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/my/forecast", { cache: "no-store" });
-      if (res.ok) {
-        const data = (await res.json()) as {
+      const [fRes, sRes] = await Promise.all([
+        fetch("/api/my/forecast", { cache: "no-store" }),
+        fetch(`/api/my/stats?month=${thisMonth}`, { cache: "no-store" }).catch(() => null),
+      ]);
+      if (fRes.ok) {
+        const data = (await fRes.json()) as {
           history: AgentForecast[];
           actuals?: Record<string, number | null>;
         };
         setHistory(data.history ?? []);
         setActuals(data.actuals ?? {});
       }
+      if (sRes && sRes.ok) {
+        const s = (await sRes.json()) as {
+          portfolio?: { managed: StatValue; rentRoll: StatValue };
+        };
+        setPortfolio({
+          managed: s.portfolio?.managed.value ?? 0,
+          rentRoll: s.portfolio?.rentRoll.value ?? 0,
+        });
+      }
     } catch {
       // network hiccup — keep whatever we had
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [thisMonth]);
 
   useEffect(() => {
     setUser(getUser());
@@ -263,6 +287,23 @@ export default function ForecastPage() {
     history.find((h) => h.month === month) ?? null;
 
   const agentKey = user?.agentKey ?? null;
+
+  /* ------------------------ interactive builder inputs ---------------------- */
+
+  const currentMonthIndex = monthIdx(thisMonth);
+  const actualsNetIncome = useMemo(
+    () => MONTH_KEYS.map((k) => actuals[k] ?? null),
+    [actuals]
+  );
+  const savedForecasts = useMemo(() => {
+    const map: Record<string, SavedForecast> = {};
+    for (const h of history) {
+      map[h.month] = { gciTarget: h.gciTarget ?? null, portfolioTarget: h.portfolioTarget ?? null };
+    }
+    return map;
+  }, [history]);
+  const avgFeePerProperty =
+    portfolio.managed > 0 ? (portfolio.rentRoll * MGMT_FEE_RATE) / portfolio.managed : 0;
 
   // Past + current months only in history (next month lives in its editor).
   const historyRows: HistoryRow[] = history
@@ -342,19 +383,43 @@ export default function ForecastPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <MonthEditor
-          month={thisMonth}
-          tag="This month"
-          forecast={forecastFor(thisMonth)}
-          onSaved={onSaved}
+      {/* Interactive year builder — drag each future month to build the forecast */}
+      {loading ? (
+        <div className="card p-6 text-sm text-muted">Loading your forecast…</div>
+      ) : (
+        <ForecastBuilder
+          monthKeys={MONTH_KEYS}
+          monthLabels={MONTH_LABELS}
+          actualsNetIncome={actualsNetIncome}
+          currentMonthIndex={currentMonthIndex}
+          savedForecasts={savedForecasts}
+          currentManaged={portfolio.managed}
+          avgFeePerProperty={avgFeePerProperty}
+          onSaved={load}
         />
-        <MonthEditor
-          month={nextMonth}
-          tag="Next month"
-          forecast={forecastFor(nextMonth)}
-          onSaved={onSaved}
-        />
+      )}
+
+      <div>
+        <h2 className="mb-2 text-base font-semibold">Detailed targets</h2>
+        <p className="mb-3 max-w-2xl text-[13px] text-muted">
+          Add the extra detail head office tracks for this month and next —
+          move-ins, MAs, and any notes. The GCI here stays in step with the
+          builder above.
+        </p>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <MonthEditor
+            month={thisMonth}
+            tag="This month"
+            forecast={forecastFor(thisMonth)}
+            onSaved={onSaved}
+          />
+          <MonthEditor
+            month={nextMonth}
+            tag="Next month"
+            forecast={forecastFor(nextMonth)}
+            onSaved={onSaved}
+          />
+        </div>
       </div>
 
       <div>

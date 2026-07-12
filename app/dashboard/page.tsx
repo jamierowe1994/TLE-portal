@@ -9,13 +9,11 @@ import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
-import { getUser } from "@/lib/session";
 import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
   ConversionStats,
   FunnelStats,
   StatValue,
-  UserProfile,
 } from "@/lib/types";
 import type {
   ComplianceAgentRow,
@@ -76,11 +74,6 @@ export default function MyDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [user, setUser] = useState<UserProfile | null>(null);
-
-  useEffect(() => {
-    setUser(getUser());
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,20 +163,14 @@ export default function MyDashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight">My Dashboard</h1>
-          <p className="mt-0.5 text-[13px] text-muted">
-            {user?.name ? `${user.name} · ` : ""}
-            {monthLabel(ANCHOR)}
-          </p>
-        </div>
-      </div>
-
       {/* Period selector — drives the earnings view below */}
-      <div>
-        <PeriodPicker value={period} onChange={setPeriod} />
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
+          Your month · {monthLabel(ANCHOR)}
+        </h1>
+        <div className="ml-auto">
+          <PeriodPicker value={period} onChange={setPeriod} />
+        </div>
       </div>
 
       {!loading && stats && !stats.agentKey ? (
