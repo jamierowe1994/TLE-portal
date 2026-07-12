@@ -6,7 +6,7 @@
 // block at any width (auto-fill grid) so nothing crushes. Layout persists per
 // browser. Figures come from GET /api/admin/overview (admin-gated).
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import StatCard from "@/components/StatCard";
 import FunnelBar from "@/components/charts/FunnelBar";
@@ -16,7 +16,29 @@ import Line from "@/components/charts/Line";
 import CustomizableGrid, { type DashBlock, type ViewType } from "@/components/CustomizableGrid";
 import type { SeedData } from "@/lib/seed-data";
 import type { StatValue } from "@/lib/types";
-import { monthLabel } from "@/lib/format";
+import { formatGBP, formatNum, monthLabel } from "@/lib/format";
+
+interface LiveBusiness {
+  month: string;
+  agentsCounted: number;
+  agentsTotal: number;
+  totals: { marketAppraisals: number; onMarketListings: number; pipeline: number; managed: number; rentRoll: number };
+  generatedAt: string;
+}
+
+function agoLabel(iso: string): string {
+  const then = new Date(iso).getTime();
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return "just now";
+  if (mins === 1) return "1 min ago";
+  if (mins < 60) return `${mins} mins ago`;
+  const h = Math.round(mins / 60);
+  return h === 1 ? "1 hour ago" : `${h} hours ago`;
+}
+
+function liveStat(value: number, display?: string): StatValue {
+  return { value, display, source: "live-rex", asOf: new Date().toISOString().slice(0, 10) };
+}
 
 interface OverviewPayload {
   month: string;
@@ -60,6 +82,8 @@ const num = (s: StatValue) => s.value ?? 0;
 export default function Overview({ month }: { month: string }) {
   const [data, setData] = useState<OverviewPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [live, setLive] = useState<LiveBusiness | null>(null);
+  const [liveState, setLiveState] = useState<"loading" | "ready" | "off" | "error">("loading");
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +102,33 @@ export default function Overview({ month }: { month: string }) {
       cancelled = true;
     };
   }, [month]);
+
+  // Live REX business aggregate — loaded in the background (heavy pull, cached).
+  const loadLive = useCallback(
+    async (refresh = false) => {
+      setLiveState("loading");
+      try {
+        const res = await fetch(
+          `/api/admin/live-business?month=${encodeURIComponent(month)}${refresh ? "&refresh=1" : ""}`,
+          { cache: "no-store" }
+        );
+        const j = await res.json();
+        if (j?.configured === false) {
+          setLiveState("off");
+          return;
+        }
+        setLive(j as LiveBusiness);
+        setLiveState("ready");
+      } catch {
+        setLiveState("error");
+      }
+    },
+    [month]
+  );
+
+  useEffect(() => {
+    void loadLive();
+  }, [loadLive]);
 
   const blocks = useMemo<DashBlock[]>(() => {
     if (!data) return [];
@@ -106,7 +157,73 @@ export default function Overview({ month }: { month: string }) {
       { label: "Lettings Lite", value: num(d.masByPartnerType.lettingsLite), color: "#9ca3af" },
     ];
 
+    const liveBlock: DashBlock = {
+      id: "liveBusiness",
+      title: "Live from REX",
+      defaultSpan: 4,
+      views: ["cards"] as const,
+      render: () => (
+        <div>
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-[13px] font-semibold uppercase tracking-wide">Live from REX — Business</h2>
+            {liveState === "ready" && live ? (
+              <span className="text-[11px] text-muted">
+                {live.agentsCounted} agents · updated {agoLabel(live.generatedAt)}
+              </span>
+            ) : null}
+            {liveState !== "off" ? (
+              <button
+                type="button"
+                onClick={() => void loadLive(true)}
+                disabled={liveState === "loading"}
+                className="hide-when-presenting ml-auto inline-flex items-center gap-1 rounded-lg border border-line bg-card px-2.5 py-1 text-[12px] font-medium text-muted transition hover:text-ink disabled:opacity-50"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M13 8a5 5 0 1 1-1.46-3.54M13 3v2.5h-2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {liveState === "loading" ? "Refreshing…" : "Refresh"}
+              </button>
+            ) : null}
+          </div>
+
+          {liveState === "off" ? (
+            <div className="card p-5 text-[13px] text-muted">
+              REX isn&apos;t connected on this server, so live business figures aren&apos;t available here.
+            </div>
+          ) : liveState === "error" ? (
+            <div className="card p-5 text-[13px] text-muted">
+              Couldn&apos;t reach REX just now.{" "}
+              <button className="accent-text underline" onClick={() => void loadLive(true)}>Try again</button>
+            </div>
+          ) : liveState === "loading" && !live ? (
+            <div className={CARD_GRID}>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="card h-24 animate-pulse" />
+              ))}
+            </div>
+          ) : live ? (
+            <>
+              <div className={CARD_GRID}>
+                <StatCard size="sm" label="Market Appraisals" stat={liveStat(live.totals.marketAppraisals)} sub={`${monthLabel(live.month).split(" ")[0]} so far`} />
+                <StatCard size="sm" label="On-market Listings" stat={liveStat(live.totals.onMarketListings)} sub="Taking viewings" />
+                <StatCard size="sm" label="Pipeline" stat={liveStat(live.totals.pipeline)} sub="Let agreed" />
+                <StatCard size="sm" label="Managed (REX)" stat={liveStat(live.totals.managed)} sub="Let & managed" />
+                <StatCard size="sm" label="Rent Roll (REX)" stat={liveStat(live.totals.rentRoll, formatGBP(live.totals.rentRoll))} sub="Per month" />
+              </div>
+              <p className="mt-2 text-[11px] text-muted">
+                Summed live from REX across {live.agentsCounted} lettings agents. Listings &amp; pipeline are live REX
+                figures. Managed &amp; rent roll are a REX cut and read lower than the PayProp portfolio report (Glasgow
+                and rent-collect properties aren&apos;t in this pull) — the PayProp figures below remain the official
+                totals until that integration lands.
+              </p>
+            </>
+          ) : null}
+        </div>
+      ),
+    };
+
     return [
+      liveBlock,
       {
         id: "headline",
         title: "Headline KPIs",
@@ -246,7 +363,7 @@ export default function Overview({ month }: { month: string }) {
         ),
       },
     ];
-  }, [data]);
+  }, [data, live, liveState, loadLive]);
 
   if (error) {
     return <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">{error}</p>;
@@ -273,7 +390,7 @@ export default function Overview({ month }: { month: string }) {
         <span className="text-muted">· hover any figure for detail</span>
       </div>
 
-      <CustomizableGrid blocks={blocks} storageKey="tle_admin_overview_v2" />
+      <CustomizableGrid blocks={blocks} storageKey="tle_admin_overview_v3" />
     </div>
   );
 }

@@ -177,6 +177,50 @@ export async function rexListAccountUsers(): Promise<unknown> {
   return res.result;
 }
 
+// Every account user, paging past Rex's 100-row search cap.
+async function rexAllAccountUsers(): Promise<Array<Record<string, unknown>>> {
+  const all: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < 1000; offset += 100) {
+    const res = await rexCall("AccountUsers", "search", { limit: 100, offset });
+    if (!res.ok) break;
+    const rows = rexRows(res.result);
+    all.push(...rows);
+    if (rows.length < 100) break;
+  }
+  return all;
+}
+
+// The lettings agents on the Rex account — everyone with a @thelettingexperts
+// email (excluding shared inboxes). Their Rex user ids are what we sum the
+// business-wide live stats over. Cached ~10 min.
+let lettingsAgentsCache: { at: number; agents: Array<{ id: string; email: string }> } | null = null;
+const LETTINGS_TTL_MS = 10 * 60 * 1000;
+
+export async function rexLettingsAgents(): Promise<Array<{ id: string; email: string }>> {
+  if (!rexConfigured()) return [];
+  if (lettingsAgentsCache && Date.now() - lettingsAgentsCache.at < LETTINGS_TTL_MS) {
+    return lettingsAgentsCache.agents;
+  }
+  const agents: Array<{ id: string; email: string }> = [];
+  const seen = new Set<string>();
+  try {
+    for (const r of await rexAllAccountUsers()) {
+      const email = String(r.email_address ?? r.email ?? "").trim().toLowerCase();
+      const id = String(r.id ?? r.user_id ?? "");
+      if (!id || seen.has(id)) continue;
+      if (!email.endsWith("@thelettingexperts.co.uk")) continue;
+      if (/^(info|support|no-?reply|admin|hello|accounts|hr)@/.test(email)) continue;
+      seen.add(id);
+      agents.push({ id, email });
+    }
+    lettingsAgentsCache = { at: Date.now(), agents };
+  } catch {
+    /* best-effort — return whatever we gathered (or the stale cache) */
+    if (lettingsAgentsCache) return lettingsAgentsCache.agents;
+  }
+  return agents;
+}
+
 // Auto-match a portal agent to their Rex user by EMAIL — the natural key,
 // since it's the same address they sign into Rex with. Best-effort: returns
 // null (never throws). Cached per account+email; note it caches null misses
