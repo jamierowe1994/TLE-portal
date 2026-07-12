@@ -53,14 +53,23 @@ function monthRange(month: string): { start: string; end: string } | null {
   return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${String(lastDay).padStart(2, "0")}` };
 }
 
-// Count rows a search returns, or null on any failure. Rex caps at COUNT_LIMIT.
-async function countSearch(service: string, criteria: Criterion[]): Promise<number | null> {
+// Rows a search returns, or null on any failure. Rex caps at COUNT_LIMIT.
+async function searchRows(
+  service: string,
+  criteria: Criterion[]
+): Promise<Array<Record<string, unknown>> | null> {
   try {
     const res = await rexCall(service, "search", { criteria, limit: COUNT_LIMIT });
-    return res.ok ? rexRows(res.result).length : null;
+    return res.ok ? rexRows(res.result) : null;
   } catch {
     return null;
   }
+}
+
+// Count rows a search returns, or null on any failure.
+async function countSearch(service: string, criteria: Criterion[]): Promise<number | null> {
+  const rows = await searchRows(service, criteria);
+  return rows ? rows.length : null;
 }
 
 async function probeCapabilities(): Promise<CapsCache> {
@@ -169,6 +178,7 @@ export async function getAgentFunnel(
     const out: Partial<FunnelStats> = {};
     const asOf = new Date().toISOString().slice(0, 10);
 
+    // Market appraisals — appraisals dated within the month.
     if (caps.capabilities.appraisals) {
       const maCount = await countSearch("Appraisals", [
         { name: "agent_1_id", type: "=", value: rexUserId },
@@ -180,6 +190,32 @@ export async function getAgentFunnel(
           value: maCount,
           source: "live-rex",
           note: `Live count from REX Appraisals (agent_1_id, appraisal_date in ${month}).`,
+          asOf,
+        };
+      }
+    }
+
+    // Listings + pipeline — one pull of the agent's on-market ("current")
+    // listings, split by let_agreed. These are CURRENT-state counts (properties
+    // on the market / deals agreed right now), not month-bound. Move-ins are
+    // deliberately NOT pulled — they live in PayProp, not REX.
+    if (caps.capabilities.listings) {
+      const rows = await searchRows("Listings", [
+        { name: "listing_agent_1_id", type: "=", value: rexUserId },
+        { name: "system_listing_state", type: "=", value: "current" },
+      ]);
+      if (rows) {
+        const letAgreed = rows.filter((r) => r.let_agreed === true).length;
+        out.listings = {
+          value: rows.length - letAgreed,
+          source: "live-rex",
+          note: "Live: properties on the market now (REX 'current' listings, excluding let-agreed).",
+          asOf,
+        };
+        out.pipeline = {
+          value: letAgreed,
+          source: "live-rex",
+          note: "Live: let agreed, awaiting completion (REX 'current' listings flagged let_agreed).",
           asOf,
         };
       }

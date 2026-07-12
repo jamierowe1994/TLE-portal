@@ -324,11 +324,16 @@ export default function MyDashboardPage() {
                 label="Move-ins"
                 stat={snapStat(stats.moveIns.length, "From your move-in list", formatNum(stats.moveIns.length))}
               />
-              <StatCard
-                label="Pipeline"
-                stat={snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length))}
-                sub={pipelineRentPcm > 0 ? `${formatGBP(pipelineRentPcm)} pcm` : undefined}
-              />
+              {/* Pipeline: prefer the live REX count (let-agreed) over the snapshot rows. */}
+              {stats.funnel.pipeline?.value != null ? (
+                <StatCard label="Pipeline" stat={stats.funnel.pipeline} sub="Let agreed, awaiting completion" />
+              ) : (
+                <StatCard
+                  label="Pipeline"
+                  stat={snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length))}
+                  sub={pipelineRentPcm > 0 ? `${formatGBP(pipelineRentPcm)} pcm` : undefined}
+                />
+              )}
             </div>
           </section>
 
