@@ -44,6 +44,7 @@ interface UserRow extends Record<string, unknown> {
   rex_user_id: string | null;
   meta_campaign_id: string | null;
   location: string | null;
+  ads_connected: boolean | null;
   admin_notes: AdminNote[] | null;
   created_at: string | Date;
   password_hash: string;
@@ -60,6 +61,7 @@ function rowToUser(row: UserRow): StoredUser {
     rexUserId: row.rex_user_id,
     metaCampaignId: row.meta_campaign_id,
     location: row.location,
+    adsConnected: !!row.ads_connected,
     createdAt: new Date(row.created_at).toISOString(),
     passwordHash: row.password_hash,
     adminNotes: Array.isArray(row.admin_notes) ? row.admin_notes : [],
@@ -119,8 +121,8 @@ export async function createUser(user: StoredUser): Promise<void> {
     await q(
       `INSERT INTO users
         (id, name, email, mobile, photo, agent_key, rex_user_id,
-         meta_campaign_id, location, admin_notes, created_at, password_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+         meta_campaign_id, location, admin_notes, created_at, password_hash, ads_connected)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         record.id,
         record.name,
@@ -134,6 +136,7 @@ export async function createUser(user: StoredUser): Promise<void> {
         JSON.stringify(record.adminNotes ?? []),
         record.createdAt,
         record.passwordHash,
+        record.adsConnected ?? false,
       ]
     );
     return;
@@ -163,7 +166,7 @@ export async function updateUser(
       `UPDATE users SET
          name = $2, mobile = $3, photo = $4, agent_key = $5, rex_user_id = $6,
          meta_campaign_id = $7, location = $8, admin_notes = $9,
-         password_hash = $10
+         password_hash = $10, ads_connected = $11
        WHERE id = $1`,
       [
         merged.id,
@@ -176,6 +179,7 @@ export async function updateUser(
         merged.location,
         JSON.stringify(merged.adminNotes ?? []),
         merged.passwordHash,
+        merged.adsConnected ?? false,
       ]
     );
     return merged;

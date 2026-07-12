@@ -49,6 +49,7 @@ export interface UserProfile {     // port of TEG shape, trimmed to TLE needs
   rexUserId: string | null;        // admin-set — REX AccountUsers id
   metaCampaignId: string | null;   // admin-set — Meta campaign id for their ads
   location: string | null;
+  adsConnected?: boolean;          // agent linked their ads to the Ads app (My Ads)
   isAdmin?: boolean;               // derived server-side from ADMIN_EMAILS; never stored
   createdAt: string;
 }

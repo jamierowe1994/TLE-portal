@@ -46,8 +46,10 @@ CREATE TABLE IF NOT EXISTS users (
   location         TEXT,
   admin_notes      JSONB NOT NULL DEFAULT '[]',
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  password_hash    TEXT NOT NULL
+  password_hash    TEXT NOT NULL,
+  ads_connected    BOOLEAN NOT NULL DEFAULT FALSE
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ads_connected BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS forecasts (
   user_id          TEXT NOT NULL,
