@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import BrandMark from "@/components/BrandMark";
+import TimescaleSelect from "@/components/TimescaleSelect";
 import { getUser } from "@/lib/session";
 import { formatGBP, formatNum, formatPct } from "@/lib/format";
 
@@ -9,10 +10,10 @@ import { formatGBP, formatNum, formatPct } from "@/lib/format";
 // shows a campaign overview (spend + key metrics) and a compact tile per ad.
 
 const PRESETS = [
-  { id: "last_7d", label: "7 days" },
-  { id: "last_14d", label: "14 days" },
-  { id: "last_30d", label: "30 days" },
-  { id: "last_90d", label: "90 days" },
+  { id: "this_month", label: "This month" },
+  { id: "last_30d", label: "Last 30 days" },
+  { id: "last_60d", label: "Last 60 days" },
+  { id: "last_90d", label: "Last 90 days" },
 ] as const;
 
 interface AdRow {
@@ -70,7 +71,7 @@ function OverviewStat({ label, value, sub }: { label: string; value: string; sub
 }
 
 export default function MyAdsPage() {
-  const [preset, setPreset] = useState<string>("last_30d");
+  const [preset, setPreset] = useState<string>("this_month");
   const [data, setData] = useState<AdsResponse | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -155,19 +156,7 @@ export default function MyAdsPage() {
         </div>
         {connected && data?.configured ? (
           <div className="ml-auto flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-line bg-card p-1">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setPreset(p.id)}
-                  className={`rounded-md px-2.5 py-1 text-[12px] font-medium transition ${
-                    preset === p.id ? "accent-soft-bg accent-text" : "text-muted hover:text-ink"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            <TimescaleSelect value={preset} options={PRESETS} onChange={setPreset} disabled={loading} />
             <button
               onClick={() => void disconnect()}
               className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-[12px] font-medium text-muted hover:text-ink"
