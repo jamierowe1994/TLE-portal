@@ -5,8 +5,8 @@
       "name": "tle-portal",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3000,
-      "autoPort": true
+      "port": 3100,
+      "autoPort": false
     }
   ]
 }
