@@ -37,11 +37,16 @@ interface StatsResponse {
   agentKey: string | null;
   funnel: FunnelStats;
   conversions: ConversionStats;
+  portfolio: { managed: StatValue; rentRoll: StatValue };
   moveIns: MoveInRow[];
   pipeline: PipelineRow[];
   compliance: ComplianceAgentRow | null;
   netIncomeYtd: PartnerNetIncomeRow | null;
 }
+
+// Standard management fee assumption for the estimated-income figure. TLE bills
+// ~9% of rent (inc RLP); the agent's final share is confirmed with head office.
+const MGMT_FEE_RATE = 0.09;
 
 interface ForecastResponse {
   month: string;
@@ -289,27 +294,81 @@ export default function MyDashboardPage() {
               </div>
             </div>
 
-            <div className="card flex flex-col justify-between p-6">
-              <div>
-                <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                  Your target · {monthLabel(forecastMonth)}
+            {(() => {
+              const managed = stats.portfolio.managed.value ?? 0;
+              const onMarket = stats.funnel.listings?.value ?? 0;
+              const letAgreed = stats.funnel.pipeline?.value ?? 0;
+              const total = managed + onMarket + letAgreed || 1;
+              const rentRoll = stats.portfolio.rentRoll.value;
+              const estFees = rentRoll != null ? rentRoll * MGMT_FEE_RATE : null;
+              const seg = [
+                { label: "Managed", value: managed, color: "#e31f36" },
+                { label: "On market", value: onMarket, color: "#111827" },
+                { label: "Let agreed", value: letAgreed, color: "#9ca3af" },
+              ];
+              return (
+                <div className="card flex flex-col p-6">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                      Your portfolio
+                    </div>
+                    <SourceBadge
+                      source={stats.portfolio.managed.source}
+                      note={stats.portfolio.managed.note}
+                      asOf={stats.portfolio.managed.asOf}
+                    />
+                  </div>
+                  <div className="mt-1 flex items-end gap-3">
+                    <div className="stat-value stat-value--big">
+                      {stats.portfolio.managed.value != null ? formatNum(stats.portfolio.managed.value) : "—"}
+                    </div>
+                    <div className="pb-2 text-[12px] leading-tight text-muted">
+                      managed
+                      <br />
+                      properties
+                    </div>
+                  </div>
+
+                  {/* composition bar */}
+                  <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-page">
+                    {seg.map((s) =>
+                      s.value > 0 ? (
+                        <div
+                          key={s.label}
+                          style={{ width: `${(s.value / total) * 100}%`, background: s.color }}
+                          title={`${s.label}: ${s.value}`}
+                        />
+                      ) : null
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                    {seg.map((s) => (
+                      <span key={s.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted">
+                        <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+                        {s.label} <span className="font-semibold text-ink tnum">{s.value}</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* rent roll + estimated fees */}
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4">
+                    <div>
+                      <div className="stat-value text-[20px]">{stats.portfolio.rentRoll.display ?? "—"}</div>
+                      <div className="mt-0.5 text-[11px] text-muted">Rent roll / month</div>
+                    </div>
+                    <div>
+                      <div className="stat-value text-[20px]">{estFees != null ? formatGBP(estFees) : "—"}</div>
+                      <div
+                        className="mt-0.5 text-[11px] text-muted"
+                        title="Estimated at ~9% of rent roll — the actual management fee and your share are confirmed with head office."
+                      >
+                        Est. fees / month · ~9%
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="stat-value mt-1">{savedTarget != null ? formatGBP(savedTarget) : "—"}</div>
-                <div className="mt-1 text-xs text-muted">
-                  {savedTarget != null ? "Set by you — drag the graph to change it" : "Set one on the graph below"}
-                </div>
-              </div>
-              <div className="mt-4 flex items-end gap-6 border-t border-line pt-4">
-                <div>
-                  <div className="stat-value text-[22px]">{formatNum(stats.pipeline.length)}</div>
-                  <div className="mt-0.5 text-xs text-muted">In your pipeline</div>
-                </div>
-                <div>
-                  <div className="stat-value text-[22px]">{pipelineRentPcm > 0 ? formatGBP(pipelineRentPcm) : "—"}</div>
-                  <div className="mt-0.5 text-xs text-muted">Rent pcm in play</div>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
           </section>
 
           {/* ---- THE BASICS ---- */}

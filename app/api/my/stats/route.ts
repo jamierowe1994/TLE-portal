@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
-import { getAgentFunnel } from "@/lib/rex-stats";
+import { getAgentFunnel, getAgentPortfolio } from "@/lib/rex-stats";
 import { getAgentMetaStats } from "@/lib/meta";
 import { getOverrides } from "@/lib/actuals-store";
 import { resolveStat, pct, type ManualOverride } from "@/lib/stats";
@@ -11,6 +11,7 @@ import {
   agentPipeline,
   agentCompliance,
   agentNetIncomeYtd,
+  agentPortfolio,
   SNAPSHOT_DATE,
 } from "@/lib/seed-data";
 import { formatGBP, formatPct, currentMonth } from "@/lib/format";
@@ -120,10 +121,13 @@ export async function GET(req: NextRequest) {
     monthParam && MONTH_RE.test(monthParam) ? monthParam : currentMonth();
   const agentKey = user.agentKey;
 
-  // Gather the three layers in parallel — each one degrades to null/[] alone.
-  const [live, meta, overrides] = await Promise.all([
+  // Gather the layers in parallel — each one degrades to null/[] alone.
+  const [live, livePortfolio, meta, overrides] = await Promise.all([
     user.rexUserId
       ? getAgentFunnel(user.rexUserId, month).catch(() => null)
+      : Promise.resolve(null),
+    user.rexUserId
+      ? getAgentPortfolio(user.rexUserId).catch(() => null)
       : Promise.resolve(null),
     getAgentMetaStats(user).catch(() => ({ configured: false as const })),
     getOverrides(month).catch(() => [] as ActualOverride[]),
@@ -208,11 +212,48 @@ export async function GET(req: NextRequest) {
     };
   }
 
+  // ---- Portfolio (managed properties + monthly rent roll) ----
+  // Live REX (leased listings) → snapshot PayProp figures.
+  const snapPortfolio = agentKey ? agentPortfolio(agentKey) : null;
+  const portfolio = {
+    managed:
+      livePortfolio != null
+        ? ({
+            value: livePortfolio.managed,
+            source: "live-rex",
+            note: "Live count of your managed (let) properties in REX.",
+            asOf: new Date().toISOString().slice(0, 10),
+          } as StatValue)
+        : ({
+            value: snapPortfolio?.managed ?? null,
+            source: "snapshot",
+            note: "Managed properties from the PayProp portfolio snapshot.",
+            asOf: SNAPSHOT_DATE,
+          } as StatValue),
+    rentRoll:
+      livePortfolio != null
+        ? ({
+            value: livePortfolio.rentRoll,
+            display: formatGBP(livePortfolio.rentRoll),
+            source: "live-rex",
+            note: "Live monthly rent roll (sum of rent across your let properties in REX).",
+            asOf: new Date().toISOString().slice(0, 10),
+          } as StatValue)
+        : ({
+            value: snapPortfolio?.rentRoll ?? null,
+            display: snapPortfolio ? formatGBP(snapPortfolio.rentRoll) : undefined,
+            source: "snapshot",
+            note: "Monthly rent roll from the PayProp portfolio snapshot.",
+            asOf: SNAPSHOT_DATE,
+          } as StatValue),
+  };
+
   return NextResponse.json({
     month,
     agentKey,
     funnel,
     conversions,
+    portfolio,
     moveIns: agentKey ? agentMoveIns(agentKey) : [],
     pipeline: agentKey ? agentPipeline(agentKey) : [],
     compliance: agentKey ? agentCompliance(agentKey) : null,

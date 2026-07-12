@@ -33,6 +33,11 @@ export interface RexStatus {
   checkedAt?: string;
 }
 
+export interface AgentPortfolio {
+  managed: number; // properties this agent has let & manages (REX "leased")
+  rentRoll: number; // £/month — sum of monthly rent across those properties
+}
+
 interface CapsCache {
   checkedAt: number;
   capabilities: Record<string, boolean>;
@@ -228,6 +233,39 @@ export async function getAgentFunnel(
     setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
   );
 
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
+// The agent's managed portfolio (count + monthly rent roll) from their leased
+// listings. Live, current-state. null on any failure → caller keeps snapshot.
+export async function getAgentPortfolio(rexUserId: string): Promise<AgentPortfolio | null> {
+  if (!rexConfigured() || !rexUserId) return null;
+
+  const work = (async (): Promise<AgentPortfolio | null> => {
+    const caps = await getCapabilities();
+    if (!caps.capabilities.login || !caps.capabilities.listings) return null;
+
+    const rows = await searchRows("Listings", [
+      { name: "listing_agent_1_id", type: "=", value: rexUserId },
+      { name: "system_listing_state", type: "=", value: "leased" },
+    ]);
+    if (!rows) return null;
+
+    let rentRoll = 0;
+    for (const r of rows) {
+      const rent = Number(r.price_rent);
+      if (Number.isFinite(rent) && rent > 0) rentRoll += rent;
+    }
+    return { managed: rows.length, rentRoll };
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
   try {
     return await Promise.race([work, deadline]);
   } catch {

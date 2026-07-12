@@ -275,12 +275,40 @@ function UserRow({
 
 /* --------------------------------- tab --------------------------------- */
 
+interface LivePayload {
+  month: string;
+  linkedCount: number;
+  totalAgents: number;
+  totals: { marketAppraisals: number; listings: number; pipeline: number; managed: number; rentRoll: number };
+}
+
 export default function Agents({ month, seed }: { month: string; seed: SeedData }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [forecastRows, setForecastRows] = useState<AdminForecastRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [live, setLive] = useState<LivePayload | null>(null);
+  const [liveLoading, setLiveLoading] = useState(true);
+
+  // Live REX totals across linked agents — separate from the fast seed render
+  // because it fans out several REX calls (cached server-side for 3 min).
+  useEffect(() => {
+    let cancelled = false;
+    setLiveLoading(true);
+    fetch(`/api/admin/live-funnel?month=${encodeURIComponent(month)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled) setLive(d);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLiveLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -374,8 +402,57 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
 
   const num = (v: unknown) => formatNum(v as number | null);
 
+  const liveCards = live
+    ? [
+        { label: "Market appraisals", value: formatNum(live.totals.marketAppraisals), sub: monthLabel(month) },
+        { label: "On-market listings", value: formatNum(live.totals.listings), sub: "Currently listed" },
+        { label: "Pipeline", value: formatNum(live.totals.pipeline), sub: "Let agreed" },
+        { label: "Managed properties", value: formatNum(live.totals.managed), sub: "Let & managed" },
+        { label: "Rent roll / month", value: formatGBP(live.totals.rentRoll), sub: "Under management" },
+      ]
+    : [];
+
   return (
     <div>
+      {/* ----------------------- live REX totals ----------------------- */}
+      <SectionTitle>Live from REX</SectionTitle>
+      {liveLoading && !live ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="card h-24 animate-pulse" />
+          ))}
+        </div>
+      ) : live && live.linkedCount > 0 ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {liveCards.map((c) => (
+              <div key={c.label} className="card relative p-4">
+                <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> LIVE
+                </span>
+                <div className="stat-label pr-12 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  {c.label}
+                </div>
+                <div className="stat-value mt-2 text-[24px]">{c.value}</div>
+                <div className="mt-1 text-[11px] text-muted">{c.sub}</div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted">
+            Live from REX across{" "}
+            <span className="font-semibold text-ink">
+              {live.linkedCount} of {live.totalAgents}
+            </span>{" "}
+            agents linked to a REX id. Link more accounts below to grow the live figures.
+          </p>
+        </>
+      ) : (
+        <p className="rounded-xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
+          No agents are linked to a REX id yet. Set an agent&rsquo;s REX id in the accounts below and
+          their live appraisals, listings, pipeline and portfolio will roll up here.
+        </p>
+      )}
+
       {/* ----------------------- per-agent KPI table ----------------------- */}
       <SectionTitle source={seed.agentKpisJulyMtd.source}>
         Per-Agent KPIs — July MTD
