@@ -1,33 +1,36 @@
 import "server-only";
 import type { FunnelStats } from "./types";
-import { rexCall, rexConfigured, rexRows } from "./rex";
+import { rexCall, rexRows, rexConfigured } from "./rex";
 
-// Best-effort per-agent funnel stats from REX — NEW for the TLE portal.
+// Per-agent funnel stats from REX — live pulls confirmed against the live
+// account (3517, "The Property Experts" — Property + Lettings share it) via the
+// admin probe on 12 Jul 2026.
 //
-// TEG never read stats out of Rex (it only pushed leads in), so none of the
-// reporting endpoints here are confirmed against the live account. This module
-// therefore works by CAPABILITY DISCOVERY: on first use it probes what the
-// account actually answers (login, AccountUsers/search, Leads/search with a
-// date-range criteria, describeModel on plausible reporting services) and
-// records a boolean per capability for the admin diagnostics panel.
+// Confirmed working (named-object criteria: { name, type, value }):
+//   • Market appraisals — Appraisals/search, agent_1_id + appraisal_date range
+//   • Listings          — Listings/search, listing_agent_1_id (date field TBC)
+//   • Leads             — Leads/search, lead.assignee_id + system_ctime
+// Only marketAppraisals is wired below (date semantics fully validated:
+// Rhiannon's July = 0, matching the Base44 snapshot). Listings / viewings /
+// applications / move-ins stay on the snapshot until we agree which REX date
+// field defines "in this month" for each — then they drop in here the same way.
 //
-// ABSOLUTE RULES (contract with every caller):
-//   • never throw — any failure returns null so callers fall back to the
-//     Base44 snapshot via resolveStat();
-//   • never block a page: every underlying rexCall is AbortController-timed
-//     (8s, in lib/rex.ts) AND getAgentFunnel races an overall 8s deadline;
-//   • return ONLY stats we could truly compute — everything else stays
-//     undefined in the Partial<FunnelStats>.
+// CONTRACT: never throw (return null → caller falls back to snapshot); never
+// block a page (every rexCall is 8s-AbortController-timed + an overall 8s race);
+// return ONLY stats we could truly compute.
 
-const CAPS_TTL_MS = 10 * 60 * 1000; // re-probe capabilities every ~10 min
+const CAPS_TTL_MS = 10 * 60 * 1000;
 const OVERALL_DEADLINE_MS = 8_000;
+const COUNT_LIMIT = 100; // REX hard-caps the default result format at 100 rows
+
+type Criterion = { name: string; type: string; value: string };
 
 export interface RexStatus {
   ok: boolean;
-  reason?: string; // "not-configured" when env creds are missing
+  reason?: string;
   capabilities: Record<string, boolean>;
   lastError?: string;
-  checkedAt?: string; // ISO — when the capability probe last ran
+  checkedAt?: string;
 }
 
 interface CapsCache {
@@ -39,7 +42,6 @@ interface CapsCache {
 let capsCache: CapsCache | null = null;
 let capsInFlight: Promise<CapsCache> | null = null;
 
-// First / last day of a "YYYY-MM" month as "YYYY-MM-DD" strings.
 function monthRange(month: string): { start: string; end: string } | null {
   const m = /^(\d{4})-(\d{2})$/.exec(month);
   if (!m) return null;
@@ -51,17 +53,26 @@ function monthRange(month: string): { start: string; end: string } | null {
   return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${String(lastDay).padStart(2, "0")}` };
 }
 
+// Count rows a search returns, or null on any failure. Rex caps at COUNT_LIMIT.
+async function countSearch(service: string, criteria: Criterion[]): Promise<number | null> {
+  try {
+    const res = await rexCall(service, "search", { criteria, limit: COUNT_LIMIT });
+    return res.ok ? rexRows(res.result).length : null;
+  } catch {
+    return null;
+  }
+}
+
 async function probeCapabilities(): Promise<CapsCache> {
   const capabilities: Record<string, boolean> = {
     login: false,
     accountUsers: false,
-    leadsSearch: false,
-    listingsModel: false,
-    appraisalsModel: false,
+    appraisals: false,
+    listings: false,
+    leads: false,
   };
   let lastError: string | undefined;
 
-  // (a) Does login work? Cheapest authenticated read we know is confirmed.
   try {
     const res = await rexCall("UserProfile", "getAccessibleAccounts", {});
     capabilities.login = res.ok;
@@ -71,43 +82,31 @@ async function probeCapabilities(): Promise<CapsCache> {
   }
 
   if (capabilities.login) {
-    // (b) AccountUsers/search — needed to map portal users to Rex users.
-    try {
-      const res = await rexCall("AccountUsers", "search", { limit: 1 });
-      capabilities.accountUsers = res.ok;
-      if (!res.ok && !lastError) lastError = res.error ?? undefined;
-    } catch (e) {
-      if (!lastError) lastError = e instanceof Error ? e.message : "AccountUsers probe failed";
-    }
-
-    // (c) Leads/search with a created-date-range criteria — the read side of
-    // Rex Leads was never confirmed in TEG; an envelope error marks it false.
-    try {
-      const range = monthRange(new Date().toISOString().slice(0, 7))!;
-      const res = await rexCall("Leads", "search", {
-        criteria: [
-          ["system_ctime", ">=", range.start],
-          ["system_ctime", "<=", range.end],
-        ],
-        limit: 1,
-      });
-      capabilities.leadsSearch = res.ok;
-      if (!res.ok && !lastError) lastError = res.error ?? undefined;
-    } catch (e) {
-      if (!lastError) lastError = e instanceof Error ? e.message : "Leads probe failed";
-    }
-
-    // (d) describeModel on plausible reporting services — purely recorded as
-    // capability booleans so the diagnostics panel shows what exists.
-    for (const [cap, model] of [
-      ["listingsModel", "Listings"],
-      ["appraisalsModel", "Appraisals"],
-    ] as const) {
+    const checks: Array<[string, () => Promise<boolean>]> = [
+      ["accountUsers", async () => (await rexCall("AccountUsers", "search", { limit: 1 })).ok],
+      [
+        "appraisals",
+        async () =>
+          (await rexCall("Appraisals", "search", {
+            criteria: [{ name: "appraisal_date", type: ">=", value: "2000-01-01" }],
+            limit: 1,
+          })).ok,
+      ],
+      ["listings", async () => (await rexCall("Listings", "search", { limit: 1 })).ok],
+      [
+        "leads",
+        async () =>
+          (await rexCall("Leads", "search", {
+            criteria: [{ name: "system_ctime", type: ">=", value: "2000-01-01" }],
+            limit: 1,
+          })).ok,
+      ],
+    ];
+    for (const [cap, fn] of checks) {
       try {
-        const res = await rexCall(model, "describeModel", {});
-        capabilities[cap] = res.ok;
+        capabilities[cap] = await fn();
       } catch {
-        /* recorded as false */
+        /* recorded false */
       }
     }
   }
@@ -130,8 +129,6 @@ async function getCapabilities(): Promise<CapsCache> {
   return capsInFlight;
 }
 
-// Integration status for the admin diagnostics panel. Instant when creds are
-// missing; otherwise runs (or reuses) the capability probe. Never throws.
 export async function getRexStatus(): Promise<RexStatus> {
   if (!rexConfigured()) {
     return { ok: false, reason: "not-configured", capabilities: {} };
@@ -153,44 +150,10 @@ export async function getRexStatus(): Promise<RexStatus> {
   }
 }
 
-// Count Rex lead records assigned to one agent inside a month. Field names on
-// the Leads model are UNCONFIRMED — we try a couple of plausible criteria
-// shapes and give up quietly. Returns null when nothing worked.
-async function countAgentLeads(
-  rexUserId: string,
-  start: string,
-  end: string
-): Promise<number | null> {
-  const criteriaShapes: Array<Array<[string, string, string]>> = [
-    [
-      ["assignee_id", "=", rexUserId],
-      ["system_ctime", ">=", start],
-      ["system_ctime", "<=", end],
-    ],
-    [
-      ["lead.assignee_id", "=", rexUserId],
-      ["system_ctime", ">=", start],
-      ["system_ctime", "<=", end],
-    ],
-  ];
-  for (const criteria of criteriaShapes) {
-    try {
-      const res = await rexCall("Leads", "search", { criteria, limit: 100 });
-      if (res.ok) return rexRows(res.result).length;
-    } catch {
-      /* try the next shape */
-    }
-  }
-  return null;
-}
-
 // Best-effort live funnel for one agent + month ("YYYY-MM"). Returns a
-// Partial<FunnelStats> containing ONLY stats we could genuinely compute —
-// initially that is at most an MA-request count from Leads/search (a Rex Lead
-// on the lettings account IS a market-appraisal request; TEG pushes them with
-// lead_type "appraisal_request"). Everything unknowable stays undefined so
-// resolveStat() falls back to manual/snapshot values. NEVER throws; NEVER
-// takes longer than ~8s (races an overall deadline on top of per-call aborts).
+// Partial<FunnelStats> with ONLY the stats we could genuinely compute — today
+// that is marketAppraisals from the Appraisals service. Everything else stays
+// undefined so the caller keeps the snapshot. Never throws; never > ~8s.
 export async function getAgentFunnel(
   rexUserId: string,
   month: string
@@ -201,22 +164,28 @@ export async function getAgentFunnel(
 
   const work = (async (): Promise<Partial<FunnelStats> | null> => {
     const caps = await getCapabilities();
-    if (!caps.capabilities.login || !caps.capabilities.leadsSearch) return null;
+    if (!caps.capabilities.login) return null;
 
-    const leadCount = await countAgentLeads(rexUserId, range.start, range.end);
-    if (leadCount == null) return null;
+    const out: Partial<FunnelStats> = {};
+    const asOf = new Date().toISOString().slice(0, 10);
 
-    const out: Partial<FunnelStats> = {
-      marketAppraisals: {
-        value: leadCount,
-        source: "live-rex",
-        note:
-          "Live count of REX lead records (MA requests) assigned to this agent " +
-          `in ${month} — best-effort pull; verify against REX reporting.`,
-        asOf: new Date().toISOString().slice(0, 10),
-      },
-    };
-    return out;
+    if (caps.capabilities.appraisals) {
+      const maCount = await countSearch("Appraisals", [
+        { name: "agent_1_id", type: "=", value: rexUserId },
+        { name: "appraisal_date", type: ">=", value: range.start },
+        { name: "appraisal_date", type: "<=", value: range.end },
+      ]);
+      if (maCount != null) {
+        out.marketAppraisals = {
+          value: maCount,
+          source: "live-rex",
+          note: `Live count from REX Appraisals (agent_1_id, appraisal_date in ${month}).`,
+          asOf,
+        };
+      }
+    }
+
+    return Object.keys(out).length ? out : null;
   })();
 
   const deadline = new Promise<null>((resolve) =>
