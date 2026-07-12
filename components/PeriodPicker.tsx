@@ -80,6 +80,15 @@ function CalendarIcon() {
     </svg>
   );
 }
+function MonthIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M2 6h12M5.5 2v2M10.5 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <rect x="4.5" y="8" width="2.4" height="2.4" rx="0.5" fill="currentColor" />
+    </svg>
+  );
+}
 function Chevron({ open }: { open?: boolean }) {
   return (
     <svg
@@ -107,26 +116,26 @@ export default function PeriodPicker({
   const [selectedMonth, setSelectedMonth] = useState(ANCHOR);
   const [from, setFrom] = useState("2026-04");
   const [to, setTo] = useState(ANCHOR);
-  const [open, setOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<"preset" | "month" | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
-  const box1 = useRef<HTMLDivElement | null>(null);
+  const wrap = useRef<HTMLDivElement | null>(null);
 
-  // Close the presets menu on any outside click.
+  // Close whichever dropdown is open on any outside click.
   useEffect(() => {
-    if (!open) return;
+    if (!openMenu) return;
     const onDown = (e: PointerEvent) => {
-      if (box1.current && !box1.current.contains(e.target as Node)) setOpen(false);
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpenMenu(null);
     };
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
-  }, [open]);
+  }, [openMenu]);
 
   const presetLabel = PRESET_MENU.find((p) => p.key === presetKey)?.label ?? "This month";
 
   function pickPreset(k: string) {
     setPresetKey(k);
     setMode("preset");
-    setOpen(false);
+    setOpenMenu(null);
     setCustomOpen(false);
     onChange(resolvePreset(k));
   }
@@ -134,6 +143,7 @@ export default function PeriodPicker({
   function pickMonth(m: string) {
     setSelectedMonth(m);
     setMode("month");
+    setOpenMenu(null);
     setCustomOpen(false);
     onChange({ key: "by-month", label: monthLabel(m), months: [m], forecastMonth: m });
   }
@@ -148,18 +158,28 @@ export default function PeriodPicker({
     });
   }
 
+  const check = (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 8.5l3.5 3.5L13 5" stroke="#e31f36" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div ref={wrap} className="flex flex-wrap items-center gap-2">
         {/* Box 1 — preset dropdown */}
-        <div className="relative" ref={box1}>
-          <button type="button" className={boxClass(mode === "preset")} onClick={() => setOpen((o) => !o)}>
+        <div className="relative">
+          <button
+            type="button"
+            className={boxClass(mode === "preset")}
+            onClick={() => setOpenMenu((m) => (m === "preset" ? null : "preset"))}
+          >
             <CalendarIcon />
             <span>{presetLabel}</span>
-            <Chevron open={open} />
+            <Chevron open={openMenu === "preset"} />
           </button>
-          {open ? (
-            <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 min-w-[184px] rounded-xl border border-line bg-card p-1 shadow-lg">
+          {openMenu === "preset" ? (
+            <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 min-w-[188px] rounded-xl border border-line bg-card p-1 shadow-lg">
               {PRESET_MENU.map((p) => (
                 <button
                   key={p.key}
@@ -168,36 +188,39 @@ export default function PeriodPicker({
                   className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
                 >
                   {p.label}
-                  {mode === "preset" && presetKey === p.key ? (
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M3 8.5l3.5 3.5L13 5" stroke="#e31f36" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  ) : null}
+                  {mode === "preset" && presetKey === p.key ? check : null}
                 </button>
               ))}
             </div>
           ) : null}
         </div>
 
-        {/* Box 2 — by month */}
-        <div className={`relative ${boxClass(mode === "month")} pr-2`}>
-          <span className="pointer-events-none">{mode === "month" ? monthLabel(selectedMonth) : "By month"}</span>
-          <Chevron />
-          <select
-            value={mode === "month" ? selectedMonth : ""}
-            onChange={(e) => e.target.value && pickMonth(e.target.value)}
-            aria-label="Jump to a month"
-            className="absolute inset-0 cursor-pointer opacity-0"
+        {/* Box 2 — by month (custom dropdown, mirrors Box 1) */}
+        <div className="relative">
+          <button
+            type="button"
+            className={boxClass(mode === "month")}
+            onClick={() => setOpenMenu((m) => (m === "month" ? null : "month"))}
           >
-            <option value="" disabled>
-              By month…
-            </option>
-            {ALL_MONTHS.map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-              </option>
-            ))}
-          </select>
+            <MonthIcon />
+            <span>{mode === "month" ? monthLabel(selectedMonth) : "By month"}</span>
+            <Chevron open={openMenu === "month"} />
+          </button>
+          {openMenu === "month" ? (
+            <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 max-h-64 min-w-[184px] overflow-y-auto rounded-xl border border-line bg-card p-1 shadow-lg">
+              {ALL_MONTHS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => pickMonth(m)}
+                  className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
+                >
+                  {monthLabel(m)}
+                  {mode === "month" && selectedMonth === m ? check : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
