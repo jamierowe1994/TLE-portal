@@ -17,6 +17,7 @@ interface ForecastRow extends Record<string, unknown> {
   user_id: string;
   month: string;
   gci_target: string | number | null;   // NUMERIC comes back as string from pg
+  portfolio_target: string | number | null;
   move_ins_target: string | number | null;
   ma_target: string | number | null;
   notes: string | null;
@@ -34,6 +35,7 @@ function rowToForecast(row: ForecastRow): AgentForecast {
     userId: row.user_id,
     month: row.month,
     gciTarget: toNum(row.gci_target),
+    portfolioTarget: toNum(row.portfolio_target),
     moveInsTarget: toNum(row.move_ins_target),
     maTarget: toNum(row.ma_target),
     notes: row.notes ?? undefined,
@@ -87,18 +89,20 @@ export async function setForecast(forecast: AgentForecast): Promise<void> {
   if (hasDb()) {
     await q(
       `INSERT INTO forecasts
-         (user_id, month, gci_target, move_ins_target, ma_target, notes, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+         (user_id, month, gci_target, portfolio_target, move_ins_target, ma_target, notes, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (user_id, month) DO UPDATE SET
-         gci_target      = EXCLUDED.gci_target,
-         move_ins_target = EXCLUDED.move_ins_target,
-         ma_target       = EXCLUDED.ma_target,
-         notes           = EXCLUDED.notes,
-         updated_at      = EXCLUDED.updated_at`,
+         gci_target       = EXCLUDED.gci_target,
+         portfolio_target = EXCLUDED.portfolio_target,
+         move_ins_target  = EXCLUDED.move_ins_target,
+         ma_target        = EXCLUDED.ma_target,
+         notes            = EXCLUDED.notes,
+         updated_at       = EXCLUDED.updated_at`,
       [
         forecast.userId,
         forecast.month,
         forecast.gciTarget,
+        forecast.portfolioTarget,
         forecast.moveInsTarget,
         forecast.maTarget,
         forecast.notes ?? null,

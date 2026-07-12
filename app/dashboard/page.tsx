@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import StatCard from "@/components/StatCard";
 import SourceBadge from "@/components/SourceBadge";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Collapsible from "@/components/Collapsible";
 import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
-import ForecastChart from "@/components/charts/ForecastChart";
+import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
-import { PresentButton } from "@/components/PresentMode";
 import { getUser } from "@/lib/session";
 import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
@@ -50,12 +48,8 @@ const MGMT_FEE_RATE = 0.09;
 
 interface ForecastResponse {
   month: string;
-  forecast: {
-    gciTarget: number | null;
-    moveInsTarget: number | null;
-    maTarget: number | null;
-    notes?: string;
-  } | null;
+  forecast: unknown;
+  history?: Array<{ month: string; gciTarget: number | null; portfolioTarget: number | null }>;
   actuals: Record<string, number | null>;
 }
 
@@ -76,17 +70,13 @@ function snapStat(value: number | null, note: string, display?: string): StatVal
 
 export default function MyDashboardPage() {
   const [period, setPeriod] = useState<ResolvedPeriod>(() => resolvePreset("this-month"));
-  const forecastMonth = period.forecastMonth;
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [actuals, setActuals] = useState<Record<string, number | null>>({});
-  const [savedTarget, setSavedTarget] = useState<number | null>(null);
-  const [targetDraft, setTargetDraft] = useState<number | null>(null);
+  const [forecastHistory, setForecastHistory] = useState<Record<string, SavedForecast>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [flash, setFlash] = useState(false);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setUser(getUser());
@@ -97,8 +87,8 @@ export default function MyDashboardPage() {
     setLoading(true);
     setError(null);
 
-    // Funnel/basics are the current-month snapshot; the forecast (target +
-    // monthly actuals) is loaded for whichever month the period is anchored to.
+    // Funnel/basics are the current-month snapshot; the forecast GET returns the
+    // agent's whole forecast history + monthly actuals (both month-agnostic).
     const statsReq = fetch(`/api/my/stats?month=${ANCHOR}`, { cache: "no-store" }).then(
       async (res) => {
         if (!res.ok) throw new Error("Couldn't load your stats.");
@@ -106,7 +96,7 @@ export default function MyDashboardPage() {
       }
     );
 
-    const forecastReq = fetch(`/api/my/forecast?month=${forecastMonth}`, { cache: "no-store" })
+    const forecastReq = fetch(`/api/my/forecast?month=${ANCHOR}`, { cache: "no-store" })
       .then(async (res) => (res.ok ? ((await res.json()) as ForecastResponse) : null))
       .catch(() => null);
 
@@ -115,9 +105,11 @@ export default function MyDashboardPage() {
         if (cancelled) return;
         setStats(s);
         setActuals(f?.actuals ?? {});
-        const t = f?.forecast?.gciTarget ?? null;
-        setSavedTarget(t);
-        setTargetDraft(t);
+        const hist: Record<string, SavedForecast> = {};
+        for (const row of f?.history ?? []) {
+          hist[row.month] = { gciTarget: row.gciTarget ?? null, portfolioTarget: row.portfolioTarget ?? null };
+        }
+        setForecastHistory(hist);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -130,12 +122,16 @@ export default function MyDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [forecastMonth, reloadKey]);
+  }, [reloadKey]);
 
   /* ------------------------------ derived data ------------------------------ */
 
   const actualsArr = useMemo(() => MONTH_KEYS.map((k) => actuals[k] ?? null), [actuals]);
-  const targetIndex = monthIdx(forecastMonth);
+
+  // Forecast-builder inputs: avg estimated management fee per managed property.
+  const managed = stats?.portfolio.managed.value ?? 0;
+  const rentRoll = stats?.portfolio.rentRoll.value ?? 0;
+  const avgFeePerProperty = managed > 0 ? (rentRoll * MGMT_FEE_RATE) / managed : 0;
 
   // Earnings aggregated over the selected period's months.
   const periodIdx = period.months.map(monthIdx);
@@ -145,32 +141,8 @@ export default function MyDashboardPage() {
   const avgPerMonth = periodActuals.length ? Math.round(periodEarnings! / periodActuals.length) : null;
   const bestVal = periodActuals.length ? Math.max(...periodActuals) : null;
   const bestLabel = bestVal != null ? MONTH_LABELS[actualsArr.findIndex((v) => v === bestVal)] : null;
-  const highlightRange: [number, number] | null = periodIdx.length
-    ? [Math.min(...periodIdx), Math.max(...periodIdx)]
-    : null;
 
   const pipelineRentPcm = stats ? stats.pipeline.reduce((sum, r) => sum + (r.rentPcm || 0), 0) : 0;
-
-  /* ------------------------------ save forecast ----------------------------- */
-
-  async function saveTarget(value: number | null) {
-    if (value === savedTarget) return;
-    setSavedTarget(value);
-    try {
-      const res = await fetch("/api/my/forecast", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month: forecastMonth, gciTarget: value }),
-      });
-      if (res.ok) {
-        setFlash(true);
-        if (flashTimer.current) clearTimeout(flashTimer.current);
-        flashTimer.current = setTimeout(() => setFlash(false), 1600);
-      }
-    } catch {
-      /* keep the optimistic value; the agent can retry by editing again */
-    }
-  }
 
   /* --------------------------------- tables --------------------------------- */
 
@@ -207,13 +179,10 @@ export default function MyDashboardPage() {
             {monthLabel(ANCHOR)}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <PresentButton />
-        </div>
       </div>
 
       {/* Period selector — drives the earnings view below */}
-      <div className="hide-when-presenting">
+      <div>
         <PeriodPicker value={period} onChange={setPeriod} />
       </div>
 
@@ -396,83 +365,17 @@ export default function MyDashboardPage() {
             </div>
           </section>
 
-          {/* ---- LIVE FORECAST GRAPH ---- */}
-          <section className="card p-5 sm:p-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                Your year — earnings vs forecast
-              </h2>
-              {flash ? (
-                <span className="fade-up rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
-                  Saved ✓
-                </span>
-              ) : null}
-              <Link
-                href="/dashboard/forecast"
-                className="hide-when-presenting ml-auto text-[13px] font-medium accent-text underline-offset-2 hover:underline"
-              >
-                Full forecast →
-              </Link>
-            </div>
-
-            <p className="mt-1 text-[13px] text-muted">
-              Solid line is what you&apos;ve earned each month; the shaded band is{" "}
-              <span className="font-medium text-ink">{period.label.toLowerCase()}</span>. Drag the{" "}
-              <span className="font-medium accent-text">red handle</span> — or type below — to set your
-              target for {monthLabel(forecastMonth)} and watch the line move.
-            </p>
-
-            <div className="mt-3">
-              <ForecastChart
-                labels={MONTH_LABELS}
-                actuals={actualsArr}
-                targetIndex={targetIndex}
-                target={targetDraft}
-                onChange={(v) => setTargetDraft(v)}
-                onCommit={(v) => saveTarget(v)}
-                highlightRange={highlightRange}
-                format={(nn) => (nn >= 1000 ? `£${(nn / 1000).toFixed(nn % 1000 === 0 ? 0 : 1)}k` : `£${Math.round(nn)}`)}
-              />
-            </div>
-
-            {/* Inline target editor + readouts */}
-            <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-3">
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  My target for {monthLabel(forecastMonth)}
-                </span>
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <span className="text-lg font-semibold text-muted">£</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={100}
-                    inputMode="numeric"
-                    value={targetDraft ?? ""}
-                    placeholder="e.g. 3000"
-                    onChange={(e) => setTargetDraft(e.target.value === "" ? null : Math.max(0, Number(e.target.value)))}
-                    onBlur={() => saveTarget(targetDraft)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                    }}
-                    className="hairline w-full max-w-[160px] rounded-lg border border-line bg-white px-3 py-2 text-lg font-semibold tnum outline-none transition focus:border-accent"
-                  />
-                </div>
-              </label>
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Avg / month</div>
-                <div className="stat-value mt-1.5 text-[22px]">{avgPerMonth != null ? formatGBP(avgPerMonth) : "—"}</div>
-                <div className="mt-0.5 text-xs text-muted">
-                  {period.label} · {periodActuals.length} month{periodActuals.length === 1 ? "" : "s"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Best month</div>
-                <div className="stat-value mt-1.5 text-[22px]">{bestVal != null ? formatGBP(bestVal) : "—"}</div>
-                <div className="mt-0.5 text-xs text-muted">{bestLabel ? `${bestLabel} 2026` : "—"}</div>
-              </div>
-            </div>
-          </section>
+          {/* ---- INTERACTIVE FORECAST BUILDER ---- */}
+          <ForecastBuilder
+            monthKeys={MONTH_KEYS}
+            monthLabels={MONTH_LABELS}
+            actualsNetIncome={actualsArr}
+            currentMonthIndex={monthIdx(ANCHOR)}
+            savedForecasts={forecastHistory}
+            currentManaged={managed}
+            avgFeePerProperty={avgFeePerProperty}
+            onSaved={() => {}}
+          />
 
           {/* ---- CONVERSION RATES ---- */}
           {c ? (

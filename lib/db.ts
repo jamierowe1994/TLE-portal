@@ -55,12 +55,14 @@ CREATE TABLE IF NOT EXISTS forecasts (
   user_id          TEXT NOT NULL,
   month            TEXT NOT NULL,
   gci_target       NUMERIC,
+  portfolio_target NUMERIC,
   move_ins_target  NUMERIC,
   ma_target        NUMERIC,
   notes            TEXT,
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, month)
 );
+ALTER TABLE forecasts ADD COLUMN IF NOT EXISTS portfolio_target NUMERIC;
 
 CREATE TABLE IF NOT EXISTS actual_overrides (
   id               TEXT PRIMARY KEY,

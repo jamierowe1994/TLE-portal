@@ -32,7 +32,8 @@ export interface ConversionStats {
 export interface AgentForecast {
   userId: string;
   month: string;                   // "2026-07"
-  gciTarget: number | null;        // £ exc VAT
+  gciTarget: number | null;        // £ — the forecast £ figure for the month
+  portfolioTarget: number | null;  // target managed-property count (portfolio-basis forecasting)
   moveInsTarget: number | null;
   maTarget: number | null;
   notes?: string;

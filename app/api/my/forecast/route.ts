@@ -89,10 +89,12 @@ export async function PUT(req: NextRequest) {
   }
 
   let gciTarget: number | null;
+  let portfolioTarget: number | null;
   let moveInsTarget: number | null;
   let maTarget: number | null;
   try {
     gciTarget = targetOrNull(body.gciTarget, "GCI target");
+    portfolioTarget = targetOrNull(body.portfolioTarget, "Portfolio target");
     moveInsTarget = targetOrNull(body.moveInsTarget, "Move-ins target");
     maTarget = targetOrNull(body.maTarget, "MA target");
   } catch (err) {
@@ -111,6 +113,7 @@ export async function PUT(req: NextRequest) {
     userId,
     month,
     gciTarget,
+    portfolioTarget,
     moveInsTarget,
     maTarget,
     notes,
