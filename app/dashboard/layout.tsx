@@ -239,7 +239,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="mx-auto max-w-[1600px]">
           {/* Welcome — lives in the dashboard content, big and roomy */}
           {pathname === "/dashboard" ? (
-            <div className="mb-8 lg:mb-10">
+            <div className="mb-8 pt-4 lg:mb-10 lg:pt-8">
               <h1 className="font-semibold tracking-tight" style={{ fontSize: "clamp(30px, 3.8vw, 46px)", lineHeight: 1.08 }}>
                 {hello} <span className="inline-block align-baseline">👋</span>
               </h1>
