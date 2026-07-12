@@ -77,7 +77,7 @@ export default function DashboardLayout({
 
   return (
     <PresentProvider>
-      <div className="flex min-h-screen flex-col">
+      <div className="dash-surface flex min-h-screen flex-col">
         <header className="hide-when-presenting sticky top-0 z-30 border-b border-line bg-card">
           <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
             <Link href="/dashboard" className="flex items-center gap-2.5">

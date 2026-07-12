@@ -68,6 +68,25 @@ h5 {
   border-radius: var(--radius-card);
 }
 
+/* ---------------------------------------------------------------------------
+   Notion-style white surface — scoped to the agent dashboard shell only
+   (login/admin keep the light-grey page). White canvas, faint dark hairline
+   borders on every box, and a soft drop shadow for definition.
+--------------------------------------------------------------------------- */
+.dash-surface {
+  background: #ffffff;
+}
+.dash-surface .card {
+  border-color: rgba(16, 16, 20, 0.12);
+  box-shadow:
+    0 1px 2px rgba(16, 16, 20, 0.05),
+    0 4px 14px rgba(16, 16, 20, 0.05);
+}
+/* Inputs/selects inside the dashboard pick up the same faint dark hairline */
+.dash-surface .hairline {
+  border-color: rgba(16, 16, 20, 0.14);
+}
+
 /* Stat card number — scaled up in presentation mode */
 .stat-value {
   font-size: clamp(28px, 2.6vw, 36px);
@@ -137,6 +156,14 @@ body.presenting {
 
 body.presenting .hide-when-presenting {
   display: none !important;
+}
+
+/* The dashboard's white surface + card shadows revert to the dark TV look */
+body.presenting .dash-surface {
+  background: #0c0c10;
+}
+body.presenting .dash-surface .card {
+  box-shadow: none;
 }
 
 body.presenting .stat-value {

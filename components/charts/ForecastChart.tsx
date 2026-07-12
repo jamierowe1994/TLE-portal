@@ -12,6 +12,8 @@ interface ForecastChartProps {
   onCommit?: (v: number) => void; // fires on release
   format?: (n: number) => string;
   height?: number;
+  /** [startIdx, endIdx] month indices to highlight with a faint accent band. */
+  highlightRange?: [number, number] | null;
 }
 
 const ACCENT = "#e31f36";
@@ -32,6 +34,7 @@ export default function ForecastChart({
   onCommit,
   format = (n) => `£${Math.round(n / 1000)}k`,
   height = 250,
+  highlightRange = null,
 }: ForecastChartProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const draggingRef = useRef(false);
@@ -179,6 +182,27 @@ export default function ForecastChart({
           <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
         </linearGradient>
       </defs>
+
+      {/* selected-period highlight band */}
+      {highlightRange
+        ? (() => {
+            const half = n > 1 ? plotW / (n - 1) / 2 : plotW / 2;
+            const [a, b] = highlightRange;
+            const bandX = Math.max(pad.left, x(Math.min(a, b)) - half);
+            const bandR = Math.min(VB_W - pad.right, x(Math.max(a, b)) + half);
+            return (
+              <rect
+                x={bandX}
+                y={pad.top}
+                width={Math.max(0, bandR - bandX)}
+                height={plotH}
+                fill={ACCENT}
+                opacity={0.055}
+                rx={6}
+              />
+            );
+          })()
+        : null}
 
       {/* gridlines + y labels */}
       {ticks.map((t) => (

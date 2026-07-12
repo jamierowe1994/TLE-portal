@@ -9,9 +9,10 @@ import Collapsible from "@/components/Collapsible";
 import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
 import ForecastChart from "@/components/charts/ForecastChart";
+import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
 import { PresentButton } from "@/components/PresentMode";
 import { getUser } from "@/lib/session";
-import { formatGBP, formatNum, monthLabel, currentMonth } from "@/lib/format";
+import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
   ConversionStats,
   FunnelStats,
@@ -56,19 +57,11 @@ interface ForecastResponse {
 /* --------------------------------- helpers -------------------------------- */
 
 const YEAR = "2026";
+const ANCHOR = "2026-07"; // current month for the funnel snapshot
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_KEYS = MONTH_LABELS.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
 const SNAP = "2026-07-11";
-
-function monthOptions(): string[] {
-  const end = currentMonth() > "2026-07" ? currentMonth() : "2026-07";
-  const out: string[] = [];
-  for (const key of MONTH_KEYS) {
-    out.push(key);
-    if (key === end) break;
-  }
-  return out.reverse();
-}
+const monthIdx = (m: string) => Number(m.slice(5, 7)) - 1;
 
 function snapStat(value: number | null, note: string, display?: string): StatValue {
   return { value, display, source: "snapshot", asOf: SNAP, note };
@@ -77,8 +70,8 @@ function snapStat(value: number | null, note: string, display?: string): StatVal
 /* ---------------------------------- page ---------------------------------- */
 
 export default function MyDashboardPage() {
-  const months = useMemo(monthOptions, []);
-  const [month, setMonth] = useState(months[0]);
+  const [period, setPeriod] = useState<ResolvedPeriod>(() => resolvePreset("ytd"));
+  const forecastMonth = period.forecastMonth;
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [actuals, setActuals] = useState<Record<string, number | null>>({});
   const [savedTarget, setSavedTarget] = useState<number | null>(null);
@@ -99,14 +92,16 @@ export default function MyDashboardPage() {
     setLoading(true);
     setError(null);
 
-    const statsReq = fetch(`/api/my/stats?month=${month}`, { cache: "no-store" }).then(
+    // Funnel/basics are the current-month snapshot; the forecast (target +
+    // monthly actuals) is loaded for whichever month the period is anchored to.
+    const statsReq = fetch(`/api/my/stats?month=${ANCHOR}`, { cache: "no-store" }).then(
       async (res) => {
         if (!res.ok) throw new Error("Couldn't load your stats.");
         return (await res.json()) as StatsResponse;
       }
     );
 
-    const forecastReq = fetch(`/api/my/forecast?month=${month}`, { cache: "no-store" })
+    const forecastReq = fetch(`/api/my/forecast?month=${forecastMonth}`, { cache: "no-store" })
       .then(async (res) => (res.ok ? ((await res.json()) as ForecastResponse) : null))
       .catch(() => null);
 
@@ -130,18 +125,24 @@ export default function MyDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [month, reloadKey]);
+  }, [forecastMonth, reloadKey]);
 
   /* ------------------------------ derived data ------------------------------ */
 
   const actualsArr = useMemo(() => MONTH_KEYS.map((k) => actuals[k] ?? null), [actuals]);
-  const targetIndex = Number(month.slice(5, 7)) - 1;
+  const targetIndex = monthIdx(forecastMonth);
 
-  const actualMonths = actualsArr.filter((v): v is number => v != null);
-  const ytdTotal = stats?.netIncomeYtd?.ytdTotal ?? (actualMonths.length ? actualMonths.reduce((a, b) => a + b, 0) : null);
-  const avgPerMonth = actualMonths.length ? Math.round(actualMonths.reduce((a, b) => a + b, 0) / actualMonths.length) : null;
-  const bestVal = actualMonths.length ? Math.max(...actualMonths) : null;
+  // Earnings aggregated over the selected period's months.
+  const periodIdx = period.months.map(monthIdx);
+  const periodValues = periodIdx.map((i) => actualsArr[i]);
+  const periodActuals = periodValues.filter((v): v is number => v != null);
+  const periodEarnings = periodActuals.length ? periodActuals.reduce((a, b) => a + b, 0) : null;
+  const avgPerMonth = periodActuals.length ? Math.round(periodEarnings! / periodActuals.length) : null;
+  const bestVal = periodActuals.length ? Math.max(...periodActuals) : null;
   const bestLabel = bestVal != null ? MONTH_LABELS[actualsArr.findIndex((v) => v === bestVal)] : null;
+  const highlightRange: [number, number] | null = periodIdx.length
+    ? [Math.min(...periodIdx), Math.max(...periodIdx)]
+    : null;
 
   const pipelineRentPcm = stats ? stats.pipeline.reduce((sum, r) => sum + (r.rentPcm || 0), 0) : 0;
 
@@ -154,7 +155,7 @@ export default function MyDashboardPage() {
       const res = await fetch("/api/my/forecast", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month, gciTarget: value }),
+        body: JSON.stringify({ month: forecastMonth, gciTarget: value }),
       });
       if (res.ok) {
         setFlash(true);
@@ -198,24 +199,17 @@ export default function MyDashboardPage() {
           <h1 className="text-xl font-semibold tracking-tight">My Dashboard</h1>
           <p className="mt-0.5 text-[13px] text-muted">
             {user?.name ? `${user.name} · ` : ""}
-            {monthLabel(month)}
+            {monthLabel(ANCHOR)}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <select
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="hide-when-presenting rounded-lg border border-line bg-card px-3 py-2 text-[13px] font-medium outline-none transition focus:border-gray-400"
-            aria-label="Month"
-          >
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-              </option>
-            ))}
-          </select>
           <PresentButton />
         </div>
+      </div>
+
+      {/* Period selector — drives the earnings view below */}
+      <div className="hide-when-presenting">
+        <PeriodPicker value={period} onChange={setPeriod} />
       </div>
 
       {!loading && stats && !stats.agentKey ? (
@@ -261,14 +255,14 @@ export default function MyDashboardPage() {
             <div className="card p-6">
               <div className="flex items-start justify-between gap-3">
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                  Earnings · year to date
+                  Earnings · {period.label}
                 </div>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
               </div>
               <div className="mt-1 flex flex-wrap items-end gap-x-6 gap-y-2">
-                <div className="stat-value stat-value--big">{ytdTotal != null ? formatGBP(ytdTotal) : "—"}</div>
+                <div className="stat-value stat-value--big">{periodEarnings != null ? formatGBP(periodEarnings) : "—"}</div>
                 <div className="pb-1">
-                  <Sparkline values={actualsArr} />
+                  <Sparkline values={periodValues} />
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
@@ -284,7 +278,7 @@ export default function MyDashboardPage() {
                   </span>
                 ) : null}
                 <span className="rounded-full bg-page px-2.5 py-1 text-muted">
-                  {actualMonths.length} month{actualMonths.length === 1 ? "" : "s"} tracked
+                  {periodActuals.length} month{periodActuals.length === 1 ? "" : "s"} of data
                 </span>
               </div>
             </div>
@@ -292,7 +286,7 @@ export default function MyDashboardPage() {
             <div className="card flex flex-col justify-between p-6">
               <div>
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                  Your target · {monthLabel(month)}
+                  Your target · {monthLabel(forecastMonth)}
                 </div>
                 <div className="stat-value mt-1">{savedTarget != null ? formatGBP(savedTarget) : "—"}</div>
                 <div className="mt-1 text-xs text-muted">
@@ -315,7 +309,7 @@ export default function MyDashboardPage() {
           {/* ---- THE BASICS ---- */}
           <section>
             <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-              This month · {monthLabel(month)}
+              This month · {monthLabel(ANCHOR)}
             </h2>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <StatCard label="Market appraisals" stat={stats.funnel.marketAppraisals} />
@@ -352,9 +346,10 @@ export default function MyDashboardPage() {
             </div>
 
             <p className="mt-1 text-[13px] text-muted">
-              Solid line is what you&apos;ve earned each month. Drag the{" "}
+              Solid line is what you&apos;ve earned each month; the shaded band is{" "}
+              <span className="font-medium text-ink">{period.label.toLowerCase()}</span>. Drag the{" "}
               <span className="font-medium accent-text">red handle</span> — or type below — to set your
-              target for {monthLabel(month)} and watch the line move.
+              target for {monthLabel(forecastMonth)} and watch the line move.
             </p>
 
             <div className="mt-3">
@@ -365,6 +360,7 @@ export default function MyDashboardPage() {
                 target={targetDraft}
                 onChange={(v) => setTargetDraft(v)}
                 onCommit={(v) => saveTarget(v)}
+                highlightRange={highlightRange}
                 format={(nn) => (nn >= 1000 ? `£${(nn / 1000).toFixed(nn % 1000 === 0 ? 0 : 1)}k` : `£${Math.round(nn)}`)}
               />
             </div>
@@ -373,7 +369,7 @@ export default function MyDashboardPage() {
             <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-3">
               <label className="block">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  My target for {monthLabel(month)}
+                  My target for {monthLabel(forecastMonth)}
                 </span>
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <span className="text-lg font-semibold text-muted">£</span>
@@ -389,14 +385,16 @@ export default function MyDashboardPage() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                     }}
-                    className="w-full max-w-[160px] rounded-lg border border-line bg-white px-3 py-2 text-lg font-semibold tnum outline-none transition focus:border-accent"
+                    className="hairline w-full max-w-[160px] rounded-lg border border-line bg-white px-3 py-2 text-lg font-semibold tnum outline-none transition focus:border-accent"
                   />
                 </div>
               </label>
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Avg / month YTD</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Avg / month</div>
                 <div className="stat-value mt-1.5 text-[22px]">{avgPerMonth != null ? formatGBP(avgPerMonth) : "—"}</div>
-                <div className="mt-0.5 text-xs text-muted">Across {actualMonths.length} months</div>
+                <div className="mt-0.5 text-xs text-muted">
+                  {period.label} · {periodActuals.length} month{periodActuals.length === 1 ? "" : "s"}
+                </div>
               </div>
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Best month</div>
@@ -428,7 +426,7 @@ export default function MyDashboardPage() {
 
           {/* ---- DETAIL (progressive disclosure) ---- */}
           <section className="space-y-3">
-            <Collapsible title={`My move-ins · ${monthLabel(month)}`} badge={stats.moveIns.length}>
+            <Collapsible title={`My move-ins · ${monthLabel(ANCHOR)}`} badge={stats.moveIns.length}>
               {stats.moveIns.length ? (
                 <DataTable columns={moveInColumns} rows={stats.moveIns as Rowify<MoveInRow>[]} compact />
               ) : (
