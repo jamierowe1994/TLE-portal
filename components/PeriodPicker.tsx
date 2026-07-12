@@ -1,18 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { monthLabel } from "@/lib/format";
 
-// A flexible period selector for the earnings view: preset windows, a
-// jump-to-month picker, and a custom from/to range. Because the underlying
-// figures are monthly, every selection resolves to a set of month keys — the
-// dashboard aggregates whatever months fall in the window.
+// Compact period selector for the earnings view: one dropdown of preset
+// windows (default "This month"), a "By month" dropdown beside it, and a
+// custom from/to range tucked underneath. Figures are monthly, so every
+// selection resolves to a set of month keys the dashboard aggregates.
 
 export interface ResolvedPeriod {
   key: string;
-  label: string; // human label, e.g. "Year to date", "Apr–Jun 2026"
-  months: string[]; // "2026-04", … (inclusive)
-  forecastMonth: string; // the month whose target the graph handle edits
+  label: string;
+  months: string[];
+  forecastMonth: string;
 }
 
 const YEAR = 2026;
@@ -39,34 +39,61 @@ function rangeLabel(months: string[]): string {
   return `${SHORT[a]}–${SHORT[b]} ${YEAR}`;
 }
 
-/** Build each preset relative to the snapshot anchor month. */
-export function resolvePreset(key: string, selectedMonth = ANCHOR): ResolvedPeriod {
+export function resolvePreset(presetKey: string): ResolvedPeriod {
   const a = idx(ANCHOR);
-  switch (key) {
+  switch (presetKey) {
     case "this-month":
-      return { key, label: "This month", months: [ANCHOR], forecastMonth: ANCHOR };
+      return { key: presetKey, label: "This month", months: [ANCHOR], forecastMonth: ANCHOR };
     case "last-3m":
-      return { key, label: "Last 3 months", months: range(a - 2, a), forecastMonth: ANCHOR };
+      return { key: presetKey, label: "Last 3 months", months: range(a - 2, a), forecastMonth: ANCHOR };
     case "last-6m":
-      return { key, label: "Last 6 months", months: range(a - 5, a), forecastMonth: ANCHOR };
+      return { key: presetKey, label: "Last 6 months", months: range(a - 5, a), forecastMonth: ANCHOR };
     case "ytd":
-      return { key, label: "Year to date", months: range(0, a), forecastMonth: ANCHOR };
+      return { key: presetKey, label: "Year to date", months: range(0, a), forecastMonth: ANCHOR };
     case "full-year":
-      return { key, label: "Full year", months: range(0, 11), forecastMonth: ANCHOR };
-    case "by-month":
-      return { key, label: monthLabel(selectedMonth), months: [selectedMonth], forecastMonth: selectedMonth };
+      return { key: presetKey, label: "Full year", months: range(0, 11), forecastMonth: ANCHOR };
     default:
-      return { key: "ytd", label: "Year to date", months: range(0, a), forecastMonth: ANCHOR };
+      return { key: "this-month", label: "This month", months: [ANCHOR], forecastMonth: ANCHOR };
   }
 }
 
-const PRESETS = [
+const PRESET_MENU = [
   { key: "this-month", label: "This month" },
   { key: "last-3m", label: "Last 3 months" },
   { key: "last-6m", label: "Last 6 months" },
   { key: "ytd", label: "Year to date" },
   { key: "full-year", label: "Full year" },
-] as const;
+];
+
+const boxClass = (active: boolean) =>
+  `inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
+    active
+      ? "border-accent bg-accent-soft text-ink"
+      : "hairline border-line bg-card text-muted hover:text-ink"
+  }`;
+
+function CalendarIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M2 6h12M5.5 2v2M10.5 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function Chevron({ open }: { open?: boolean }) {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "none" }}
+    >
+      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export default function PeriodPicker({
   value,
@@ -76,25 +103,38 @@ export default function PeriodPicker({
   onChange: (p: ResolvedPeriod) => void;
 }) {
   const [mode, setMode] = useState<"preset" | "month" | "custom">("preset");
+  const [presetKey, setPresetKey] = useState("this-month");
   const [selectedMonth, setSelectedMonth] = useState(ANCHOR);
   const [from, setFrom] = useState("2026-04");
   const [to, setTo] = useState(ANCHOR);
+  const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const box1 = useRef<HTMLDivElement | null>(null);
 
-  const pill = (active: boolean) =>
-    `whitespace-nowrap rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
-      active
-        ? "border-accent bg-accent text-white"
-        : "hairline border-line bg-card text-muted hover:text-ink"
-    }`;
+  // Close the presets menu on any outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (box1.current && !box1.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [open]);
 
-  function pickPreset(key: string) {
+  const presetLabel = PRESET_MENU.find((p) => p.key === presetKey)?.label ?? "This month";
+
+  function pickPreset(k: string) {
+    setPresetKey(k);
     setMode("preset");
-    onChange(resolvePreset(key));
+    setOpen(false);
+    setCustomOpen(false);
+    onChange(resolvePreset(k));
   }
 
   function pickMonth(m: string) {
     setSelectedMonth(m);
     setMode("month");
+    setCustomOpen(false);
     onChange({ key: "by-month", label: monthLabel(m), months: [m], forecastMonth: m });
   }
 
@@ -110,76 +150,111 @@ export default function PeriodPicker({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {PRESETS.map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            className={pill(mode === "preset" && value.key === p.key)}
-            onClick={() => pickPreset(p.key)}
-          >
-            {p.label}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Box 1 — preset dropdown */}
+        <div className="relative" ref={box1}>
+          <button type="button" className={boxClass(mode === "preset")} onClick={() => setOpen((o) => !o)}>
+            <CalendarIcon />
+            <span>{presetLabel}</span>
+            <Chevron open={open} />
           </button>
-        ))}
+          {open ? (
+            <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 min-w-[184px] rounded-xl border border-line bg-card p-1 shadow-lg">
+              {PRESET_MENU.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => pickPreset(p.key)}
+                  className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
+                >
+                  {p.label}
+                  {mode === "preset" && presetKey === p.key ? (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M3 8.5l3.5 3.5L13 5" stroke="#e31f36" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
-        {/* By month */}
-        <select
-          value={mode === "month" ? selectedMonth : ""}
-          onChange={(e) => e.target.value && pickMonth(e.target.value)}
-          className={`${pill(mode === "month")} appearance-none pr-6`}
-          aria-label="Jump to a month"
-        >
-          <option value="" disabled>
-            By month…
-          </option>
-          {ALL_MONTHS.map((m) => (
-            <option key={m} value={m}>
-              {monthLabel(m)}
+        {/* Box 2 — by month */}
+        <div className={`relative ${boxClass(mode === "month")} pr-2`}>
+          <span className="pointer-events-none">{mode === "month" ? monthLabel(selectedMonth) : "By month"}</span>
+          <Chevron />
+          <select
+            value={mode === "month" ? selectedMonth : ""}
+            onChange={(e) => e.target.value && pickMonth(e.target.value)}
+            aria-label="Jump to a month"
+            className="absolute inset-0 cursor-pointer opacity-0"
+          >
+            <option value="" disabled>
+              By month…
             </option>
-          ))}
-        </select>
-
-        {/* Custom range toggle */}
-        <button
-          type="button"
-          className={pill(mode === "custom")}
-          onClick={() => {
-            setMode("custom");
-            applyCustom(from, to);
-          }}
-        >
-          Custom range
-        </button>
+            {ALL_MONTHS.map((m) => (
+              <option key={m} value={m}>
+                {monthLabel(m)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {mode === "custom" ? (
-        <div className="fade-up flex flex-wrap items-center gap-2 text-[13px] text-muted">
-          <span>From</span>
-          <input
-            type="month"
-            min="2026-01"
-            max="2026-12"
-            value={from}
-            onChange={(e) => {
-              setFrom(e.target.value);
-              applyCustom(e.target.value, to);
-            }}
-            className="hairline rounded-lg border border-line bg-card px-2.5 py-1.5 text-ink outline-none focus:border-accent"
-          />
-          <span>to</span>
-          <input
-            type="month"
-            min="2026-01"
-            max="2026-12"
-            value={to}
-            onChange={(e) => {
-              setTo(e.target.value);
-              applyCustom(from, e.target.value);
-            }}
-            className="hairline rounded-lg border border-line bg-card px-2.5 py-1.5 text-ink outline-none focus:border-accent"
-          />
-        </div>
-      ) : null}
+      {/* Custom range — tucked underneath */}
+      <div>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !customOpen;
+            setCustomOpen(next);
+            if (next) {
+              setMode("custom");
+              applyCustom(from, to);
+            }
+          }}
+          className={`inline-flex items-center gap-1.5 text-[12.5px] font-medium transition ${
+            mode === "custom" ? "accent-text" : "text-muted hover:text-ink"
+          }`}
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+          Custom range
+          <Chevron open={customOpen} />
+        </button>
+
+        {customOpen ? (
+          <div className="fade-up mt-2 flex flex-wrap items-center gap-2 text-[13px] text-muted">
+            <span>From</span>
+            <input
+              type="month"
+              min="2026-01"
+              max="2026-12"
+              value={from}
+              onChange={(e) => {
+                setFrom(e.target.value);
+                setMode("custom");
+                applyCustom(e.target.value, to);
+              }}
+              className="hairline rounded-lg border border-line bg-card px-2.5 py-1.5 text-ink outline-none focus:border-accent"
+            />
+            <span>to</span>
+            <input
+              type="month"
+              min="2026-01"
+              max="2026-12"
+              value={to}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setMode("custom");
+                applyCustom(from, e.target.value);
+              }}
+              className="hairline rounded-lg border border-line bg-card px-2.5 py-1.5 text-ink outline-none focus:border-accent"
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -70,7 +70,7 @@ function snapStat(value: number | null, note: string, display?: string): StatVal
 /* ---------------------------------- page ---------------------------------- */
 
 export default function MyDashboardPage() {
-  const [period, setPeriod] = useState<ResolvedPeriod>(() => resolvePreset("ytd"));
+  const [period, setPeriod] = useState<ResolvedPeriod>(() => resolvePreset("this-month"));
   const forecastMonth = period.forecastMonth;
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [actuals, setActuals] = useState<Record<string, number | null>>({});
@@ -265,6 +265,12 @@ export default function MyDashboardPage() {
                   <Sparkline values={periodValues} />
                 </div>
               </div>
+              {periodEarnings == null && period.key === "this-month" ? (
+                <p className="mt-2 text-[13px] text-muted">
+                  {monthLabel(ANCHOR).split(" ")[0]} is still in progress — your earned figure lands at
+                  month-end. Your target and pipeline are below.
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
                 {avgPerMonth != null ? (
                   <span className="rounded-full bg-page px-2.5 py-1 text-muted">
