@@ -290,7 +290,8 @@ function AdminShell({
   );
 
   return (
-    <main className="mx-auto min-h-screen max-w-[1400px] px-4 py-5 sm:px-6">
+    <div className="dash-surface min-h-screen">
+    <main className="mx-auto max-w-[1400px] px-4 py-5 sm:px-6">
       {/* ------------------------------ header ------------------------------ */}
       <header className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-3">
@@ -400,5 +401,6 @@ function AdminShell({
         </p>
       ) : null}
     </main>
+    </div>
   );
 }

@@ -115,27 +115,29 @@ export default function Overview({ month }: { month: string }) {
         Headline — {data.headline.label} (last updated {data.headline.lastUpdated})
       </SectionTitle>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        <StatCard label="Jun YTD MAs" stat={data.headline.mas} />
-        <StatCard label="Jun YTD Listings" stat={data.headline.listings} />
-        <StatCard label="Jun YTD Applications" stat={data.headline.applications} />
-        <StatCard label="Jun YTD Move-ins" stat={data.headline.moveIns} />
-        <StatCard label="Jun YTD GCI exc VAT" stat={data.headline.gciExcVat} />
-        <StatCard label="Jun YTD Total Income" stat={data.headline.totalIncome} />
-        <StatCard label="Jun YTD Pipeline" stat={data.headline.pipeline} />
+        <StatCard size="sm" label="Jun YTD MAs" stat={data.headline.mas} />
+        <StatCard size="sm" label="Jun YTD Listings" stat={data.headline.listings} />
+        <StatCard size="sm" label="Jun YTD Applications" stat={data.headline.applications} />
+        <StatCard size="sm" label="Jun YTD Move-ins" stat={data.headline.moveIns} />
+        <StatCard size="sm" label="Jun YTD GCI exc VAT" stat={data.headline.gciExcVat} />
+        <StatCard size="sm" label="Jun YTD Total Income" stat={data.headline.totalIncome} />
+        <StatCard size="sm" label="Jun YTD Pipeline" stat={data.headline.pipeline} />
       </div>
 
       <SectionTitle source={data.sources.businessFunnel}>
         Sales Funnel — July MTD
       </SectionTitle>
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div className="card p-5">
-          <FunnelBar stages={funnelStages} showSteps={false} />
-        </div>
-        <div className="grid content-start gap-3">
-          <StatCard label="Move-ins" stat={funnelStat.moveIns} />
-          <StatCard label="Live Listings" stat={funnelStat.liveListings ?? { value: null, source: "snapshot" }} />
-          <StatCard label="Forward Pipeline" stat={funnelStat.pipeline} />
-          <StatCard label="GCI (est · exc VAT)" stat={funnelStat.gci ?? { value: null, source: "snapshot" }} />
+      <div className="card p-5 sm:p-6">
+        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="mx-auto w-full" style={{ maxWidth: 640 }}>
+            <FunnelBar stages={funnelStages} showSteps={false} barHeight={44} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard size="sm" label="Move-ins" stat={funnelStat.moveIns} />
+            <StatCard size="sm" label="Live Listings" stat={funnelStat.liveListings ?? { value: null, source: "snapshot" }} />
+            <StatCard size="sm" label="Forward Pipeline" stat={funnelStat.pipeline} />
+            <StatCard size="sm" label="GCI (est · exc VAT)" stat={funnelStat.gci ?? { value: null, source: "snapshot" }} />
+          </div>
         </div>
       </div>
 

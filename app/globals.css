@@ -98,6 +98,12 @@ h5 {
 .stat-value--big {
   font-size: clamp(34px, 3.2vw, 44px);
 }
+/* Compact figure for dense rows (headline KPI strip) so big money values
+   never overflow their card. Still scales up in presentation mode. */
+.stat-value--sm {
+  font-size: clamp(18px, 1.5vw, 23px);
+  white-space: nowrap;
+}
 
 /* Buttons */
 .btn-press {
@@ -171,6 +177,9 @@ body.presenting .stat-value {
 }
 body.presenting .stat-value--big {
   font-size: clamp(48px, 4.6vw, 64px);
+}
+body.presenting .stat-value--sm {
+  font-size: clamp(26px, 2.4vw, 34px);
 }
 
 /* Cards go dark-slate with white text; borders stay subtle */

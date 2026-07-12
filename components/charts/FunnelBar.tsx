@@ -9,12 +9,14 @@ interface FunnelBarProps {
    * mixed funnels like MA → listings → viewings produce >100% noise.
    */
   showSteps?: boolean;
+  /** Bar thickness in viewBox units — bump it up to fill a taller card. */
+  barHeight?: number;
 }
 
-export function FunnelBar({ stages, showSteps = true }: FunnelBarProps) {
+export function FunnelBar({ stages, showSteps = true, barHeight = 30 }: FunnelBarProps) {
   const width = 640;
-  const barH = 30;
-  const stepH = showSteps ? 18 : 8; // conversion row between bars
+  const barH = barHeight;
+  const stepH = showSteps ? 18 : Math.round(barHeight * 0.34); // gap between bars
   const labelW = 130;
   const valueW = 64;
   const plotW = width - labelW - valueW;
