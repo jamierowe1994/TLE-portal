@@ -45,12 +45,15 @@ const VIEW_LABEL: Record<ViewType, string> = {
   funnel: "Funnel",
 };
 
-// Span → S/M/L/XL cycle for the resize control.
-const SIZE_ORDER = [1, 2, 3, 4] as const;
-const SIZE_LABEL: Record<number, string> = { 1: "S", 2: "M", 3: "L", 4: "XL" };
+// Width steps: half / three-quarter / full of the 4-column grid. Span 1
+// (quarter width) is intentionally omitted — it crushes multi-stat blocks into
+// unreadable slivers. "Small" here means half-width, a proper box.
+const SIZE_ORDER = [2, 3, 4] as const;
+const SIZE_LABEL: Record<number, string> = { 2: "S", 3: "M", 4: "L" };
+const clampSpan = (n: number) => (n >= 4 ? 4 : n >= 3 ? 3 : 2);
 
 function defaultsFor(blocks: DashBlock[]): BlockLayout[] {
-  return blocks.map((b) => ({ id: b.id, span: b.defaultSpan, view: b.views[0] }));
+  return blocks.map((b) => ({ id: b.id, span: clampSpan(b.defaultSpan), view: b.views[0] }));
 }
 
 /** Merge a saved layout with the current blocks: keep saved order/size/view for
@@ -63,11 +66,10 @@ function reconcile(saved: BlockLayout[], blocks: DashBlock[]): BlockLayout[] {
     const b = byId.get(s.id);
     if (!b) continue;
     const view = b.views.includes(s.view) ? s.view : b.views[0];
-    const span = [1, 2, 3, 4].includes(s.span) ? s.span : b.defaultSpan;
-    out.push({ id: s.id, span, view });
+    out.push({ id: s.id, span: clampSpan(s.span || b.defaultSpan), view });
     seen.add(s.id);
   }
-  for (const b of blocks) if (!seen.has(b.id)) out.push({ id: b.id, span: b.defaultSpan, view: b.views[0] });
+  for (const b of blocks) if (!seen.has(b.id)) out.push({ id: b.id, span: clampSpan(b.defaultSpan), view: b.views[0] });
   return out;
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
-// Admin · Overview — a CUSTOMISABLE dashboard. Each section is a titled block
-// Susan can drag by its title, resize (S/M/L/XL), and (where it makes sense)
-// switch between cards / bar / pie / line / funnel. Her layout persists per
-// browser. Figures come from GET /api/admin/overview (admin-gated), merging
-// manual overrides into the snapshot via the live → manual → snapshot chain.
+// Admin · Overview — a CUSTOMISABLE, decluttered dashboard. Each section is a
+// titled block Susan can drag by its title, resize (S/M/L = half/¾/full width),
+// and switch view (cards / bar / pie / line / funnel). Cards reflow to fit the
+// block at any width (auto-fill grid) so nothing crushes. Layout persists per
+// browser. Figures come from GET /api/admin/overview (admin-gated).
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -32,6 +32,10 @@ interface OverviewPayload {
 }
 
 /* ------------------------------ render helpers ------------------------------ */
+
+// Auto-fill grid: cards keep a minimum width and wrap — they never crush into
+// slivers when the block is narrow.
+const CARD_GRID = "grid gap-3 grid-cols-[repeat(auto-fit,minmax(150px,1fr))]";
 
 function Titled({ title, source, children }: { title: string; source?: string; children: ReactNode }) {
   return (
@@ -87,14 +91,12 @@ export default function Overview({ month }: { month: string }) {
       { label: "Move-ins", value: num(d.funnel.moveIns) },
     ];
 
+    // Trimmed to the five headcount figures Susan reads most.
     const headcountItems = [
       { label: "Active Agents", stat: d.headcount.activeAgents, sub: "Managing portfolio" },
       { label: "TLE", stat: d.headcount.tle, sub: "Full partner" },
       { label: "TLE Dual", stat: d.headcount.tleDual, sub: "Dual brand" },
       { label: "Lettings Lite", stat: d.headcount.lettingsLite, sub: "Lite service" },
-      { label: "Starting Soon", stat: d.headcount.startingSoon, sub: "Building pipeline" },
-      { label: "Starters YTD", stat: d.headcount.startersYtd, sub: "TLE / Dual" },
-      { label: "Leavers YTD", stat: d.headcount.leaversYtd, sub: "TLE / Dual" },
       { label: "Variance YTD", stat: d.headcount.varianceYtd, sub: "Net change" },
     ];
 
@@ -107,15 +109,12 @@ export default function Overview({ month }: { month: string }) {
     return [
       {
         id: "headline",
-        title: `Headline — ${d.headline.label}`,
+        title: "Headline KPIs",
         defaultSpan: 4,
         views: ["cards"] as const,
         render: () => (
-          <Titled
-            title={`Headline — ${d.headline.label}`}
-            source="REX KPI reports · Move-in report · PayProp fee reports"
-          >
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          <Titled title={`Headline — ${d.headline.label}`} source="REX KPI reports · Move-in report · PayProp">
+            <div className={CARD_GRID}>
               <StatCard size="sm" label="Jun YTD MAs" stat={d.headline.mas} />
               <StatCard size="sm" label="Jun YTD Listings" stat={d.headline.listings} />
               <StatCard size="sm" label="Jun YTD Applications" stat={d.headline.applications} />
@@ -149,32 +148,15 @@ export default function Overview({ month }: { month: string }) {
         ),
       },
       {
-        id: "funnelStats",
-        title: "Funnel Detail",
+        id: "conversions",
+        title: "Conversion Rates",
         defaultSpan: 2,
         views: ["cards"] as const,
         render: () => (
-          <Titled title="Funnel Detail — July MTD">
-            <div className="grid grid-cols-2 gap-3">
-              <StatCard size="sm" label="Move-ins" stat={d.funnel.moveIns} />
-              <StatCard size="sm" label="Live Listings" stat={d.funnel.liveListings ?? { value: null, source: "snapshot" }} />
-              <StatCard size="sm" label="Forward Pipeline" stat={d.funnel.pipeline} />
-              <StatCard size="sm" label="GCI (est · exc VAT)" stat={d.funnel.gci ?? { value: null, source: "snapshot" }} />
-            </div>
-          </Titled>
-        ),
-      },
-      {
-        id: "conversions",
-        title: "Conversion Rates",
-        defaultSpan: 4,
-        views: ["cards"] as const,
-        render: () => (
           <Titled title="Conversion Rates — July MTD" source={d.sources.conversions}>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <div className={CARD_GRID}>
               <StatCard size="sm" label="MA → Listing" stat={d.conversions.maToListing} />
               <StatCard size="sm" label="Listing → Move-in" stat={d.conversions.listingToMoveIn} />
-              <StatCard size="sm" label="RLP Conversion" stat={d.conversions.rlpConversion} />
               <StatCard size="sm" label="GCI per Move-in" stat={d.conversions.gciPerMoveIn} />
               <StatCard size="sm" label="GCI per Agent" stat={d.conversions.gciPerAgent} />
             </div>
@@ -197,7 +179,7 @@ export default function Overview({ month }: { month: string }) {
                 />
               </ChartCard>
             ) : (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+              <div className={CARD_GRID}>
                 {headcountItems.map((i) => (
                   <StatCard key={i.label} size="sm" label={i.label} stat={i.stat} sub={i.sub} />
                 ))}
@@ -214,7 +196,7 @@ export default function Overview({ month }: { month: string }) {
         render: (v: ViewType) => (
           <Titled title="MAs by Partner Type — July MTD" source={d.sources.masByPartnerType}>
             {v === "cards" ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className={CARD_GRID}>
                 <StatCard size="sm" label="Total MAs" stat={d.masByPartnerType.total} />
                 <StatCard size="sm" label="TLE Partners" stat={d.masByPartnerType.tle} />
                 <StatCard size="sm" label="TLE Dual" stat={d.masByPartnerType.tleDual} />
@@ -237,27 +219,12 @@ export default function Overview({ month }: { month: string }) {
         ),
       },
       {
-        id: "yoy",
-        title: "Year on Year Growth",
-        defaultSpan: 2,
-        views: ["cards"] as const,
-        render: () => (
-          <Titled title="Year on Year Growth" source={d.sources.yoyGrowth}>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {d.yoyGrowth.map((entry) => (
-                <StatCard key={entry.label} size="sm" label={entry.label} stat={entry.stat} sub={entry.stat.note?.split("· Source: ")[1]} />
-              ))}
-            </div>
-          </Titled>
-        ),
-      },
-      {
         id: "gciByMonth",
         title: "Monthly GCI",
-        defaultSpan: 4,
+        defaultSpan: 2,
         views: ["bar", "line"] as const,
         render: (v: ViewType) => (
-          <Titled title="Monthly GCI — Jan–Jun 2026 actuals" source={d.sources.income}>
+          <Titled title="Monthly GCI — Jan–Jun 2026" source={d.sources.income}>
             <ChartCard>
               {v === "line" ? (
                 <Line
@@ -274,27 +241,7 @@ export default function Overview({ month }: { month: string }) {
                   height={240}
                 />
               )}
-              <p className="mt-3 text-[11px] text-muted">{d.gciByMonth.budgetNote}</p>
             </ChartCard>
-          </Titled>
-        ),
-      },
-      {
-        id: "ramp",
-        title: "Partner Productivity & Ramp",
-        defaultSpan: 4,
-        views: ["cards"] as const,
-        render: () => (
-          <Titled title="Partner Productivity & Ramp Time — July" source="Agent Headcount report · REX KPI reports">
-            <div className="card p-5">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <StatCard size="sm" label="New Starters" stat={d.partnerRamp.newStarters} />
-                <StatCard size="sm" label="MA in Months 1–2" stat={d.partnerRamp.maInMonths1To2} />
-                <StatCard size="sm" label="Listing in Months 1–2" stat={d.partnerRamp.listingInMonths1To2} />
-                <StatCard size="sm" label="Move-in within 60 Days" stat={d.partnerRamp.moveInWithin60Days} />
-              </div>
-              <p className="mt-3 text-xs text-muted">{d.partnerRamp.note}</p>
-            </div>
           </Titled>
         ),
       },
@@ -302,9 +249,7 @@ export default function Overview({ month }: { month: string }) {
   }, [data]);
 
   if (error) {
-    return (
-      <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">{error}</p>
-    );
+    return <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">{error}</p>;
   }
   if (!data) {
     return <p className="text-sm text-muted">Loading overview…</p>;
@@ -318,7 +263,17 @@ export default function Overview({ month }: { month: string }) {
           {monthLabel(month)} cut is not available in the snapshot.
         </p>
       ) : null}
-      <CustomizableGrid blocks={blocks} storageKey="tle_admin_overview_v1" />
+
+      {/* Source-dot legend */}
+      <div className="hide-when-presenting mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
+        <span className="font-medium">Source:</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#22c55e" }} /> Live</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#9ca3af" }} /> Snapshot</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#f59e0b" }} /> Manual</span>
+        <span className="text-muted">· hover any figure for detail</span>
+      </div>
+
+      <CustomizableGrid blocks={blocks} storageKey="tle_admin_overview_v2" />
     </div>
   );
 }

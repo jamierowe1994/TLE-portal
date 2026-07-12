@@ -24,12 +24,16 @@ export default function StatCard({
 
   const sizeClass = big ? "stat-value--big" : size === "sm" ? "stat-value--sm" : "";
 
+  // Dense (sm) cards use a compact colour dot so the badge never overflows;
+  // full-size cards keep the readable LIVE / SNAPSHOT text badge.
+  const compactBadge = size === "sm";
+
   return (
     <div className={`card relative ${size === "sm" ? "p-4" : "p-5"}`}>
-      <div className="absolute right-3.5 top-3.5">
-        <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} />
+      <div className={compactBadge ? "absolute right-3 top-3.5" : "absolute right-4 top-4"}>
+        <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} compact={compactBadge} />
       </div>
-      <div className="stat-label pr-14 text-[11px] font-semibold uppercase tracking-wide text-muted">
+      <div className={`stat-label text-[11px] font-semibold uppercase tracking-wide text-muted ${compactBadge ? "pr-4" : "pr-16"}`}>
         {label}
       </div>
       <div className={`stat-value mt-2 ${sizeClass}`}>{display}</div>

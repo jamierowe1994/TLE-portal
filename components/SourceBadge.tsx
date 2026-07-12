@@ -31,14 +31,25 @@ const STYLES: Record<
   },
 };
 
+const DOT: Record<StatSource, string> = {
+  "live-rex": "#22c55e",
+  "live-meta": "#22c55e",
+  manual: "#f59e0b",
+  snapshot: "#9ca3af",
+  derived: "#94a3b8",
+};
+
 export default function SourceBadge({
   source,
   note,
   asOf,
+  compact = false,
 }: {
   source: StatSource;
   note?: string;
   asOf?: string;
+  /** Render just a colour dot (full detail in the tooltip) — for dense cards. */
+  compact?: boolean;
 }) {
   const style = STYLES[source] ?? STYLES.snapshot;
   let label = style.label;
@@ -50,7 +61,18 @@ export default function SourceBadge({
     note ??
     (source === "snapshot"
       ? "Couldn't match a live stat for this yet — figure from the TLE Business Dashboard snapshot."
-      : undefined);
+      : label);
+
+  if (compact) {
+    return (
+      <span
+        className="source-badge inline-block h-2 w-2 rounded-full"
+        style={{ background: DOT[source] ?? DOT.snapshot }}
+        title={asOf && source === "snapshot" ? `${label} — ${tooltip}` : `${label}${note ? ` — ${note}` : ""}`}
+        aria-label={label}
+      />
+    );
+  }
 
   return (
     <span
