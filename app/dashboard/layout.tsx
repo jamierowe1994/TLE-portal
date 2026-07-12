@@ -205,12 +205,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* ── Desktop top bar (welcome + sign out) ── */}
-      <header className="fixed right-0 top-0 z-40 hidden h-[68px] items-center justify-between gap-3 pl-6 pr-8 lg:flex" style={{ left: SIDEBAR_W }}>
-        <div className="min-w-0">
-          <p className="truncate text-[17px] font-semibold leading-tight tracking-tight">{hello} 👋</p>
-          <p className="truncate text-[12.5px] text-muted">{prompt}</p>
-        </div>
+      {/* ── Desktop top bar (sign out) ── */}
+      <header className="fixed right-0 top-0 z-40 hidden h-[68px] items-center justify-end gap-3 pr-8 lg:flex" style={{ left: SIDEBAR_W }}>
         <button
           onClick={() => void handleSignOut()}
           className="btn-press shrink-0 rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-ink"
@@ -239,13 +235,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* ── Main ── */}
-      <main className="dash-cards px-4 pb-12 pt-4 lg:ml-[240px] lg:px-8 lg:pt-[96px]">
-        {/* Mobile welcome */}
-        <div className="mb-4 lg:hidden">
-          <p className="text-[17px] font-semibold leading-tight">{hello} 👋</p>
-          <p className="text-[12.5px] text-muted">{prompt}</p>
+      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-8 lg:pt-[96px]">
+        <div className="mx-auto max-w-[1600px]">
+          {/* Welcome — lives in the dashboard content, big and roomy */}
+          {pathname === "/dashboard" ? (
+            <div className="mb-8 lg:mb-10">
+              <h1 className="font-semibold tracking-tight" style={{ fontSize: "clamp(30px, 3.8vw, 46px)", lineHeight: 1.08 }}>
+                {hello} <span className="inline-block align-baseline">👋</span>
+              </h1>
+              <p className="mt-3 text-[15px] text-muted lg:text-[16px]">{prompt}</p>
+            </div>
+          ) : null}
+          {children}
         </div>
-        <div className="mx-auto max-w-[1600px]">{children}</div>
       </main>
     </div>
   );
