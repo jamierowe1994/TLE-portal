@@ -5,7 +5,7 @@ import {
   sessionCookieOptions,
   hashPassword,
 } from "@/lib/auth";
-import { isAllowedEmailDomain, BRAND } from "@/lib/brand";
+import { isAllowedEmailDomain, isAdminEmail, BRAND } from "@/lib/brand";
 import { ROSTER } from "@/lib/seed-data";
 import {
   createUser,
@@ -47,7 +47,10 @@ export async function POST(req: NextRequest) {
   if (!/^\S+@\S+\.\S+$/.test(email)) {
     return NextResponse.json({ error: "Invalid email" }, { status: 400 });
   }
-  if (!isAllowedEmailDomain(email)) {
+  // Admins (curated in ADMIN_EMAILS) may self-register with their own password
+  // regardless of domain — that's the head-office/admin creation path. Everyone
+  // else is restricted to the Lettings + head-office domains.
+  if (!isAllowedEmailDomain(email) && !isAdminEmail(email)) {
     return NextResponse.json(
       {
         error: `This is the partner portal for ${BRAND.name}. Please register with your company email address (e.g. yourname@${BRAND.domains[0]}). If you believe this is a mistake, contact your head office.`,
