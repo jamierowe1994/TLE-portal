@@ -334,6 +334,17 @@ function AdminShell({
               {autoCycle ? "Auto-cycle on" : "Auto-cycle"}
             </button>
           ) : null}
+          {/* Flip back to the customer-facing dashboard (frontend ⇄ backend) */}
+          <a
+            href="/dashboard"
+            className="hide-when-presenting btn-press flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-ink"
+            title="Switch to the customer dashboard"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <path d="M8 7h12m0 0l-4-4m4 4l-4 4M16 17H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            Customer view
+          </a>
           <PresentButton />
           <button
             type="button"
