@@ -44,11 +44,13 @@ const fmtGained = (n: number | null) =>
 function PlatformCard({
   label,
   icon,
+  iconBg,
   data,
   windowLabel,
 }: {
   label: string;
   icon: string;
+  iconBg: string;
   data: SocialPlatform;
   windowLabel: string;
 }) {
@@ -63,7 +65,10 @@ function PlatformCard({
   return (
     <div className="card p-5">
       <div className="flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink text-white">
+        <span
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
+          style={{ background: iconBg }}
+        >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
             <path d={icon} />
           </svg>
@@ -159,12 +164,14 @@ function SocialsSection() {
           <PlatformCard
             label="Facebook"
             icon={FB_ICON}
+            iconBg="#1877F2"
             data={social.facebook}
             windowLabel={windowLabel}
           />
           <PlatformCard
             label="Instagram"
             icon={IG_ICON}
+            iconBg="linear-gradient(45deg, #F58529 0%, #DD2A7B 45%, #8134AF 75%, #515BD4 100%)"
             data={social.instagram}
             windowLabel={windowLabel}
           />
