@@ -163,7 +163,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* ── Desktop sidebar ── */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col lg:flex">
-        <div className="flex items-center gap-2.5 px-5 pt-6">
+        <div className="flex items-center gap-2.5 px-5 pt-8">
           <BrandMark size={34} />
           <div className="leading-tight">
             <div className="text-[15px] font-semibold tracking-tight">The Lettings Expert</div>
@@ -171,7 +171,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        <nav className="mt-8 flex-1 space-y-0.5 px-3">
+        {/* divider under the brand */}
+        <div className="mx-5 mt-6 border-t border-line" />
+
+        <nav className="mt-7 flex-1 space-y-0.5 px-3">
           <NavLinks />
           {user.isAdmin ? (
             <Link
