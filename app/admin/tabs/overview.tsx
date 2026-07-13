@@ -59,13 +59,30 @@ interface OverviewPayload {
 // slivers when the block is narrow.
 const CARD_GRID = "grid gap-3 grid-cols-[repeat(auto-fit,minmax(150px,1fr))]";
 
+// Title with an optional click-to-reveal source line — keeps the block clean by
+// default, with the detail one tap away rather than always underneath.
 function Titled({ title, source, children }: { title: string; source?: string; children: ReactNode }) {
+  const [showInfo, setShowInfo] = useState(false);
   return (
     <div>
-      <div className="mb-2">
+      <div className="mb-2 flex items-center gap-1.5">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide">{title}</h2>
-        {source ? <p className="mt-0.5 text-[11px] text-muted">Source: {source}</p> : null}
+        {source ? (
+          <button
+            type="button"
+            onClick={() => setShowInfo((v) => !v)}
+            aria-expanded={showInfo}
+            aria-label="Source & detail"
+            title="Source"
+            className="hide-when-presenting flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-[10px] font-semibold leading-none text-muted transition hover:border-accent hover:text-accent"
+          >
+            i
+          </button>
+        ) : null}
       </div>
+      {showInfo && source ? (
+        <p className="mb-2 text-[11px] text-muted">Source: {source}</p>
+      ) : null}
       {children}
     </div>
   );
@@ -73,6 +90,24 @@ function Titled({ title, source, children }: { title: string; source?: string; c
 
 function ChartCard({ children }: { children: ReactNode }) {
   return <div className="card p-5">{children}</div>;
+}
+
+// A one-line, click-to-expand note — keeps long explanations out of the way.
+function DetailNote({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="hide-when-presenting mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+      >
+        {open ? "Hide detail" : label}
+      </button>
+      {open ? <p className="mt-1 text-[11px] leading-relaxed text-muted">{children}</p> : null}
+    </div>
+  );
 }
 
 const num = (s: StatValue) => s.value ?? 0;
@@ -210,12 +245,12 @@ export default function Overview({ month }: { month: string }) {
                 <StatCard size="sm" label="Managed (REX)" stat={liveStat(live.totals.managed)} sub="Let & managed" />
                 <StatCard size="sm" label="Rent Roll (REX)" stat={liveStat(live.totals.rentRoll, formatGBP(live.totals.rentRoll))} sub="Per month" />
               </div>
-              <p className="mt-2 text-[11px] text-muted">
+              <DetailNote label="How these figures are calculated">
                 Summed live from REX across {live.agentsCounted} lettings agents. Listings &amp; pipeline are live REX
                 figures. Managed &amp; rent roll are a REX cut and read lower than the PayProp portfolio report (Glasgow
                 and rent-collect properties aren&apos;t in this pull) — the PayProp figures below remain the official
                 totals until that integration lands.
-              </p>
+              </DetailNote>
             </>
           ) : null}
         </div>

@@ -10,6 +10,7 @@ import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
 import { PresentProvider, PresentButton, usePresent } from "@/components/PresentMode";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
+import { BRAND } from "@/lib/brand";
 import type { UserProfile } from "@/lib/types";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import { monthLabel } from "@/lib/format";
@@ -58,6 +59,43 @@ const MONTHS = [
   "2026-07",
 ];
 const DEFAULT_MONTH = "2026-07";
+
+/* --------------------------- CRM shell chrome --------------------------- */
+
+const SIDEBAR_W = 240;
+const SWOOP = 22;
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+// One seamless white L-shape (sidebar + top bar) with a concave corner swoop —
+// mirrors the customer dashboard shell so the two feel like one product.
+function ChromeSurface({ vw, vh }: { vw: number; vh: number }) {
+  const sw = SIDEBAR_W;
+  const th = 64;
+  const r = SWOOP;
+  const d =
+    `M0 0 L${vw} 0 L${vw} ${th} L${sw + r} ${th} ` +
+    `A${r} ${r} 0 0 0 ${sw} ${th + r} L${sw} ${vh} L0 ${vh} Z`;
+  return (
+    <div
+      aria-hidden
+      className="hide-when-presenting pointer-events-none fixed inset-0 z-20 hidden bg-white lg:block"
+      style={{
+        clipPath: `path('${d}')`,
+        WebkitClipPath: `path('${d}')`,
+        filter:
+          "drop-shadow(3px 0 12px rgba(0,0,0,0.05)) drop-shadow(0 4px 12px rgba(0,0,0,0.05))",
+      }}
+    />
+  );
+}
 
 /* ----------------------------- auth page ----------------------------- */
 
@@ -235,6 +273,14 @@ function AdminShell({
   const [autoCycle, setAutoCycle] = useState(false);
   const [seed, setSeed] = useState<SeedData | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [vp, setVp] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    const on = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+    on();
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
 
   // Load the snapshot seed once via the admin-gated API.
   useEffect(() => {
@@ -290,27 +336,84 @@ function AdminShell({
   );
 
   return (
-    <div className="dash-surface min-h-screen">
-    <main className="mx-auto max-w-[1400px] px-4 py-5 sm:px-6">
-      {/* ------------------------------ header ------------------------------ */}
-      <header className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-3">
-          <BrandMark size={38} white={presenting} />
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">
-              TLE Business Dashboard
-            </h1>
-            <p className="text-xs text-muted">
-              {monthLabel(month)}
-              {presenting ? ` · ${active.label}` : ""}
-            </p>
+    <div
+      className="relative min-h-screen"
+      style={{ background: presenting ? undefined : "var(--page)" }}
+    >
+      {/* ambient glow */}
+      <div className="hide-when-presenting pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div
+          className="absolute"
+          style={{
+            bottom: "-30%",
+            right: "-25%",
+            width: "120%",
+            height: "120%",
+            background: `radial-gradient(circle at 50% 52%, ${BRAND.accent}14, transparent 66%)`,
+          }}
+        />
+      </div>
+
+      {vp.w > 0 ? <ChromeSurface vw={vp.w} vh={vp.h} /> : null}
+
+      {/* ── Desktop sidebar ── */}
+      <aside className="hide-when-presenting fixed inset-y-0 left-0 z-30 hidden w-60 flex-col lg:flex">
+        <div className="flex items-center gap-2.5 px-5 pt-7">
+          <BrandMark size={34} />
+          <div className="leading-tight">
+            <div className="text-[15px] font-semibold tracking-tight">The Lettings Expert</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted">Business</div>
           </div>
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+
+        <div className="mx-5 mt-6 border-t border-line" />
+
+        <nav className="mt-5 flex-1 space-y-0.5 overflow-y-auto px-3 pb-4" aria-label="Dashboard sections">
+          {TABS.map((tab, i) => {
+            const on = i === tabIndex;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setTabIndex(i)}
+                aria-current={on ? "page" : undefined}
+                className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                  on ? "accent-soft-bg text-ink" : "text-muted hover:bg-black/[0.03] hover:text-ink"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full accent-soft-bg text-[12px] font-semibold accent-text">
+              {initials(user.name) || "?"}
+            </span>
+            <div className="min-w-0 flex-1 leading-tight">
+              <p className="truncate text-sm font-medium">{user.name}</p>
+              <p className="truncate text-xs text-muted">{user.email}</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Desktop top bar ── */}
+      <header
+        className="hide-when-presenting fixed right-0 top-0 z-40 hidden h-16 items-center justify-between gap-3 pl-6 pr-8 lg:flex"
+        style={{ left: SIDEBAR_W }}
+      >
+        <div className="min-w-0">
+          <h1 className="truncate text-[16px] font-semibold leading-tight">{active.label}</h1>
+          <p className="truncate text-[12px] text-muted">TLE Business · {monthLabel(month)}</p>
+        </div>
+        <div className="flex items-center gap-2">
           <select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="hide-when-presenting rounded-lg border border-line bg-card px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
+            className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
             aria-label="Month"
           >
             {monthOptions.map((m) => (
@@ -319,25 +422,9 @@ function AdminShell({
               </option>
             ))}
           </select>
-          {presenting ? (
-            <button
-              type="button"
-              onClick={() => setAutoCycle((v) => !v)}
-              aria-pressed={autoCycle}
-              className={`rounded-lg border px-3 py-1.5 text-[13px] font-medium ${
-                autoCycle
-                  ? "border-accent bg-accent text-white"
-                  : "border-line bg-card"
-              }`}
-              style={autoCycle ? undefined : { color: "#101014" }}
-            >
-              {autoCycle ? "Auto-cycle on" : "Auto-cycle"}
-            </button>
-          ) : null}
-          {/* Flip back to the customer-facing dashboard (frontend ⇄ backend) */}
           <a
             href="/dashboard"
-            className="hide-when-presenting btn-press flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-ink"
+            className="btn-press flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-ink"
             title="Switch to the customer dashboard"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -349,7 +436,7 @@ function AdminShell({
           <button
             type="button"
             onClick={() => void onSignOut()}
-            className="hide-when-presenting btn-press rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium"
+            className="btn-press rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-ink"
             title={`Signed in as ${user.email}`}
           >
             Sign out
@@ -357,61 +444,92 @@ function AdminShell({
         </div>
       </header>
 
-      {/* ------------------------------ tab bar ------------------------------ */}
-      <nav
-        className="hide-when-presenting mt-4 flex gap-1 overflow-x-auto rounded-xl border border-line bg-card p-1"
-        aria-label="Dashboard sections"
-      >
-        {TABS.map((tab, i) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setTabIndex(i)}
-            aria-current={i === tabIndex ? "page" : undefined}
-            className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
-              i === tabIndex
-                ? "bg-accent text-white"
-                : "text-muted hover:bg-accent-soft hover:text-ink"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
-      {/* Presenting: slim position indicator instead of the tab bar */}
-      {presenting ? (
-        <div className="mt-4 flex items-center gap-2">
-          {TABS.map((tab, i) => (
-            <span
-              key={tab.key}
-              title={tab.label}
-              className="h-1.5 flex-1 rounded-full"
-              style={{ background: i === tabIndex ? "#E31F36" : "#26262E" }}
-            />
-          ))}
+      {/* ── Mobile top bar ── */}
+      <header className="hide-when-presenting sticky top-0 z-40 border-b border-line bg-white lg:hidden">
+        <div className="flex h-14 items-center gap-3 px-4">
+          <BrandMark size={28} />
+          <span className="text-sm font-semibold">TLE Business</span>
+          <div className="ml-auto flex items-center gap-2">
+            <a href="/dashboard" className="rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-medium text-muted">Customer</a>
+            <PresentButton />
+            <button onClick={() => void onSignOut()} className="rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-medium text-muted">Sign out</button>
+          </div>
         </div>
-      ) : null}
+        <nav className="flex items-center gap-1 overflow-x-auto px-3 pb-2" aria-label="Dashboard sections">
+          {TABS.map((tab, i) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setTabIndex(i)}
+              aria-current={i === tabIndex ? "page" : undefined}
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                i === tabIndex ? "bg-accent text-white" : "text-muted hover:bg-accent-soft hover:text-ink"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </header>
 
-      {/* ------------------------------ content ------------------------------ */}
-      <section className="mt-5 pb-16" key={active.key}>
-        {seed ? (
-          <ActiveComponent month={month} seed={seed} />
-        ) : seedError ? (
-          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
-            {seedError}
-          </p>
-        ) : (
-          <p className="text-sm text-muted">Loading business data…</p>
-        )}
-      </section>
-
+      {/* ── Presenting: floating controls + position dots ── */}
       {presenting ? (
-        <p className="fixed bottom-3 left-1/2 -translate-x-1/2 text-[11px]" style={{ color: "#6B6B76" }}>
-          ← → to change tabs · Esc to exit
-        </p>
+        <>
+          <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setAutoCycle((v) => !v)}
+              aria-pressed={autoCycle}
+              className={`rounded-lg border px-3 py-1.5 text-[13px] font-medium ${
+                autoCycle ? "border-accent bg-accent text-white" : "border-line bg-card"
+              }`}
+              style={autoCycle ? undefined : { color: "#101014" }}
+            >
+              {autoCycle ? "Auto-cycle on" : "Auto-cycle"}
+            </button>
+            <PresentButton />
+          </div>
+          <div className="fixed inset-x-6 top-3 z-40 flex items-center gap-2">
+            {TABS.map((tab, i) => (
+              <span
+                key={tab.key}
+                title={tab.label}
+                className="h-1.5 flex-1 rounded-full"
+                style={{ background: i === tabIndex ? "#E31F36" : "#26262E" }}
+              />
+            ))}
+          </div>
+          <p className="fixed bottom-3 left-1/2 -translate-x-1/2 text-[11px]" style={{ color: "#6B6B76" }}>
+            ← → to change tabs · Esc to exit
+          </p>
+        </>
       ) : null}
-    </main>
+
+      {/* ── Main ── */}
+      <main
+        className={
+          presenting
+            ? "px-6 py-10"
+            : "dash-cards px-4 pb-16 pt-4 lg:ml-[240px] lg:px-8 lg:pt-[80px]"
+        }
+      >
+        <div className="mx-auto max-w-[1400px]">
+          {presenting ? (
+            <h2 className="mb-5 text-2xl font-semibold">{active.label}</h2>
+          ) : null}
+          <section key={active.key}>
+            {seed ? (
+              <ActiveComponent month={month} seed={seed} />
+            ) : seedError ? (
+              <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+                {seedError}
+              </p>
+            ) : (
+              <p className="text-sm text-muted">Loading business data…</p>
+            )}
+          </section>
+        </div>
+      </main>
     </div>
   );
 }
