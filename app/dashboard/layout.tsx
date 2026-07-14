@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BrandMark from "@/components/BrandMark";
@@ -15,13 +15,12 @@ import type { UserProfile } from "@/lib/types";
 // portal's layout.
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: "M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10" },
+  { href: "/dashboard", label: "Dashboard", icon: "M4 4h7v9H4zM13 4h7v5h-7zM13 13h7v7h-7zM4 17h7v3H4z" },
   { href: "/dashboard/listings", label: "My Properties", icon: "M3 11l9-8 9 8M5 9.5V20a1 1 0 001 1h12a1 1 0 001-1V9.5M9.5 21v-6h5v6" },
   { href: "/dashboard/applications", label: "Applications", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
   { href: "/dashboard/compliance", label: "Compliance", icon: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 8.3-7 9-4-0.7-7-4.5-7-9V6l7-3z" },
   { href: "/dashboard/ads", label: "My Ads", icon: "M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm2 11l4-5 3 3 2-2 3 4M9 9.5a.5.5 0 11-1 0 .5.5 0 011 0z" },
   { href: "/dashboard/forecast", label: "Forecast", icon: "M3 17l6-6 4 4 8-8M21 7v6M21 7h-6" },
-  { href: "/dashboard/profile", label: "Profile", icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
 ];
 
 const SIDEBAR_W = 240;
@@ -71,6 +70,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [user, setUser] = useState<UserProfile | null>(null);
   const [checking, setChecking] = useState(true);
   const [vp, setVp] = useState({ w: 0, h: 0 });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the account menu on an outside click or Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     const on = () => setVp({ w: window.innerWidth, h: window.innerHeight });
@@ -94,6 +110,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       cancelled = true;
     };
   }, [router, pathname]);
+
+  useEffect(() => setMenuOpen(false), [pathname]);
 
   async function handleSignOut() {
     await signOut();
@@ -297,13 +315,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </nav>
 
-        <div className="p-4">
-          <div className="flex items-center gap-3">
+        {/* The account lives at the bottom of the rail, where you'd look for it —
+            click through to Settings rather than giving Profile a nav slot. */}
+        <div className="relative p-4" ref={menuRef}>
+          {menuOpen ? (
+            <div className="menu-pop absolute bottom-[calc(100%-0.25rem)] left-4 right-4 z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl">
+              <Link
+                href="/dashboard/profile"
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink transition hover:bg-black/[0.04]"
+              >
+                <svg className="h-4 w-4 text-muted" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <circle cx={12} cy={12} r={3} />
+                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.58.78.98 1.42 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                </svg>
+                Settings
+              </Link>
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-muted transition hover:bg-black/[0.04] hover:text-ink"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+                </svg>
+                Sign out
+              </button>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className={`flex w-full items-center gap-3 rounded-xl p-2 text-left transition ${
+              menuOpen ? "bg-black/[0.04]" : "hover:bg-black/[0.03]"
+            }`}
+          >
             {user.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={user.photo} alt={user.name} className="h-9 w-9 rounded-full object-cover" />
+              <img src={user.photo} alt={user.name} className="h-9 w-9 shrink-0 rounded-full object-cover" />
             ) : (
-              <span className="flex h-9 w-9 items-center justify-center rounded-full accent-soft-bg text-[12px] font-semibold accent-text">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full accent-soft-bg text-[12px] font-semibold accent-text">
                 {initials(user.name) || "?"}
               </span>
             )}
@@ -311,7 +364,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <p className="truncate text-sm font-medium">{user.name}</p>
               <p className="truncate text-xs text-muted">{user.email}</p>
             </div>
-          </div>
+            <svg
+              className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-150 ${menuOpen ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path d="M18 15l-6-6-6 6" />
+            </svg>
+          </button>
         </div>
       </aside>
 
@@ -350,6 +415,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             }`}
           >
             TLE OS
+          </Link>
+          {/* Profile has no nav slot on desktop (it's under the account chip),
+              so mobile needs a way through to it. */}
+          <Link
+            href="/dashboard/profile"
+            className={`${navItem} whitespace-nowrap ${
+              pathname.startsWith("/dashboard/profile")
+                ? "accent-soft-bg text-ink"
+                : "text-muted hover:bg-black/[0.03] hover:text-ink"
+            }`}
+          >
+            Settings
           </Link>
         </nav>
       </header>
