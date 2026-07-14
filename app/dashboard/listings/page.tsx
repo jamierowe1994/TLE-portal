@@ -42,60 +42,100 @@ function fmtDate(iso: string | null): string | null {
 
 /* -------------------------------- the card ------------------------------- */
 
+/** Photo on the right; a quiet placeholder when REX has none (usually drafts). */
+function ListingPhoto({ l }: { l: AgentListing }) {
+  if (!l.image) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-page text-muted">
+        <svg className="h-5 w-5 opacity-40" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+          <rect x={3} y={5} width={18} height={14} rx={2} />
+          <path d="M3 15l5-5 4 4 3-3 6 6" />
+          <circle cx={8.5} cy={9.5} r={1} />
+        </svg>
+        <span className="text-[10px]">No photos</span>
+      </div>
+    );
+  }
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={l.image}
+        alt={l.address}
+        loading="lazy"
+        className="h-full w-full object-cover"
+      />
+      {l.imageCount > 1 ? (
+        <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+          {l.imageCount}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 function ListingCard({ l, delay }: { l: AgentListing; delay: number }) {
   const epc = epcState(l);
   const available = fmtDate(l.availableFrom);
   return (
-    <div className="enter enter-up card flex flex-col p-5" style={enterAt(delay)}>
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-[14px] font-semibold leading-snug">{l.address}</h3>
-        {l.letAgreed ? (
-          <span className="shrink-0 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">
-            LET AGREED
-          </span>
-        ) : (
-          <span className="shrink-0 rounded-full border border-line bg-page px-2 py-0.5 text-[10px] font-semibold text-muted">
-            ON MARKET
-          </span>
-        )}
-      </div>
-
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="stat-value text-[26px]">
-          {l.rent != null ? formatGBP(l.rent) : (l.advertisedAs ?? "—")}
-        </span>
-        {l.rentPeriod ? (
-          <span className="text-[12px] text-muted">/ {l.rentPeriod.toLowerCase()}</span>
-        ) : null}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${EPC_STYLE[epc.state]}`}>
-          {epc.label}
-        </span>
-        {l.publicationStatus?.toLowerCase() === "draft" ? (
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-            Draft — not published
-          </span>
-        ) : null}
-        {l.letType ? (
-          <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[10px] font-medium text-muted">
-            {l.letType}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-line pt-3 text-[11px] text-muted">
-        <div>
-          <div className="font-medium text-ink">{available ?? "—"}</div>
-          Available from
+    <div className="enter enter-up card flex overflow-hidden" style={enterAt(delay)}>
+      {/* ---- info, left ---- */}
+      <div className="flex min-w-0 flex-1 flex-col p-5">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="text-[14px] font-semibold leading-snug">{l.address}</h3>
+          {l.letAgreed ? (
+            <span className="shrink-0 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+              LET AGREED
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-full border border-line bg-page px-2 py-0.5 text-[10px] font-semibold text-muted">
+              ON MARKET
+            </span>
+          )}
         </div>
-        <div>
-          <div className="font-medium text-ink">
-            {l.minTermMonths != null ? `${l.minTermMonths} months` : "—"}
+
+        <div className="mt-2.5 flex items-baseline gap-2">
+          <span className="stat-value text-[24px]">
+            {l.rent != null ? formatGBP(l.rent) : (l.advertisedAs ?? "—")}
+          </span>
+          {l.rentPeriod ? (
+            <span className="text-[12px] text-muted">/ {l.rentPeriod.toLowerCase()}</span>
+          ) : null}
+        </div>
+
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${EPC_STYLE[epc.state]}`}>
+            {epc.label}
+          </span>
+          {l.publicationStatus?.toLowerCase() === "draft" ? (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+              Draft — not published
+            </span>
+          ) : null}
+          {l.letType ? (
+            <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[10px] font-medium text-muted">
+              {l.letType}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="mt-auto grid grid-cols-2 gap-2 pt-3 text-[11px] text-muted">
+          <div>
+            <div className="font-medium text-ink">{available ?? "—"}</div>
+            Available from
           </div>
-          Minimum term
+          <div>
+            <div className="font-medium text-ink">
+              {l.minTermMonths != null ? `${l.minTermMonths} months` : "—"}
+            </div>
+            Minimum term
+          </div>
         </div>
+      </div>
+
+      {/* ---- photo, right ---- */}
+      <div className="relative w-[38%] shrink-0 self-stretch border-l border-line">
+        <ListingPhoto l={l} />
       </div>
     </div>
   );
@@ -158,9 +198,9 @@ export default function ListingsPage() {
       ) : null}
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="card h-48 animate-pulse" />
+            <div key={i} className="card h-44 animate-pulse" />
           ))}
         </div>
       ) : linked && !error && all.length === 0 ? (
@@ -200,7 +240,9 @@ export default function ListingsPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Tiles carry a photo alongside the detail, so they need more width
+              than a plain stat card — two up, three only on very wide screens. */}
+          <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
             {all.map((l, i) => (
               <ListingCard key={l.id} l={l} delay={260 + i * 60} />
             ))}

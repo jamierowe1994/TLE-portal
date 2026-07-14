@@ -296,6 +296,9 @@ export interface AgentListing {
   epcExpiry: string | null;
   epcRating: number | null;
   epcNotRequired: boolean;
+  /** Hero shot (REX priority 1), 400x300 thumb. null when none uploaded. */
+  image: string | null;
+  imageCount: number;
 }
 
 // REX returns lookups as { id, text } and plain values elsewhere — normalise.
@@ -313,8 +316,40 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// REX image urls come back protocol-relative ("//uk-crm.cdns…") — make them
+// absolute so the browser doesn't resolve them against our own origin.
+function absoluteUrl(u: unknown): string | null {
+  if (typeof u !== "string" || !u) return null;
+  if (u.startsWith("//")) return `https:${u}`;
+  return u;
+}
+
+/**
+ * The listing's hero shot. REX orders images by `priority` (1 = first), and
+ * ships pre-made thumbs — take the 400x300 for a tile rather than pulling a
+ * 1200x800 original per card.
+ */
+function heroImage(r: Record<string, unknown>): { url: string | null; count: number } {
+  const related = (r.related ?? {}) as Record<string, unknown>;
+  const images = Array.isArray(related.listing_images)
+    ? (related.listing_images as Array<Record<string, unknown>>)
+    : [];
+  if (images.length === 0) return { url: null, count: 0 };
+
+  const hero = [...images].sort(
+    (a, b) => Number(a.priority ?? 999) - Number(b.priority ?? 999)
+  )[0];
+  const thumbs = (hero.thumbs ?? {}) as Record<string, { url?: string }>;
+  const url =
+    absoluteUrl(thumbs["400x300"]?.url) ??
+    absoluteUrl(thumbs["800x600"]?.url) ??
+    absoluteUrl(hero.url);
+  return { url, count: images.length };
+}
+
 function toListing(r: Record<string, unknown>): AgentListing {
   const property = (r.property ?? {}) as Record<string, unknown>;
+  const hero = heroImage(r);
   const address =
     (property.system_search_key as string) ??
     [property.adr_street_number, property.adr_street_name, property.adr_postcode]
@@ -336,6 +371,8 @@ function toListing(r: Record<string, unknown>): AgentListing {
     epcExpiry: (r.epc_expiry_date as string) ?? null,
     epcRating: num(r.epc_current_eer),
     epcNotRequired: r.epc_not_required === 1 || r.epc_not_required === true,
+    image: hero.url,
+    imageCount: hero.count,
   };
 }
 
@@ -353,13 +390,19 @@ export async function getAgentListings(
     const caps = await getCapabilities();
     if (!caps.capabilities.login || !caps.capabilities.listings) return null;
 
-    const rows = await searchRows("Listings", [
-      { name: "listing_agent_1_id", type: "=", value: rexUserId },
-      { name: "system_listing_state", type: "=", value: "current" },
-    ]);
-    if (!rows) return null;
+    // extra_fields pulls the photos in with the listings — one call, not one
+    // per property.
+    const res = await rexCall("Listings", "search", {
+      criteria: [
+        { name: "listing_agent_1_id", type: "=", value: rexUserId },
+        { name: "system_listing_state", type: "=", value: "current" },
+      ],
+      extra_options: { extra_fields: ["related.listing_images"] },
+      limit: COUNT_LIMIT,
+    }).catch(() => null);
+    if (!res || !res.ok) return null;
 
-    return rows
+    return rexRows(res.result)
       .map(toListing)
       .sort((a, b) => a.address.localeCompare(b.address, "en-GB"));
   })();
