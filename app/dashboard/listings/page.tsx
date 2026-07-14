@@ -159,10 +159,10 @@ function ListingTile({
     <button
       type="button"
       onClick={onOpen}
-      className="enter enter-up card btn-press flex overflow-hidden text-left transition hover:border-black/20"
+      className="enter enter-up card btn-press flex min-h-[210px] text-left transition hover:border-black/20"
       style={enterAt(delay)}
     >
-      <div className="flex min-w-0 flex-1 flex-col p-4">
+      <div className="flex min-w-0 flex-1 flex-col p-6">
         <div className="flex items-center gap-1.5">
           <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[stage]}`}>
             {STAGE_LABEL[stage]}
@@ -175,11 +175,11 @@ function ListingTile({
           ) : null}
         </div>
 
-        <h3 className="mt-2 truncate text-[14px] font-semibold leading-snug">{l.name}</h3>
-        <p className="truncate text-[12px] text-muted">{l.locality}</p>
+        <h3 className="mt-3.5 truncate text-[14px] font-semibold leading-snug">{l.name}</h3>
+        <p className="mt-0.5 truncate text-[12px] text-muted">{l.locality}</p>
 
-        <div className="mt-auto flex items-baseline gap-1 pt-3">
-          <span className="stat-value text-[20px]">
+        <div className="mt-auto flex items-baseline gap-1 pt-4">
+          <span className="stat-value text-[21px]">
             {l.rent != null ? formatGBP(l.rent) : (l.advertisedAs ?? "—")}
           </span>
           <span className="text-[11px] text-muted">
@@ -188,13 +188,17 @@ function ListingTile({
         </div>
       </div>
 
-      <div className="relative w-[38%] shrink-0 self-stretch border-l border-line">
-        <Photo l={l} />
-        {l.imageCount > 1 ? (
-          <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-            {l.imageCount}
-          </span>
-        ) : null}
+      {/* The photo sits inset, so the card's own white reads as a border around
+          it. Cropped to fill — a slight crop beats letterboxing. */}
+      <div className="w-[38%] shrink-0 p-3 pl-0">
+        <div className="relative h-full w-full overflow-hidden rounded-xl bg-page">
+          <Photo l={l} />
+          {l.imageCount > 1 ? (
+            <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+              {l.imageCount}
+            </span>
+          ) : null}
+        </div>
       </div>
     </button>
   );
@@ -205,7 +209,7 @@ function ListingTile({
 function StepRow({ s }: { s: Step }) {
   const p = s.platformId ? platformById(s.platformId) : undefined;
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-line p-3">
+    <div className="flex items-start gap-3 rounded-xl border border-line p-4">
       <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-line" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium">{s.title}</p>
@@ -241,14 +245,16 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10"
       onClick={onClose}
     >
       <div
-        className="modal-pop my-auto w-full max-w-lg overflow-hidden rounded-2xl bg-card"
+        className="modal-pop my-auto w-full max-w-xl rounded-2xl bg-card p-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative h-44 w-full">
+        {/* Photo inset exactly like the tile, so the two never look like
+            different products. */}
+        <div className="relative h-52 w-full overflow-hidden rounded-xl bg-page">
           <Photo l={l} />
           <button
             onClick={onClose}
@@ -261,14 +267,14 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           </button>
         </div>
 
-        <div className="p-5">
+        <div className="p-5 sm:p-7">
           <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[stage]}`}>
             {STAGE_LABEL[stage]}
           </span>
-          <h2 className="mt-2 text-[17px] font-semibold leading-snug">{l.name}</h2>
-          <p className="text-[13px] text-muted">{l.locality}</p>
+          <h2 className="mt-3 text-[17px] font-semibold leading-snug">{l.name}</h2>
+          <p className="mt-0.5 text-[13px] text-muted">{l.locality}</p>
 
-          <div className="mt-4 grid grid-cols-3 gap-3 border-y border-line py-3 text-[11px] text-muted">
+          <div className="mt-6 grid grid-cols-3 gap-3 border-y border-line py-5 text-[11px] text-muted">
             <div>
               <div className="stat-value text-[18px] text-ink">
                 {l.rent != null ? formatGBP(l.rent) : "—"}
@@ -290,7 +296,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           </div>
 
           {/* Compliance — only shouts when it needs to */}
-          <div className="mt-4 flex items-center gap-2">
+          <div className="mt-5 flex items-center gap-2">
             <span
               className={`h-2 w-2 rounded-full ${epcNeedsWork(epc.state) ? "bg-amber-500" : "bg-emerald-500"}`}
             />
@@ -301,16 +307,16 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           </div>
 
           {/* Next steps — only what this stage actually needs */}
-          <div className="mt-5">
+          <div className="mt-7">
             <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
               {steps.length ? "What's next" : "Nothing outstanding"}
             </h3>
             {steps.length ? (
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 space-y-2.5">
                 {steps.map((s) => (
                   <StepRow key={s.title} s={s} />
                 ))}
-                <p className="pt-1 text-[11px] text-muted">
+                <p className="pt-2 text-[11px] text-muted">
                   These aren&rsquo;t ticked off automatically yet — once the
                   PayProp, Flatfair and Propoly connections are live, this list
                   will know what&rsquo;s already done.
@@ -358,7 +364,7 @@ export default function ListingsPage() {
   const needs = all.filter((l) => stepsFor(l, stageOf(l)).length > 0).length;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">My properties</h1>
         <p className="mt-1 text-[13px] text-muted">
@@ -377,9 +383,9 @@ export default function ListingsPage() {
       {error ? <div className="card p-6 text-center text-sm text-muted">{error}</div> : null}
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="card h-36 animate-pulse" />
+            <div key={i} className="card h-[210px] animate-pulse" />
           ))}
         </div>
       ) : linked && !error && all.length === 0 ? (
@@ -397,7 +403,7 @@ export default function ListingsPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
             {all.map((l, i) => (
               <ListingTile key={l.id} l={l} delay={200 + i * 50} onOpen={() => setOpen(l)} />
             ))}
