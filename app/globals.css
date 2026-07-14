@@ -140,6 +140,45 @@ h5 {
   to { opacity: 1; transform: none; }
 }
 
+/* ---------------------------------------------------------------------------
+   Page-entrance choreography — the dashboard builds itself as you land, each
+   piece arriving on its own beat. Set --enter-delay per element; fill-mode
+   `both` holds the "from" state through the delay so nothing flashes early.
+--------------------------------------------------------------------------- */
+.enter {
+  opacity: 0;
+  animation-duration: 0.55s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-fill-mode: both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+.enter-up { animation-name: enter-up; }
+.enter-left { animation-name: enter-left; }
+.enter-right { animation-name: enter-right; }
+.enter-fade { animation-name: enter-fade; animation-duration: 0.7s; }
+.enter-pop { animation-name: enter-pop; }
+
+@keyframes enter-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes enter-left {
+  from { opacity: 0; transform: translateX(-42px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes enter-right {
+  from { opacity: 0; transform: translateX(36px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes enter-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes enter-pop {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
 .modal-pop { animation: modal-pop 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes modal-pop {
   from { opacity: 0; transform: translateY(16px) scale(0.975); }
@@ -220,6 +259,11 @@ body.presenting .source-badge {
   .fade-up,
   .modal-pop {
     animation: none;
+  }
+  .enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
   }
   .reveal,
   .reveal-left,

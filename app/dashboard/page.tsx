@@ -64,6 +64,12 @@ function snapStat(value: number | null, note: string, display?: string): StatVal
   return { value, display, source: "snapshot", asOf: SNAP, note };
 }
 
+// Entrance choreography — each piece lands on its own beat so the dashboard
+// builds itself as you arrive. Delays are relative to this content mounting
+// (which is after the greeting has already had its moment).
+const enterAt = (ms: number) =>
+  ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
+
 /* ---------------------------------- page ---------------------------------- */
 
 export default function MyDashboardPage() {
@@ -163,8 +169,12 @@ export default function MyDashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* Period selector — drives the earnings view below */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Period selector — drives the earnings view below.
+          Slides in from behind the nav rail. */}
+      <div
+        className="enter enter-left flex flex-wrap items-center gap-3"
+        style={enterAt(800)}
+      >
         <h1 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
           Your month · {monthLabel(ANCHOR)}
         </h1>
@@ -213,7 +223,7 @@ export default function MyDashboardPage() {
         <>
           {/* ---- HERO: earnings YTD + this month ---- */}
           <section className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-            <div className="card p-6">
+            <div className="enter enter-up card p-6" style={enterAt(900)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
                   Earnings · {period.label}
@@ -263,7 +273,7 @@ export default function MyDashboardPage() {
                 { label: "Let agreed", value: letAgreed, color: "#9ca3af" },
               ];
               return (
-                <div className="card flex flex-col p-6">
+                <div className="enter enter-right card flex flex-col p-6" style={enterAt(1000)}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
                       Your portfolio
@@ -327,46 +337,59 @@ export default function MyDashboardPage() {
             })()}
           </section>
 
-          {/* ---- THE BASICS ---- */}
+          {/* ---- THE BASICS ---- four boxes, each flowing up on its own beat */}
           <section>
-            <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+            <h2
+              className="enter enter-up mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted"
+              style={enterAt(1100)}
+            >
               This month · {monthLabel(ANCHOR)}
             </h2>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <StatCard label="Market appraisals" stat={stats.funnel.marketAppraisals} />
-              <StatCard label="Listings" stat={stats.funnel.listings} />
-              <StatCard
-                label="Move-ins"
-                stat={snapStat(stats.moveIns.length, "From your move-in list", formatNum(stats.moveIns.length))}
-              />
-              {/* Pipeline: prefer the live REX count (let-agreed) over the snapshot rows. */}
-              {stats.funnel.pipeline?.value != null ? (
-                <StatCard label="Pipeline" stat={stats.funnel.pipeline} sub="Let agreed, awaiting completion" />
-              ) : (
+              <div className="enter enter-up" style={enterAt(1180)}>
+                <StatCard label="Market appraisals" stat={stats.funnel.marketAppraisals} />
+              </div>
+              <div className="enter enter-up" style={enterAt(1255)}>
+                <StatCard label="Listings" stat={stats.funnel.listings} />
+              </div>
+              <div className="enter enter-up" style={enterAt(1330)}>
                 <StatCard
-                  label="Pipeline"
-                  stat={snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length))}
-                  sub={pipelineRentPcm > 0 ? `${formatGBP(pipelineRentPcm)} pcm` : undefined}
+                  label="Move-ins"
+                  stat={snapStat(stats.moveIns.length, "From your move-in list", formatNum(stats.moveIns.length))}
                 />
-              )}
+              </div>
+              {/* Pipeline: prefer the live REX count (let-agreed) over the snapshot rows. */}
+              <div className="enter enter-up" style={enterAt(1405)}>
+                {stats.funnel.pipeline?.value != null ? (
+                  <StatCard label="Pipeline" stat={stats.funnel.pipeline} sub="Let agreed, awaiting completion" />
+                ) : (
+                  <StatCard
+                    label="Pipeline"
+                    stat={snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length))}
+                    sub={pipelineRentPcm > 0 ? `${formatGBP(pipelineRentPcm)} pcm` : undefined}
+                  />
+                )}
+              </div>
             </div>
           </section>
 
-          {/* ---- INTERACTIVE FORECAST BUILDER ---- */}
-          <ForecastBuilder
-            monthKeys={MONTH_KEYS}
-            monthLabels={MONTH_LABELS}
-            actualsNetIncome={actualsArr}
-            currentMonthIndex={monthIdx(ANCHOR)}
-            savedForecasts={forecastHistory}
-            currentManaged={managed}
-            avgFeePerProperty={avgFeePerProperty}
-            onSaved={() => {}}
-          />
+          {/* ---- INTERACTIVE FORECAST BUILDER ---- fades in */}
+          <div className="enter enter-fade" style={enterAt(1520)}>
+            <ForecastBuilder
+              monthKeys={MONTH_KEYS}
+              monthLabels={MONTH_LABELS}
+              actualsNetIncome={actualsArr}
+              currentMonthIndex={monthIdx(ANCHOR)}
+              savedForecasts={forecastHistory}
+              currentManaged={managed}
+              avgFeePerProperty={avgFeePerProperty}
+              onSaved={() => {}}
+            />
+          </div>
 
-          {/* ---- CONVERSION RATES ---- */}
+          {/* ---- CONVERSION RATES ---- pops in after the builder */}
           {c ? (
-            <section className="card p-5 sm:p-6">
+            <section className="enter enter-pop card p-5 sm:p-6" style={enterAt(1700)}>
               <div className="flex items-center justify-between">
                 <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">Conversion rates</h2>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Derived from your sales funnel in the TLE Business Dashboard snapshot." />
@@ -384,8 +407,8 @@ export default function MyDashboardPage() {
             </section>
           ) : null}
 
-          {/* ---- DETAIL (progressive disclosure) ---- */}
-          <section className="space-y-3">
+          {/* ---- DETAIL (progressive disclosure) ---- last to arrive */}
+          <section className="enter enter-pop space-y-3" style={enterAt(1820)}>
             <Collapsible title={`My move-ins · ${monthLabel(ANCHOR)}`} badge={stats.moveIns.length}>
               {stats.moveIns.length ? (
                 <DataTable columns={moveInColumns} rows={stats.moveIns as Rowify<MoveInRow>[]} compact />
