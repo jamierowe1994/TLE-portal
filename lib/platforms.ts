@@ -62,6 +62,14 @@ export const PLATFORMS: Platform[] = [
     section: "platforms",
     accent: "#7c3aed",
   },
+  {
+    id: "flatfair",
+    name: "Flatfair",
+    blurb: "Deposit alternative — a flatbond per tenancy instead of a cash deposit.",
+    url: "https://app.flatfair.co.uk",
+    section: "platforms",
+    accent: "#0f766e",
+  },
   // Meta deliberately isn't here — "My Ads" is already a top-level nav item, so
   // listing it again just duplicated it.
   {
