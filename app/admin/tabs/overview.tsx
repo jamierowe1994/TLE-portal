@@ -238,12 +238,20 @@ export default function Overview({ month }: { month: string }) {
             </div>
           ) : live ? (
             <>
+              {/* Managed & rent roll are a REX cut that reads LOW against the
+                  official PayProp totals, so they're kept out of presentation —
+                  the room sees the official figures for those instead. The rest
+                  are trustworthy live pulls and present as-is. */}
               <div className={CARD_GRID}>
                 <StatCard size="sm" label="Market Appraisals" stat={liveStat(live.totals.marketAppraisals)} sub={`${monthLabel(live.month).split(" ")[0]} so far`} />
                 <StatCard size="sm" label="On-market Listings" stat={liveStat(live.totals.onMarketListings)} sub="Taking viewings" />
                 <StatCard size="sm" label="Pipeline" stat={liveStat(live.totals.pipeline)} sub="Let agreed" />
-                <StatCard size="sm" label="Managed (REX)" stat={liveStat(live.totals.managed)} sub="Let & managed" />
-                <StatCard size="sm" label="Rent Roll (REX)" stat={liveStat(live.totals.rentRoll, formatGBP(live.totals.rentRoll))} sub="Per month" />
+                <div className="hide-when-presenting">
+                  <StatCard size="sm" label="Managed (REX)" stat={liveStat(live.totals.managed)} sub="Let & managed" />
+                </div>
+                <div className="hide-when-presenting">
+                  <StatCard size="sm" label="Rent Roll (REX)" stat={liveStat(live.totals.rentRoll, formatGBP(live.totals.rentRoll))} sub="Per month" />
+                </div>
               </div>
               <DetailNote label="How these figures are calculated">
                 Summed live from REX across {live.agentsCounted} lettings agents. Listings &amp; pipeline are live REX

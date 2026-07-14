@@ -251,8 +251,14 @@ body.presenting .stat-label {
 }
 
 /* Source badges are workaday chrome — hide them on the big screen */
-body.presenting .source-badge {
-  display: none !important;
+/* In presentation the room still needs to know which figures are LIVE and which
+   are the official snapshot — so badges stay, just quiet. The compact colour
+   dots keep their colour; the labelled pills (the ones carrying a `border`
+   class) go muted so they read on dark without shouting. */
+body.presenting .source-badge[class*="border"] {
+  background: transparent !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  color: #a3a3af !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

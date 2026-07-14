@@ -48,6 +48,10 @@ const TABS: { key: string; label: string; Component: TabComponent }[] = [
   { key: "diagnostics", label: "Diagnostics", Component: Diagnostics },
 ];
 
+// Presentation running order — the boardroom story, not the working tabs.
+// Diagnostics/Compliance/Arrears etc. are for doing the job, not showing it.
+const PRESENT_KEYS = ["overview", "paid-leads", "income", "portfolio", "forecast"];
+
 // Month selector range: Jan–Jul 2026, defaulting to July (the live month).
 const MONTHS = [
   "2026-01",
@@ -304,28 +308,50 @@ function AdminShell({
     };
   }, []);
 
-  // ←/→ move tabs while presenting.
+  // The curated running order, as indexes into TABS.
+  const presentOrder = useMemo(
+    () =>
+      PRESENT_KEYS.map((k) => TABS.findIndex((t) => t.key === k)).filter((i) => i >= 0),
+    []
+  );
+
+  // Step through the curated order (wrapping) rather than every working tab.
+  const stepPresent = useCallback(
+    (dir: 1 | -1) => {
+      setTabIndex((i) => {
+        const pos = presentOrder.indexOf(i);
+        // Not on a presentation slide → start at the first one.
+        if (pos === -1) return presentOrder[0] ?? i;
+        return presentOrder[(pos + dir + presentOrder.length) % presentOrder.length];
+      });
+    },
+    [presentOrder]
+  );
+
+  // Entering present mode from a working tab (e.g. Diagnostics) → jump to the
+  // start of the story rather than presenting a tab that isn't in it.
+  useEffect(() => {
+    if (!presenting) return;
+    setTabIndex((i) => (presentOrder.includes(i) ? i : (presentOrder[0] ?? i)));
+  }, [presenting, presentOrder]);
+
+  // ←/→ move through the running order while presenting.
   useEffect(() => {
     if (!presenting) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") {
-        setTabIndex((i) => (i + 1) % TABS.length);
-      } else if (e.key === "ArrowLeft") {
-        setTabIndex((i) => (i - 1 + TABS.length) % TABS.length);
-      }
+      if (e.key === "ArrowRight") stepPresent(1);
+      else if (e.key === "ArrowLeft") stepPresent(-1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [presenting]);
+  }, [presenting, stepPresent]);
 
-  // Optional auto-cycle through tabs every 15s while presenting.
+  // Optional auto-cycle through the running order every 15s while presenting.
   useEffect(() => {
     if (!presenting || !autoCycle) return;
-    const id = window.setInterval(() => {
-      setTabIndex((i) => (i + 1) % TABS.length);
-    }, 15000);
+    const id = window.setInterval(() => stepPresent(1), 15000);
     return () => window.clearInterval(id);
-  }, [presenting, autoCycle]);
+  }, [presenting, autoCycle, stepPresent]);
 
   const active = TABS[tabIndex];
   const ActiveComponent = active.Component;
@@ -490,12 +516,12 @@ function AdminShell({
             <PresentButton />
           </div>
           <div className="fixed inset-x-6 top-3 z-40 flex items-center gap-2">
-            {TABS.map((tab, i) => (
+            {presentOrder.map((t) => (
               <span
-                key={tab.key}
-                title={tab.label}
-                className="h-1.5 flex-1 rounded-full"
-                style={{ background: i === tabIndex ? "#E31F36" : "#26262E" }}
+                key={TABS[t].key}
+                title={TABS[t].label}
+                className="h-1.5 flex-1 rounded-full transition-colors"
+                style={{ background: t === tabIndex ? "#E31F36" : "#26262E" }}
               />
             ))}
           </div>
