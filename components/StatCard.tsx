@@ -29,7 +29,7 @@ export default function StatCard({
   const compactBadge = size === "sm";
 
   return (
-    <div className={`card relative ${size === "sm" ? "p-4" : "p-5"}`}>
+    <div className={`card card-lift relative h-full ${size === "sm" ? "p-4" : "p-5"}`}>
       <div className={compactBadge ? "absolute right-3 top-3.5" : "absolute right-4 top-4"}>
         <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} compact={compactBadge} />
       </div>

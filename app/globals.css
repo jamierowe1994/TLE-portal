@@ -114,6 +114,22 @@ h5 {
   white-space: nowrap;
 }
 
+/* Cards lift a touch under the cursor — enough to feel alive, not enough to
+   distract. Paired with a soft shadow so it reads as depth, not movement. */
+.card-lift {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+.card-lift:hover {
+  transform: translateY(-3px);
+  border-color: rgba(16, 16, 20, 0.14);
+  box-shadow:
+    0 10px 26px rgba(16, 16, 20, 0.08),
+    0 2px 6px rgba(16, 16, 20, 0.04);
+}
+
 /* Buttons */
 .btn-press {
   transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.5, 1);
@@ -145,11 +161,16 @@ h5 {
    piece arriving on its own beat. Set --enter-delay per element; fill-mode
    `both` holds the "from" state through the delay so nothing flashes early.
 --------------------------------------------------------------------------- */
+/* fill-mode is `backwards`, not `both`, and there is deliberately no base
+   `opacity: 0` here. `backwards` holds the from-keyframe through the delay (so
+   nothing flashes early) but applies nothing once the animation has finished —
+   which hands `transform` back to the element. With `both`, the final
+   `transform: none` keeps winning over `:hover` in the cascade, and every hover
+   lift on an .enter element silently does nothing. */
 .enter {
-  opacity: 0;
   animation-duration: 0.55s;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-  animation-fill-mode: both;
+  animation-fill-mode: backwards;
   animation-delay: var(--enter-delay, 0ms);
 }
 .enter-up { animation-name: enter-up; }

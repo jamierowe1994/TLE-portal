@@ -122,12 +122,28 @@ export default function ForecastBuilder({
   const endPortfolio = mode === "portfolio" && live[n - 1] != null ? Math.round(live[n - 1] as number) : null;
   const rangeLabel = `${monthLabels[editableFrom]}–${monthLabels[n - 1]}`;
 
+  const howItWorks =
+    mode === "revenue"
+      ? "The solid line is what you've earned. Drag each future month's dot to set your forecast — it saves as you go."
+      : `Drag each month to the number of managed properties you expect. £ is estimated at ${formatGBP(avgFeePerProperty)}/property/month.`;
+
   return (
-    <div className="card p-5 sm:p-6">
+    <div className="card card-lift p-5 sm:p-6">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
           Build your forecast — {rangeLabel} {monthKeys[0].slice(0, 4)}
         </h2>
+        {/* How it works lives on hover, not on the page — the chart is legible
+            without it, and the instructions only matter the first time. */}
+        <span
+          tabIndex={0}
+          role="note"
+          aria-label={howItWorks}
+          title={howItWorks}
+          className="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-line text-[9px] font-semibold text-muted transition hover:border-ink hover:text-ink"
+        >
+          i
+        </span>
         {flash ? (
           <span className="fade-up rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
             Saved ✓
@@ -154,13 +170,7 @@ export default function ForecastBuilder({
         </div>
       </div>
 
-      <p className="mt-1 text-[13px] text-muted">
-        {mode === "revenue"
-          ? "Solid line is what you've earned. Drag each future month's dot to set your earnings forecast — it saves as you go."
-          : `Forecast your portfolio growth: drag each month to the number of managed properties you expect. We estimate the £ at ${formatGBP(avgFeePerProperty)}/property/month.`}
-      </p>
-
-      <div className="mt-3">
+      <div className="mt-4">
         <ForecastChart
           labels={monthLabels}
           actuals={actualsSeries}

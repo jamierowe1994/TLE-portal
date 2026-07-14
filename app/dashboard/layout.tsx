@@ -23,7 +23,7 @@ const NAV = [
   { href: "/dashboard/forecast", label: "Forecast", icon: "M3 17l6-6 4 4 8-8M21 7v6M21 7h-6" },
 ];
 
-const SIDEBAR_W = 240;
+const SIDEBAR_W = 268;
 const TOPBAR_H = 68;
 const SWOOP = 22;
 
@@ -135,7 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Nav items lean out a touch on hover so the rail feels alive under the cursor.
   const navItem =
-    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium " +
+    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium " +
     "transition-all duration-150 ease-out hover:translate-x-1";
 
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
@@ -152,10 +152,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             }`}
           >
             <svg
-              className="h-4 w-4"
+              className="h-[18px] w-[18px]"
               fill="none"
               stroke="currentColor"
-              strokeWidth={1.8}
+              strokeWidth={1.7}
               strokeLinecap="round"
               strokeLinejoin="round"
               viewBox="0 0 24 24"
@@ -183,7 +183,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {items.map((p) => {
         const chip = (
           <span
-            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[7px] font-bold text-white"
+            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md text-[8px] font-bold text-white"
             style={{ background: p.accent }}
             aria-hidden
           >
@@ -250,7 +250,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {vp.w > 0 ? <ChromeSurface vw={vp.w} vh={vp.h} /> : null}
 
       {/* ── Desktop sidebar ── */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[268px] flex-col lg:flex">
         <div className="flex items-center gap-2.5 px-5 pt-8">
           <BrandMark size={34} />
           <div className="leading-tight">
@@ -432,7 +432,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* ── Main ── */}
-      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-8 lg:pt-[96px]">
+      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[268px] lg:px-8 lg:pt-[96px]">
         <div className="mx-auto max-w-[1600px]">
           {/* Welcome — lives in the dashboard content, big and roomy */}
           {pathname === "/dashboard" ? (

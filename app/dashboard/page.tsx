@@ -141,8 +141,6 @@ export default function MyDashboardPage() {
   const bestVal = periodActuals.length ? Math.max(...periodActuals) : null;
   const bestLabel = bestVal != null ? MONTH_LABELS[actualsArr.findIndex((v) => v === bestVal)] : null;
 
-  const pipelineRentPcm = stats ? stats.pipeline.reduce((sum, r) => sum + (r.rentPcm || 0), 0) : 0;
-
   /* --------------------------------- tables --------------------------------- */
 
   const moveInColumns: DataTableColumn<Rowify<MoveInRow>>[] = [
@@ -223,7 +221,8 @@ export default function MyDashboardPage() {
         <>
           {/* ---- HERO: earnings YTD + this month ---- */}
           <section className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-            <div className="enter enter-up card p-6" style={enterAt(900)}>
+            <div className="enter enter-up" style={enterAt(900)}>
+            <div className="card card-lift h-full p-6">
               <div className="flex items-start justify-between gap-3">
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
                   Earnings · {period.label}
@@ -259,6 +258,7 @@ export default function MyDashboardPage() {
                 </span>
               </div>
             </div>
+            </div>
 
             {(() => {
               const managed = stats.portfolio.managed.value ?? 0;
@@ -273,7 +273,8 @@ export default function MyDashboardPage() {
                 { label: "Let agreed", value: letAgreed, color: "#9ca3af" },
               ];
               return (
-                <div className="enter enter-right card flex flex-col p-6" style={enterAt(1000)}>
+                <div className="enter enter-right h-full" style={enterAt(1000)}>
+                <div className="card card-lift flex h-full flex-col p-6">
                   <div className="flex items-start justify-between gap-2">
                     <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
                       Your portfolio
@@ -333,6 +334,7 @@ export default function MyDashboardPage() {
                     </div>
                   </div>
                 </div>
+                </div>
               );
             })()}
           </section>
@@ -361,12 +363,11 @@ export default function MyDashboardPage() {
               {/* Pipeline: prefer the live REX count (let-agreed) over the snapshot rows. */}
               <div className="enter enter-up" style={enterAt(1405)}>
                 {stats.funnel.pipeline?.value != null ? (
-                  <StatCard label="Pipeline" stat={stats.funnel.pipeline} sub="Let agreed, awaiting completion" />
+                  <StatCard label="Pipeline" stat={stats.funnel.pipeline} />
                 ) : (
                   <StatCard
                     label="Pipeline"
                     stat={snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length))}
-                    sub={pipelineRentPcm > 0 ? `${formatGBP(pipelineRentPcm)} pcm` : undefined}
                   />
                 )}
               </div>
@@ -389,7 +390,8 @@ export default function MyDashboardPage() {
 
           {/* ---- CONVERSION RATES ---- pops in after the builder */}
           {c ? (
-            <section className="enter enter-pop card p-5 sm:p-6" style={enterAt(1700)}>
+            <section className="enter enter-pop" style={enterAt(1700)}>
+              <div className="card card-lift p-5 sm:p-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">Conversion rates</h2>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Derived from your sales funnel in the TLE Business Dashboard snapshot." />
@@ -404,6 +406,7 @@ export default function MyDashboardPage() {
                   Conversion rates appear once you&apos;ve got appraisals and listings recorded this month.
                 </p>
               ) : null}
+              </div>
             </section>
           ) : null}
 
