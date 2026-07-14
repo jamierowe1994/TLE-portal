@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import BrandMark from "@/components/BrandMark";
 import { refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
-import { PLATFORMS } from "@/lib/platforms";
+import { platformsIn, type Platform } from "@/lib/platforms";
 import type { UserProfile } from "@/lib/types";
 
 // Agent dashboard shell — a CRM-style layout: a fixed left nav rail and a top
@@ -151,9 +151,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // The platforms the business runs on, straight in the rail — one hop to any of
   // them. Ones we don't have a link for yet sit quiet rather than misleading.
-  const ToolLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
+  const ToolLinks = ({
+    items,
+    onNavigate,
+  }: {
+    items: Platform[];
+    onNavigate?: () => void;
+  }) => (
     <>
-      {PLATFORMS.map((p) => {
+      {items.map((p) => {
         const chip = (
           <span
             className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[7px] font-bold text-white"
@@ -275,7 +281,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             TLE OS
           </Link>
           <div className="mt-1 space-y-0.5">
-            <ToolLinks />
+            <ToolLinks items={platformsIn("platforms")} />
+          </div>
+
+          {/* ── Training — its own section, below its own line ── */}
+          <div className="my-3 border-t border-line" />
+          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+            Training
+          </p>
+          <div className="space-y-0.5">
+            <ToolLinks items={platformsIn("training")} />
           </div>
         </nav>
 

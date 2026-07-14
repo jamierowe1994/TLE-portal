@@ -4,7 +4,7 @@
 // and portfolio, and REX PM + PayProp are the next ones to hook in. Adding a
 // platform is just another entry here — the hub renders itself off this list.
 
-export type PlatformSection = "platforms" | "analytics" | "training";
+export type PlatformSection = "platforms" | "training";
 
 export interface Platform {
   id: string;
@@ -25,7 +25,6 @@ export const PLATFORM_SECTIONS: {
   blurb: string;
 }[] = [
   { id: "platforms", title: "Platforms", blurb: "The systems you run the business on" },
-  { id: "analytics", title: "Analytics", blurb: "Where your numbers come from" },
   { id: "training", title: "Training", blurb: "Learning, onboarding and best practice" },
 ];
 
@@ -63,15 +62,8 @@ export const PLATFORMS: Platform[] = [
     section: "platforms",
     accent: "#7c3aed",
   },
-  {
-    id: "meta-ads",
-    name: "Meta Ads",
-    blurb: "Your live ad spend, leads and cost per lead.",
-    url: null,
-    section: "analytics",
-    accent: "#e31f36",
-    connected: true,
-  },
+  // Meta deliberately isn't here — "My Ads" is already a top-level nav item, so
+  // listing it again just duplicated it.
   {
     id: "training",
     name: "Training platform",
