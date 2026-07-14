@@ -23,6 +23,11 @@ const CAPS_TTL_MS = 10 * 60 * 1000;
 const OVERALL_DEADLINE_MS = 8_000;
 const COUNT_LIMIT = 100; // REX hard-caps the default result format at 100 rows
 
+// The agent's listings underpin My Properties AND Compliance, and they flip
+// between the two. Short enough that a change in REX shows up promptly.
+const LISTINGS_TTL_MS = 60_000;
+const listingsCache = new Map<string, { at: number; data: AgentListing[] }>();
+
 type Criterion = { name: string; type: string; value: string };
 
 export interface RexStatus {
@@ -413,10 +418,16 @@ export async function getAgentListings(
 ): Promise<AgentListing[] | null> {
   if (!rexConfigured() || !rexUserId) return null;
 
-  const work = (async (): Promise<AgentListing[] | null> => {
-    const caps = await getCapabilities();
-    if (!caps.capabilities.login || !caps.capabilities.listings) return null;
+  const cached = listingsCache.get(rexUserId);
+  if (cached && Date.now() - cached.at < LISTINGS_TTL_MS) return cached.data;
 
+  const work = (async (): Promise<AgentListing[] | null> => {
+    // No capabilities probe here on purpose. It cost ~2.2s of REX round-trips
+    // (five calls that fetch nothing) before every request, to answer a question
+    // the search itself answers: if Listings is unavailable the call fails and we
+    // return null exactly the same. It stays in getAgentFunnel, where it really
+    // does gate optional services.
+    //
     // extra_fields pulls the photos in with the listings — one call, not one
     // per property.
     const res = await rexCall("Listings", "search", {
@@ -429,9 +440,13 @@ export async function getAgentListings(
     }).catch(() => null);
     if (!res || !res.ok) return null;
 
-    return rexRows(res.result)
+    const listings = rexRows(res.result)
       .map(toListing)
       .sort((a, b) => a.address.localeCompare(b.address, "en-GB"));
+    // Compliance builds on this same call, and agents hop between the two — a
+    // short cache makes the second page instant instead of refetching.
+    listingsCache.set(rexUserId, { at: Date.now(), data: listings });
+    return listings;
   })();
 
   const deadline = new Promise<null>((resolve) =>
@@ -708,9 +723,7 @@ export async function getAgentApplications(
   if (!rexConfigured() || !rexUserId) return null;
 
   const work = (async (): Promise<AgentApplication[] | null> => {
-    const caps = await getCapabilities();
-    if (!caps.capabilities.login) return null;
-
+    // No capabilities probe — see getAgentListings.
     const res = await rexCall("TenancyApplications", "search", {
       criteria: [{ name: "application.agent_id", type: "=", value: rexUserId }],
       limit: COUNT_LIMIT,
