@@ -142,21 +142,24 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Outstanding first — that's why you opened it.
-  const items = [...p.items].sort(
-    (a, b) => Number(needsWork(b.state)) - Number(needsWork(a.state))
-  );
+  // Only what needs a human gets a full row. Everything already in date is real
+  // information but not news, so it goes half-size, two-up — a dozen items fits
+  // in a few rows instead of a screen of scrolling.
+  const outstanding = p.items.filter((i) => needsWork(i.state));
+  const settled = p.items.filter((i) => !needsWork(i.state));
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-12"
       onClick={onClose}
     >
+      {/* Wider than the property drawer: compliance is a list of pairs, and the
+          extra width is what keeps it to a few rows rather than a scroll. */}
       <div
-        className="modal-pop my-auto w-full max-w-xl rounded-2xl bg-card p-3"
+        className="modal-pop my-auto w-full max-w-2xl rounded-2xl bg-card p-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative h-52 w-full overflow-hidden rounded-xl bg-page">
+        <div className="relative h-44 w-full overflow-hidden rounded-xl bg-page">
           <Photo p={p} />
           <button
             onClick={onClose}
@@ -169,7 +172,7 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
           </button>
         </div>
 
-        <div className="p-5 sm:p-7">
+        <div className="p-6 sm:p-8">
           <h2 className="text-[17px] font-semibold leading-snug">{p.name}</h2>
           <p className="mt-0.5 text-[13px] text-muted">{p.locality}</p>
 
@@ -188,27 +191,56 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
             )}
           </p>
 
-          <div className="mt-5 space-y-2.5">
-            {items.map((i) => (
-              <div
-                key={i.type}
-                className={`flex items-start gap-3 rounded-xl border p-4 ${
-                  needsWork(i.state) ? STATE_STYLE[i.state] : "border-line"
-                }`}
-              >
-                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-medium text-ink">{i.label}</p>
-                  <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
-                  {i.notes ? (
-                    <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
-                  ) : null}
+          {/* Needs a human — full width, hard to miss */}
+          {outstanding.length ? (
+            <div className="mt-6 space-y-2.5">
+              {outstanding.map((i) => (
+                <div
+                  key={i.type}
+                  className={`flex items-start gap-3 rounded-xl border p-4 ${STATE_STYLE[i.state]}`}
+                >
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-ink">{i.label}</p>
+                    <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
+                    {i.notes ? (
+                      <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : null}
 
-          <p className="mt-5 text-[11px] text-muted">
+          {/* Settled — half-size, two-up. Still there, just not shouting. */}
+          {settled.length ? (
+            <div className="mt-6">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                In date
+              </p>
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                {settled.map((i) => (
+                  <div
+                    key={i.type}
+                    title={i.notes ?? stateLabel(i)}
+                    className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                  >
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] font-medium text-ink">
+                        {i.label}
+                      </span>
+                      <span className="block truncate text-[10px] text-muted">
+                        {stateLabel(i)}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <p className="mt-6 text-[11px] text-muted">
             Live from REX. Certificates are updated in REX — this is the view, not
             the record.
           </p>
