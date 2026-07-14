@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import BrandMark from "@/components/BrandMark";
 import { refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
+import { PLATFORMS } from "@/lib/platforms";
 import type { UserProfile } from "@/lib/types";
 
 // Agent dashboard shell — a CRM-style layout: a fixed left nav rail and a top
@@ -17,7 +18,6 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10" },
   { href: "/dashboard/ads", label: "My Ads", icon: "M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm2 11l4-5 3 3 2-2 3 4M9 9.5a.5.5 0 11-1 0 .5.5 0 011 0z" },
   { href: "/dashboard/forecast", label: "Forecast", icon: "M3 17l6-6 4 4 8-8M21 7v6M21 7h-6" },
-  { href: "/dashboard/tools", label: "Tools", icon: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" },
   { href: "/dashboard/profile", label: "Profile", icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
 ];
 
@@ -112,6 +112,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
   const { hello, prompt } = greeting(user.name);
 
+  // Nav items lean out a touch on hover so the rail feels alive under the cursor.
+  const navItem =
+    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium " +
+    "transition-all duration-150 ease-out hover:translate-x-1";
+
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
       {NAV.map((item) => {
@@ -121,7 +126,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             key={item.href}
             href={item.href}
             onClick={onNavigate}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+            className={`${navItem} ${
               active ? "accent-soft-bg text-ink" : "text-muted hover:bg-black/[0.03] hover:text-ink"
             }`}
           >
@@ -139,6 +144,61 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </svg>
             {item.label}
           </Link>
+        );
+      })}
+    </>
+  );
+
+  // The platforms the business runs on, straight in the rail — one hop to any of
+  // them. Ones we don't have a link for yet sit quiet rather than misleading.
+  const ToolLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
+    <>
+      {PLATFORMS.map((p) => {
+        const chip = (
+          <span
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[7px] font-bold text-white"
+            style={{ background: p.accent }}
+            aria-hidden
+          >
+            {p.name.slice(0, 1)}
+          </span>
+        );
+        if (!p.url) {
+          return (
+            <span
+              key={p.id}
+              title="Link coming"
+              className={`${navItem} cursor-default text-muted/50`}
+            >
+              {chip}
+              {p.name}
+            </span>
+          );
+        }
+        return (
+          <a
+            key={p.id}
+            href={p.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onNavigate}
+            className={`${navItem} group text-muted hover:bg-black/[0.03] hover:text-ink`}
+          >
+            {chip}
+            {p.name}
+            <svg
+              className="ml-auto h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path d="M14 5h5v5M19 5l-7 7M18 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V7a1 1 0 011-1h5" />
+            </svg>
+          </a>
         );
       })}
     </>
@@ -189,6 +249,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Admin
             </Link>
           ) : null}
+
+          {/* ── TLE OS — the platforms the business runs on ── */}
+          <div className="my-3 border-t border-line" />
+          <Link
+            href="/dashboard/tools"
+            className={`${navItem} ${
+              pathname.startsWith("/dashboard/tools")
+                ? "accent-soft-bg text-ink"
+                : "text-muted hover:bg-black/[0.03] hover:text-ink"
+            }`}
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              viewBox="0 0 24 24"
+              style={pathname.startsWith("/dashboard/tools") ? { color: BRAND.accent } : undefined}
+            >
+              <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
+            </svg>
+            TLE OS
+          </Link>
+          <div className="mt-1 space-y-0.5">
+            <ToolLinks />
+          </div>
         </nav>
 
         <div className="p-4">
@@ -235,6 +323,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <nav className="flex items-center gap-1 overflow-x-auto px-3 pb-2">
           <NavLinks />
+          <Link
+            href="/dashboard/tools"
+            className={`${navItem} whitespace-nowrap ${
+              pathname.startsWith("/dashboard/tools")
+                ? "accent-soft-bg text-ink"
+                : "text-muted hover:bg-black/[0.03] hover:text-ink"
+            }`}
+          >
+            TLE OS
+          </Link>
         </nav>
       </header>
 
