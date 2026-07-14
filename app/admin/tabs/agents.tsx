@@ -114,6 +114,45 @@ function UserRow({
   const [message, setMessage] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [linking, setLinking] = useState(false);
+
+  // One click: probe REX for this agent's email, and assign the id we find.
+  // The fallback for anyone signup couldn't auto-link (e.g. added to REX later).
+  async function findInRex() {
+    setLinking(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/rex-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = (await res.json()) as {
+        linked?: boolean;
+        rexUserId?: string;
+        matchedBy?: "email" | "name";
+        matchedEmail?: string;
+        reason?: string;
+        user?: AdminUser;
+        error?: string;
+      };
+      if (data.linked && data.rexUserId) {
+        setRexUserId(data.rexUserId);
+        setMessage(
+          data.matchedBy === "name"
+            ? `Linked to REX ${data.rexUserId} by name — REX has them as ${data.matchedEmail}. Worth a check.`
+            : `Linked to REX user ${data.rexUserId}.`
+        );
+        if (data.user) onSaved(data.user);
+      } else {
+        setMessage(data.reason ?? data.error ?? "Couldn't find them in REX.");
+      }
+    } catch {
+      setMessage("Couldn't reach REX just now.");
+    } finally {
+      setLinking(false);
+    }
+  }
 
   const dirty =
     agentKey !== (user.agentKey ?? "") ||
@@ -221,12 +260,23 @@ function UserRow({
           <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">
             REX user id
           </span>
-          <input
-            className={inputClass}
-            value={rexUserId}
-            onChange={(e) => setRexUserId(e.target.value)}
-            placeholder="AccountUsers id"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              className={inputClass}
+              value={rexUserId}
+              onChange={(e) => setRexUserId(e.target.value)}
+              placeholder="AccountUsers id"
+            />
+            <button
+              type="button"
+              onClick={() => void findInRex()}
+              disabled={linking}
+              title={`Search REX for ${user.email} and assign their id`}
+              className="btn-press shrink-0 rounded-lg border border-line bg-card px-2.5 py-2 text-[12px] font-medium text-muted transition hover:text-ink disabled:opacity-50"
+            >
+              {linking ? "Finding…" : "Find in REX"}
+            </button>
+          </div>
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">

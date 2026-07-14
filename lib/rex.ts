@@ -236,17 +236,16 @@ export async function rexFindUserIdByEmail(email: string): Promise<string | null
 
   let found: string | null = null;
   try {
-    const res = await rexCall("AccountUsers", "search", { limit: 100 });
-    if (res.ok) {
-      for (const raw of rexRows(res.result)) {
-        const rowEmail = String(raw.email_address ?? raw.email ?? "")
-          .trim()
-          .toLowerCase();
-        if (rowEmail && rowEmail === needle) {
-          const id = raw.id ?? raw.user_id;
-          if (id != null) found = String(id);
-          break;
-        }
+    // Page through EVERY account user — a single capped search only sees the
+    // first 100, which silently misses anyone further down the list.
+    for (const raw of await rexAllAccountUsers()) {
+      const rowEmail = String(raw.email_address ?? raw.email ?? "")
+        .trim()
+        .toLowerCase();
+      if (rowEmail && rowEmail === needle) {
+        const id = raw.id ?? raw.user_id;
+        if (id != null) found = String(id);
+        break;
       }
     }
   } catch {
@@ -254,6 +253,43 @@ export async function rexFindUserIdByEmail(email: string): Promise<string | null
   }
   rexUserIdCache.set(key, found);
   return found;
+}
+
+/**
+ * Admin-side lookup: find an agent's Rex user by EMAIL, falling back to their
+ * full NAME when the portal email doesn't match the one in Rex (a common cause
+ * of "why won't this link?"). A name match only counts when it's unambiguous —
+ * two people called the same thing returns nothing rather than a wrong guess.
+ * Reports how it matched so the admin can sanity-check a name hit.
+ */
+export async function rexFindUser(
+  email: string,
+  name?: string
+): Promise<{ id: string; email: string; name: string; matchedBy: "email" | "name" } | null> {
+  const wantEmail = email.trim().toLowerCase();
+  const wantName = (name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  let rows: Array<Record<string, unknown>> = [];
+  try {
+    rows = await rexAllAccountUsers();
+  } catch {
+    return null;
+  }
+  const all = rows
+    .map((u) => ({
+      id: String(u.id ?? u.user_id ?? ""),
+      email: String(u.email_address ?? u.email ?? "").trim().toLowerCase(),
+      name: `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim().toLowerCase().replace(/\s+/g, " "),
+    }))
+    .filter((u) => u.id);
+
+  const byEmail = all.find((u) => u.email && u.email === wantEmail);
+  if (byEmail) return { ...byEmail, matchedBy: "email" };
+
+  if (wantName) {
+    const hits = all.filter((u) => u.name && u.name === wantName);
+    if (hits.length === 1) return { ...hits[0], matchedBy: "name" };
+  }
+  return null;
 }
 
 // Proves the login works and reports the accounts this user can reach — the

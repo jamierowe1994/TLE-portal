@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth";
 import { isAllowedEmailDomain, isAdminEmail, BRAND } from "@/lib/brand";
 import { ROSTER } from "@/lib/seed-data";
+import { rexFindUserIdByEmail } from "@/lib/rex";
 import {
   createUser,
   findByEmail,
@@ -76,6 +77,11 @@ export async function POST(req: NextRequest) {
     (r) => r.displayName.trim().toLowerCase() === name.toLowerCase()
   );
 
+  // Auto-link their REX account by email — the natural key, since it's the same
+  // address they sign into REX with. Best-effort: never throws, and a miss just
+  // leaves rexUserId null for Susan to assign from the admin.
+  const rexUserId = await rexFindUserIdByEmail(email).catch(() => null);
+
   const user: StoredUser = {
     id: uid(),
     name,
@@ -83,7 +89,7 @@ export async function POST(req: NextRequest) {
     mobile: String(body?.mobile ?? "").trim(),
     photo: typeof body?.photo === "string" ? body.photo : null,
     agentKey: rosterMatch?.agentKey ?? null,
-    rexUserId: null,
+    rexUserId,
     metaCampaignId: null,
     location: null,
     createdAt: new Date().toISOString(),
