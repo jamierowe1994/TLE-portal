@@ -63,6 +63,14 @@ export const PLATFORMS: Platform[] = [
     accent: "#7c3aed",
   },
   {
+    id: "inventorybase",
+    name: "InventoryBase",
+    blurb: "Inventories, check-ins and property inspections.",
+    url: "https://inventorybase.co.uk",
+    section: "platforms",
+    accent: "#ea580c",
+  },
+  {
     id: "flatfair",
     name: "Flatfair",
     blurb: "Deposit alternative — a flatbond per tenancy instead of a cash deposit.",
@@ -84,4 +92,9 @@ export const PLATFORMS: Platform[] = [
 
 export function platformsIn(section: PlatformSection): Platform[] {
   return PLATFORMS.filter((p) => p.section === section);
+}
+
+/** Look one up by id — used to point a next-step at the platform that does it. */
+export function platformById(id: string): Platform | undefined {
+  return PLATFORMS.find((p) => p.id === id);
 }

@@ -280,8 +280,12 @@ export async function getAgentPortfolio(rexUserId: string): Promise<AgentPortfol
 // this is the shape the CRM-style list is built from.
 export interface AgentListing {
   id: string;
-  /** Display address — REX's combined search key, e.g. "5 The Lime Tree Court…". */
+  /** Full display address — REX's combined search key. Used for sorting/search. */
   address: string;
+  /** Street line, e.g. "5 The Lime Tree Court Commercial Road" — the headline. */
+  name: string;
+  /** Town + postcode, e.g. "Paignton TQ4 5DR" — the line under the name. */
+  locality: string;
   rent: number | null;
   rentPeriod: string | null; // "Month"
   advertisedAs: string | null; // "£1,200"
@@ -350,15 +354,35 @@ function heroImage(r: Record<string, unknown>): { url: string | null; count: num
 function toListing(r: Record<string, unknown>): AgentListing {
   const property = (r.property ?? {}) as Record<string, unknown>;
   const hero = heroImage(r);
-  const address =
-    (property.system_search_key as string) ??
-    [property.adr_street_number, property.adr_street_name, property.adr_postcode]
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+  // REX gives the address in parts; split it the way an address is actually
+  // read — the unit + street line as the headline, town + postcode beneath.
+  //
+  // adr_unit_number ("Flat 3", "Room 5") is NOT optional dressing: half this
+  // portfolio is rooms and flats, so without it "Room 3, 5a Newton Road" and
+  // "Room 5, 5a Newton Road" collapse into the same tile and the agent can't
+  // tell two of their own properties apart.
+  const unit = str(property.adr_unit_number);
+  const street =
+    [str(property.adr_street_number), str(property.adr_street_name)]
       .filter(Boolean)
-      .join(" ") ??
+      .join(" ") || null;
+  const name = [unit, street].filter(Boolean).join(", ") || null;
+  const locality =
+    [str(property.adr_suburb_or_town), str(property.adr_postcode)]
+      .filter(Boolean)
+      .join(" ") || null;
+  const address =
+    str(property.system_search_key) ??
+    [name, locality].filter(Boolean).join(", ") ??
     "Address unavailable";
+
   return {
     id: String(r.id ?? ""),
     address: String(address).trim(),
+    name: name ?? String(address).trim(),
+    locality: locality ?? "",
     rent: num(r.price_rent),
     rentPeriod: label(r.price_rent_period),
     advertisedAs: (r.price_advertise_as as string) ?? null,
