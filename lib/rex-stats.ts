@@ -272,3 +272,104 @@ export async function getAgentPortfolio(rexUserId: string): Promise<AgentPortfol
     return null;
   }
 }
+
+/* ---------------------------- the agent's listings --------------------------- */
+
+// One of the agent's properties, flattened out of REX's very wide Listings row
+// into just what the portal shows. REX's own layout is unusable at a glance —
+// this is the shape the CRM-style list is built from.
+export interface AgentListing {
+  id: string;
+  /** Display address — REX's combined search key, e.g. "5 The Lime Tree Court…". */
+  address: string;
+  rent: number | null;
+  rentPeriod: string | null; // "Month"
+  advertisedAs: string | null; // "£1,200"
+  availableFrom: string | null;
+  letAgreed: boolean;
+  /** REX publication state — "draft" listings aren't live on portals yet. */
+  publicationStatus: string | null;
+  category: string | null; // "Residential Rental"
+  letType: string | null; // "Long Term"
+  minTermMonths: number | null;
+  /** EPC rides on the listing itself — no property join needed. */
+  epcExpiry: string | null;
+  epcRating: number | null;
+  epcNotRequired: boolean;
+}
+
+// REX returns lookups as { id, text } and plain values elsewhere — normalise.
+function label(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "object") {
+    const o = v as { text?: string; name?: string; id?: string };
+    return o.text ?? o.name ?? o.id ?? null;
+  }
+  return String(v);
+}
+
+function num(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toListing(r: Record<string, unknown>): AgentListing {
+  const property = (r.property ?? {}) as Record<string, unknown>;
+  const address =
+    (property.system_search_key as string) ??
+    [property.adr_street_number, property.adr_street_name, property.adr_postcode]
+      .filter(Boolean)
+      .join(" ") ??
+    "Address unavailable";
+  return {
+    id: String(r.id ?? ""),
+    address: String(address).trim(),
+    rent: num(r.price_rent),
+    rentPeriod: label(r.price_rent_period),
+    advertisedAs: (r.price_advertise_as as string) ?? null,
+    availableFrom: (r.available_from_date as string) ?? null,
+    letAgreed: r.let_agreed === true,
+    publicationStatus: label(r.system_publication_status),
+    category: label(r.listing_category),
+    letType: label(r.let_type),
+    minTermMonths: num(r.let_minimum_term_months),
+    epcExpiry: (r.epc_expiry_date as string) ?? null,
+    epcRating: num(r.epc_current_eer),
+    epcNotRequired: r.epc_not_required === 1 || r.epc_not_required === true,
+  };
+}
+
+/**
+ * The agent's live properties — REX "current" listings, on the market or let
+ * agreed. Live, current-state. null on any failure so the caller can say so
+ * rather than render an empty list as though they have none.
+ */
+export async function getAgentListings(
+  rexUserId: string
+): Promise<AgentListing[] | null> {
+  if (!rexConfigured() || !rexUserId) return null;
+
+  const work = (async (): Promise<AgentListing[] | null> => {
+    const caps = await getCapabilities();
+    if (!caps.capabilities.login || !caps.capabilities.listings) return null;
+
+    const rows = await searchRows("Listings", [
+      { name: "listing_agent_1_id", type: "=", value: rexUserId },
+      { name: "system_listing_state", type: "=", value: "current" },
+    ]);
+    if (!rows) return null;
+
+    return rows
+      .map(toListing)
+      .sort((a, b) => a.address.localeCompare(b.address, "en-GB"));
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
