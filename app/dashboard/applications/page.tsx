@@ -1,0 +1,318 @@
+"use client";
+
+// Applications — the agent's live let pipeline, from REX tenancy applications.
+//
+// Same tile → click → detail shape as My Properties and Compliance. Progressive
+// reveal twice over: unsuccessful applications are hidden until asked for (they
+// outnumber the live ones and drown the pipeline), and the applicant detail only
+// appears on the click.
+
+import { useEffect, useMemo, useState } from "react";
+import { formatGBP } from "@/lib/format";
+import type { AgentApplication, ApplicationStage } from "@/lib/rex-stats";
+
+const enterAt = (ms: number) =>
+  ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
+
+const STAGE_STYLE: Record<ApplicationStage, string> = {
+  received: "border-line bg-page text-muted",
+  communicated: "border-sky-200 bg-sky-50 text-sky-700",
+  accepted: "border-green-200 bg-green-50 text-green-700",
+  unsuccessful: "border-line bg-page text-muted",
+};
+
+function fmtDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/* -------------------------------- photo -------------------------------- */
+
+function Photo({ a }: { a: AgentApplication }) {
+  if (!a.image) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-page text-muted">
+        <svg className="h-5 w-5 opacity-40" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+          <rect x={3} y={5} width={18} height={14} rx={2} />
+          <path d="M3 15l5-5 4 4 3-3 6 6" />
+          <circle cx={8.5} cy={9.5} r={1} />
+        </svg>
+      </div>
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={a.image} alt={a.propertyName} loading="lazy" className="h-full w-full object-cover" />;
+}
+
+/* --------------------------------- tile --------------------------------- */
+
+function ApplicationTile({
+  a,
+  delay,
+  onOpen,
+}: {
+  a: AgentApplication;
+  delay: number;
+  onOpen: () => void;
+}) {
+  const lead = a.tenants.find((t) => t.isPrimary) ?? a.tenants[0];
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="enter enter-up card btn-press flex min-h-[210px] text-left transition hover:border-black/20"
+      style={enterAt(delay)}
+    >
+      <div className="flex min-w-0 flex-1 flex-col p-6">
+        <span className={`w-fit rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
+          {a.status.toUpperCase()}
+        </span>
+
+        <h3 className="mt-3.5 truncate text-[14px] font-semibold leading-snug">
+          {a.propertyName}
+        </h3>
+        <p className="mt-0.5 truncate text-[12px] text-muted">{a.locality}</p>
+
+        <p className="mt-2 truncate text-[12px] text-muted">
+          {lead ? lead.name : "No applicant recorded"}
+          {a.tenants.length > 1 ? ` +${a.tenants.length - 1}` : ""}
+        </p>
+
+        <div className="mt-auto flex items-baseline gap-1 pt-4">
+          <span className="stat-value text-[21px]">
+            {a.offer != null ? formatGBP(a.offer) : "—"}
+          </span>
+          <span className="text-[11px] text-muted">
+            offered / {(a.offerPeriod ?? "month").replace(/^Per /i, "").toLowerCase()}
+          </span>
+        </div>
+      </div>
+
+      <div className="w-[38%] shrink-0 p-3 pl-0">
+        <div className="relative h-full w-full overflow-hidden rounded-xl bg-page">
+          <Photo a={a} />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* -------------------------------- drawer -------------------------------- */
+
+function Drawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10"
+      onClick={onClose}
+    >
+      <div
+        className="modal-pop my-auto w-full max-w-xl rounded-2xl bg-card p-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative h-52 w-full overflow-hidden rounded-xl bg-page">
+          <Photo a={a} />
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/70"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-5 sm:p-7">
+          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
+            {a.status.toUpperCase()}
+          </span>
+          <h2 className="mt-3 text-[17px] font-semibold leading-snug">{a.propertyName}</h2>
+          <p className="mt-0.5 text-[13px] text-muted">{a.locality}</p>
+
+          <div className="mt-6 grid grid-cols-3 gap-3 border-y border-line py-5 text-[11px] text-muted">
+            <div>
+              <div className="stat-value text-[18px] text-ink">
+                {a.offer != null ? formatGBP(a.offer) : "—"}
+              </div>
+              Offered / {(a.offerPeriod ?? "month").replace(/^Per /i, "").toLowerCase()}
+            </div>
+            <div>
+              <div className="text-[13px] font-medium text-ink">{fmtDate(a.startDate) ?? "—"}</div>
+              Proposed start
+            </div>
+            <div>
+              <div className="text-[13px] font-medium text-ink">
+                {a.agreementMonths ? `${a.agreementMonths} months` : "—"}
+              </div>
+              Agreement
+            </div>
+          </div>
+
+          {/* Applicants */}
+          <div className="mt-6">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+              {a.tenants.length === 1 ? "Applicant" : `Applicants (${a.tenants.length})`}
+            </h3>
+            <div className="mt-3 space-y-2.5">
+              {a.tenants.length ? (
+                a.tenants.map((t, i) => (
+                  <div key={i} className="rounded-xl border border-line p-4">
+                    <div className="flex items-center gap-2">
+                      <p className="text-[13px] font-medium">{t.name}</p>
+                      {t.isPrimary ? (
+                        <span className="rounded-full border border-line bg-page px-1.5 py-0.5 text-[9px] font-semibold text-muted">
+                          LEAD
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted">
+                      {t.email ? <a href={`mailto:${t.email}`} className="hover:text-ink">{t.email}</a> : null}
+                      {t.phone ? <a href={`tel:${t.phone}`} className="hover:text-ink">{t.phone}</a> : null}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-[13px] text-muted">No applicant details recorded.</p>
+              )}
+            </div>
+          </div>
+
+          {/* The rest — only when REX actually has it */}
+          <div className="mt-6 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-muted">
+            {a.affordability != null ? (
+              <span>
+                Rent is{" "}
+                <span className="font-medium text-ink">{a.affordability.toFixed(1)}%</span>{" "}
+                of their income
+              </span>
+            ) : null}
+            {a.occupants != null ? <span>{a.occupants} occupant{a.occupants === 1 ? "" : "s"}</span> : null}
+            {a.hasPets ? <span>Has pets</span> : null}
+            {a.dateReceived ? <span>Received {fmtDate(a.dateReceived)}</span> : null}
+          </div>
+
+          {a.conditions ? (
+            <p className="mt-4 rounded-xl border border-line p-4 text-[12px] text-muted">
+              <span className="font-medium text-ink">Conditions: </span>
+              {a.conditions}
+            </p>
+          ) : null}
+          {a.notes ? (
+            <p className="mt-2 rounded-xl border border-line p-4 text-[12px] italic text-muted">
+              {a.notes}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------- page --------------------------------- */
+
+export default function ApplicationsPage() {
+  const [applications, setApplications] = useState<AgentApplication[] | null>(null);
+  const [linked, setLinked] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState<AgentApplication | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/my/applications", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { linked?: boolean; applications?: AgentApplication[]; error?: string }) => {
+        if (cancelled) return;
+        setLinked(d.linked !== false);
+        setApplications(d.applications ?? []);
+        setError(d.error ?? null);
+      })
+      .catch(() => !cancelled && setError("Couldn't load your applications."))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const all = useMemo(() => applications ?? [], [applications]);
+  const live = useMemo(() => all.filter((a) => a.stage !== "unsuccessful"), [all]);
+  const closed = all.length - live.length;
+  const shown = showClosed ? all : live;
+
+  const count = (s: ApplicationStage) => all.filter((a) => a.stage === s).length;
+
+  return (
+    <div className="space-y-6">
+      <div className="enter enter-up" style={enterAt(60)}>
+        <h1 className="text-xl font-semibold tracking-tight">Applications</h1>
+        <p className="mt-1 text-[13px] text-muted">
+          Offers on your properties and where each one is up to. Tap one for the
+          applicant.
+        </p>
+      </div>
+
+      {!linked ? (
+        <div className="card accent-soft-bg border-red-100 p-4 text-[13px]">
+          <span className="font-semibold accent-text">Your REX account isn&apos;t linked yet.</span>{" "}
+          <span className="text-ink">Ask the admin to link your profile.</span>
+        </div>
+      ) : null}
+
+      {error ? <div className="card p-6 text-center text-sm text-muted">{error}</div> : null}
+
+      {loading ? (
+        <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="card h-[210px] animate-pulse" />
+          ))}
+        </div>
+      ) : linked && !error && all.length === 0 ? (
+        <div className="card p-10 text-center text-[13px] text-muted">
+          No applications yet. Offers on your properties will appear here.
+        </div>
+      ) : all.length > 0 ? (
+        <>
+          <section className="enter enter-up grid grid-cols-3 gap-3" style={enterAt(140)}>
+            {(["received", "communicated", "accepted"] as ApplicationStage[]).map((s) => (
+              <div key={s} className="card p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  {s === "received" ? "Received" : s === "communicated" ? "With landlord" : "Accepted"}
+                </div>
+                <div className="stat-value mt-1 text-[24px]">{count(s)}</div>
+              </div>
+            ))}
+          </section>
+
+          {closed > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowClosed((v) => !v)}
+              className="text-[12px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+            >
+              {showClosed
+                ? `Hide ${closed} unsuccessful`
+                : `Show ${closed} unsuccessful`}
+            </button>
+          ) : null}
+
+          <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
+            {shown.map((a, i) => (
+              <ApplicationTile key={a.id} a={a} delay={200 + i * 50} onOpen={() => setOpen(a)} />
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {open ? <Drawer a={open} onClose={() => setOpen(null)} /> : null}
+    </div>
+  );
+}

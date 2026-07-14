@@ -596,3 +596,138 @@ export async function getAgentCompliance(
     return null;
   }
 }
+
+/* -------------------------- tenancy applications -------------------------- */
+
+export interface ApplicationTenant {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  isPrimary: boolean;
+}
+
+export type ApplicationStage = "received" | "communicated" | "accepted" | "unsuccessful";
+
+export interface AgentApplication {
+  id: string;
+  stage: ApplicationStage;
+  status: string; // REX's own label, e.g. "Communicated"
+  propertyName: string;
+  locality: string;
+  image: string | null;
+  offer: number | null;
+  offerPeriod: string | null;
+  /** Rent as a % of the applicant's income — REX's own calc. Lower is safer. */
+  affordability: number | null;
+  dateReceived: string | null;
+  startDate: string | null;
+  agreementMonths: number | null;
+  occupants: number | null;
+  hasPets: boolean;
+  tenants: ApplicationTenant[];
+  notes: string | null;
+  conditions: string | null;
+}
+
+function stageOfStatus(id: string): ApplicationStage {
+  if (id === "accepted") return "accepted";
+  if (id === "unsuccessful") return "unsuccessful";
+  if (id === "communicated") return "communicated";
+  return "received";
+}
+
+function toApplication(r: Record<string, unknown>): AgentApplication {
+  const listing = (r.listing ?? {}) as Record<string, unknown>;
+  const property = (listing.property ?? {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+  const unit = str(property.adr_unit_number);
+  const street = [str(property.adr_street_number), str(property.adr_street_name)]
+    .filter(Boolean)
+    .join(" ");
+  const propertyName =
+    [unit, street].filter(Boolean).join(", ") ||
+    str(property.system_search_key) ||
+    "Address unavailable";
+  const locality = [str(property.adr_suburb_or_town), str(property.adr_postcode)]
+    .filter(Boolean)
+    .join(" ");
+
+  const primary = (listing.listing_primary_image ?? {}) as Record<string, unknown>;
+  const thumbs = (primary.thumbs ?? {}) as Record<string, { url?: string }>;
+  const image =
+    absoluteUrl(thumbs["400x300"]?.url) ?? absoluteUrl(primary.url) ?? null;
+
+  const statusId = String(
+    (r.application_status as { id?: string } | undefined)?.id ?? "received"
+  );
+
+  const related = (r.related ?? {}) as Record<string, unknown>;
+  const rawTenants = Array.isArray(related.listing_application_tenants)
+    ? (related.listing_application_tenants as Array<Record<string, unknown>>)
+    : [];
+  const tenants: ApplicationTenant[] = rawTenants.map((t) => {
+    const c = (t.contact ?? {}) as Record<string, unknown>;
+    return {
+      name: str(c.name) ?? "Unnamed applicant",
+      email: str(c.email_address),
+      phone: str(c.phone_number),
+      isPrimary: t.is_primary === true,
+    };
+  });
+
+  return {
+    id: String(r.id ?? ""),
+    stage: stageOfStatus(statusId),
+    status: label(r.application_status) ?? "Received",
+    propertyName,
+    locality,
+    image,
+    offer: num(r.offer_amount),
+    offerPeriod: label(r.offer_amount_period),
+    affordability: num(r.system_affordability_percentage),
+    dateReceived: str(r.date_received),
+    startDate: str(r.start_date),
+    agreementMonths: num(r.agreement_length_months),
+    occupants: num(r.num_of_occupants),
+    hasPets: r.has_pets === true,
+    tenants,
+    notes: str(r.notes),
+    conditions: str(r.conditions),
+  };
+}
+
+/**
+ * The agent's tenancy applications — their live let pipeline. Newest first.
+ * Scoped by application.agent_id, so an agent only sees their own.
+ * null on failure so the caller can say so rather than imply an empty pipeline.
+ */
+export async function getAgentApplications(
+  rexUserId: string
+): Promise<AgentApplication[] | null> {
+  if (!rexConfigured() || !rexUserId) return null;
+
+  const work = (async (): Promise<AgentApplication[] | null> => {
+    const caps = await getCapabilities();
+    if (!caps.capabilities.login) return null;
+
+    const res = await rexCall("TenancyApplications", "search", {
+      criteria: [{ name: "application.agent_id", type: "=", value: rexUserId }],
+      limit: COUNT_LIMIT,
+    }).catch(() => null);
+    if (!res || !res.ok) return null;
+
+    return rexRows(res.result)
+      .map(toApplication)
+      .sort((a, b) => (b.dateReceived ?? "").localeCompare(a.dateReceived ?? ""));
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
