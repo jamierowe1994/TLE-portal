@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { getAgentFunnel, getAgentPortfolio } from "@/lib/rex-stats";
+import { resolveRexUserId } from "@/lib/agent-link";
 import { getAgentMetaStats } from "@/lib/meta";
 import { getOverrides } from "@/lib/actuals-store";
 import { resolveStat, pct, type ManualOverride } from "@/lib/stats";
@@ -120,14 +121,17 @@ export async function GET(req: NextRequest) {
   const month =
     monthParam && MONTH_RE.test(monthParam) ? monthParam : currentMonth();
   const agentKey = user.agentKey;
+  // Links them on the fly if they signed up before we auto-linked at signup —
+  // otherwise their live layer silently stays empty and they see snapshot only.
+  const rexUserId = await resolveRexUserId(user);
 
   // Gather the layers in parallel — each one degrades to null/[] alone.
   const [live, livePortfolio, meta, overrides] = await Promise.all([
-    user.rexUserId
-      ? getAgentFunnel(user.rexUserId, month).catch(() => null)
+    rexUserId
+      ? getAgentFunnel(rexUserId, month).catch(() => null)
       : Promise.resolve(null),
-    user.rexUserId
-      ? getAgentPortfolio(user.rexUserId).catch(() => null)
+    rexUserId
+      ? getAgentPortfolio(rexUserId).catch(() => null)
       : Promise.resolve(null),
     getAgentMetaStats(user).catch(() => ({ configured: false as const })),
     getOverrides(month).catch(() => [] as ActualOverride[]),

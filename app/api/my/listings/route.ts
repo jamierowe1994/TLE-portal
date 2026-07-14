@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
+import { resolveRexUserId } from "@/lib/agent-link";
 import { getAgentListings } from "@/lib/rex-stats";
 
 // The signed-in agent's live properties, straight from REX. Scoped by their own
@@ -14,13 +15,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
-  // Not linked to REX yet — the dashboard already prompts them to get linked,
-  // so say so plainly rather than showing an empty list as if they had none.
-  if (!user.rexUserId) {
+  // Links them on the fly if they signed up before we auto-linked at signup.
+  // Only genuinely unmatchable agents fall through to "not linked".
+  const rexUserId = await resolveRexUserId(user);
+  if (!rexUserId) {
     return NextResponse.json({ linked: false, listings: [] });
   }
 
-  const listings = await getAgentListings(user.rexUserId);
+  const listings = await getAgentListings(rexUserId);
   if (listings == null) {
     return NextResponse.json({
       linked: true,
