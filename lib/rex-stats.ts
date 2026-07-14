@@ -280,6 +280,8 @@ export async function getAgentPortfolio(rexUserId: string): Promise<AgentPortfol
 // this is the shape the CRM-style list is built from.
 export interface AgentListing {
   id: string;
+  /** REX property id — compliance entries hang off this, not the listing id. */
+  propertyId: string;
   /** Full display address — REX's combined search key. Used for sorting/search. */
   address: string;
   /** Street line, e.g. "5 The Lime Tree Court Commercial Road" — the headline. */
@@ -380,6 +382,7 @@ function toListing(r: Record<string, unknown>): AgentListing {
 
   return {
     id: String(r.id ?? ""),
+    propertyId: String(property.id ?? ""),
     address: String(address).trim(),
     name: name ?? String(address).trim(),
     locality: locality ?? "",
@@ -429,6 +432,159 @@ export async function getAgentListings(
     return rexRows(res.result)
       .map(toListing)
       .sort((a, b) => a.address.localeCompare(b.address, "en-GB"));
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
+/* --------------------------- property compliance --------------------------- */
+
+// Property compliance only. REX also stores contact-level checks (AML, Right to
+// Rent, NRL) as ComplianceEntries hanging off contacts — different job, kept out.
+const PROPERTY_COMPLIANCE: Record<string, string> = {
+  epc: "EPC",
+  gas_safety: "Gas safety",
+  eicr: "Electrical (EICR)",
+  legionella_risk_assessment: "Legionella risk assessment",
+  smoke_alarms: "Smoke alarms",
+  co_alarms: "CO alarms",
+  emergency_lighting_fire_exit: "Emergency lighting / fire exit",
+  portable_appliance_testing: "PAT testing",
+  oil_safety: "Oil safety",
+  mandatory_hmo_license: "HMO licence (mandatory)",
+  additional_hmo_license: "HMO licence (additional)",
+  selective_hmo_license: "HMO licence (selective)",
+  listing_proof_of_ownership: "Proof of ownership",
+  terms_of_business: "Terms of business",
+};
+
+export type ComplianceState =
+  | "valid"
+  | "expiring"
+  | "expired"
+  | "missing"
+  | "not-required";
+
+export interface ComplianceItem {
+  type: string;
+  label: string;
+  state: ComplianceState;
+  expiry: string | null;
+  notes: string | null;
+}
+
+export interface PropertyCompliance {
+  listingId: string;
+  name: string;
+  locality: string;
+  image: string | null;
+  items: ComplianceItem[];
+  /** How many items need a human — drives the "needs attention" sort. */
+  outstanding: number;
+}
+
+const EXPIRING_DAYS = 60;
+
+export function complianceNeedsWork(s: ComplianceState): boolean {
+  return s === "expired" || s === "expiring" || s === "missing";
+}
+
+/**
+ * Every entry carries the same shape under details[type]:
+ *   { notes, issue_date, expiry_date, not_required }
+ * `not_required` is an explicit answer ("No gas in building"), not a gap — so
+ * it's never outstanding. A record with no dates at all is genuinely
+ * incomplete; one with an issue_date but no expiry simply doesn't expire.
+ */
+function toComplianceItem(entry: Record<string, unknown>): ComplianceItem | null {
+  const type = String(label(entry.type_id) ?? "");
+  const name = PROPERTY_COMPLIANCE[type];
+  if (!name) return null; // contact-level or unknown — not our concern here
+
+  const details = (entry.details ?? {}) as Record<string, unknown>;
+  const d = (details[type] ?? {}) as Record<string, unknown>;
+  const expiry = typeof d.expiry_date === "string" ? d.expiry_date : null;
+  const issued = typeof d.issue_date === "string" ? d.issue_date : null;
+  const notes = typeof d.notes === "string" && d.notes.trim() ? d.notes.trim() : null;
+
+  let state: ComplianceState;
+  if (d.not_required === true) {
+    state = "not-required";
+  } else if (expiry) {
+    const days = Math.round((new Date(expiry).getTime() - Date.now()) / 86_400_000);
+    state = days < 0 ? "expired" : days <= EXPIRING_DAYS ? "expiring" : "valid";
+  } else if (issued) {
+    state = "valid"; // recorded, and this type doesn't carry an expiry
+  } else {
+    state = "missing";
+  }
+
+  return { type, label: name, state, expiry, notes };
+}
+
+/**
+ * The agent's properties with their compliance, worst first. Live from REX.
+ * null on failure so the caller can say so rather than imply all-clear.
+ */
+export async function getAgentCompliance(
+  rexUserId: string
+): Promise<PropertyCompliance[] | null> {
+  if (!rexConfigured() || !rexUserId) return null;
+
+  const work = (async (): Promise<PropertyCompliance[] | null> => {
+    const listings = await getAgentListings(rexUserId);
+    if (!listings) return null;
+
+    // Compliance hangs off the property (and sometimes the listing), so ask for
+    // both ids in one go rather than a call per property.
+    const propertyIds = listings.map((l) => l.propertyId).filter(Boolean);
+    const ids = [...new Set([...propertyIds, ...listings.map((l) => l.id)])];
+    if (ids.length === 0) return [];
+
+    const res = await rexCall("ComplianceEntries", "search", {
+      criteria: [{ name: "parent_object_id", type: "in", value: ids }],
+      limit: COUNT_LIMIT,
+    }).catch(() => null);
+    if (!res || !res.ok) return null;
+
+    // Bucket entries by the id they hang off.
+    const byParent = new Map<string, ComplianceItem[]>();
+    for (const row of rexRows(res.result)) {
+      const item = toComplianceItem(row);
+      if (!item) continue;
+      const parent = String(row.parent_object_id ?? "");
+      if (!parent) continue;
+      const list = byParent.get(parent) ?? [];
+      list.push(item);
+      byParent.set(parent, list);
+    }
+
+    const out = listings.map((l) => {
+      const items = [
+        ...(byParent.get(l.propertyId) ?? []),
+        ...(byParent.get(l.id) ?? []),
+      ].sort((a, b) => a.label.localeCompare(b.label));
+      return {
+        listingId: l.id,
+        name: l.name,
+        locality: l.locality,
+        image: l.image,
+        items,
+        outstanding: items.filter((i) => complianceNeedsWork(i.state)).length,
+      };
+    });
+
+    // Worst first — this page exists to surface what needs doing.
+    return out.sort(
+      (a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name, "en-GB")
+    );
   })();
 
   const deadline = new Promise<null>((resolve) =>
