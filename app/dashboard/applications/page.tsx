@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatGBP } from "@/lib/format";
+import { BRAND } from "@/lib/brand";
 import type { AgentApplication, ApplicationStage } from "@/lib/rex-stats";
 
 const enterAt = (ms: number) =>
@@ -85,7 +86,8 @@ function ApplicationTile({
             {a.offer != null ? formatGBP(a.offer) : "—"}
           </span>
           <span className="text-[11px] text-muted">
-            offered / {(a.offerPeriod ?? "month").replace(/^Per /i, "").toLowerCase()}
+            {a.propoly ? "rent" : "offered"} /{" "}
+            {(a.offerPeriod ?? "month").replace(/^Per /i, "").toLowerCase()}
           </span>
         </div>
       </div>
@@ -96,6 +98,233 @@ function ApplicationTile({
         </div>
       </div>
     </button>
+  );
+}
+
+/* --------------------------- progression board --------------------------- */
+
+// The five Propoly stages a deal walks through on its way to keys-in-hand.
+// Blurbs explain what's actually happening at the live stage.
+const PROPOLY_STAGES: { key: string; label: string; blurb: string }[] = [
+  {
+    key: "start_deal",
+    label: "Deal started",
+    blurb: "Terms agreed — the deal is being set up with rent, dates and tenant details.",
+  },
+  {
+    key: "holding_fee",
+    label: "Holding fee",
+    blurb: "Collecting the holding fee that takes the property off the market.",
+  },
+  {
+    key: "references",
+    label: "Referencing",
+    blurb: "Credit, employer and previous-landlord checks, plus Right to Rent.",
+  },
+  {
+    key: "tenancy_generation",
+    label: "Tenancy agreement",
+    blurb: "The agreement is being drawn up with all the agreed clauses.",
+  },
+  {
+    key: "signing_and_move_in_monies",
+    label: "Signing & move-in monies",
+    blurb: "Signatures, plus the first month's rent and deposit being collected.",
+  },
+];
+
+const PROPOLY_APP_URL = "https://prod.propoly.com";
+
+/** Click-into-a-deal dashboard: where the tenancy is, stage by stage. */
+function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const p = a.propoly!;
+  const cancelled = p.statusKey === "cancelled";
+  const currentIdx = PROPOLY_STAGES.findIndex((s) => s.key === p.statusKey);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10"
+      onClick={onClose}
+    >
+      <div
+        className="modal-pop my-auto w-full max-w-xl rounded-2xl bg-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-5 sm:p-7">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
+                  {a.status.toUpperCase()}
+                </span>
+                {p.service ? (
+                  <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted">
+                    {p.service.toUpperCase()}
+                  </span>
+                ) : null}
+              </div>
+              <h2 className="mt-3 text-[17px] font-semibold leading-snug">{a.propertyName}</h2>
+              <p className="mt-0.5 text-[13px] text-muted">{a.locality}</p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-full border border-line p-1.5 text-muted transition hover:text-ink"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+
+          {cancelled ? (
+            <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+              This deal was cancelled before completion — the stages below show the
+              journey it would have taken.
+            </p>
+          ) : null}
+
+          {/* ---- the stage board ---- */}
+          <ol className="mt-6">
+            {PROPOLY_STAGES.map((s, i) => {
+              const state = cancelled
+                ? "off"
+                : i < currentIdx
+                  ? "done"
+                  : i === currentIdx
+                    ? "current"
+                    : "todo";
+              const last = i === PROPOLY_STAGES.length - 1;
+              return (
+                <li key={s.key} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    {state === "done" ? (
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-100">
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-green-700" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M5 13l4 4L19 7" />
+                        </svg>
+                      </span>
+                    ) : state === "current" ? (
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full accent-soft-bg">
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: BRAND.accent }} />
+                      </span>
+                    ) : (
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-page">
+                        <span className="h-2 w-2 rounded-full bg-gray-300" />
+                      </span>
+                    )}
+                    {!last ? (
+                      <span className={`w-px flex-1 ${state === "done" ? "bg-green-200" : "bg-line"}`} />
+                    ) : null}
+                  </div>
+                  <div className={last ? "pb-1" : "pb-5"}>
+                    <p
+                      className={`text-[13px] font-semibold leading-6 ${
+                        state === "todo" || state === "off" ? "text-muted" : "text-ink"
+                      }`}
+                    >
+                      {s.label}
+                      {state === "current" ? (
+                        <span className="ml-2 rounded-full accent-soft-bg px-2 py-0.5 text-[9px] font-semibold accent-text">
+                          HAPPENING NOW
+                        </span>
+                      ) : null}
+                    </p>
+                    {state === "current" ? (
+                      <>
+                        <p className="mt-0.5 text-[12px] text-muted">{s.blurb}</p>
+                        <a
+                          href={PROPOLY_APP_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium accent-text underline-offset-2 hover:underline"
+                        >
+                          Chase this in Propoly
+                          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 5h5v5M19 5l-8 8" />
+                          </svg>
+                        </a>
+                      </>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          {/* ---- the numbers ---- */}
+          <div className="mt-6 grid grid-cols-2 gap-3 border-y border-line py-5 text-[11px] text-muted sm:grid-cols-4">
+            <div>
+              <div className="stat-value text-[18px] text-ink">{a.offer != null ? formatGBP(a.offer) : "—"}</div>
+              Rent / month
+            </div>
+            <div>
+              <div className="stat-value text-[18px] text-ink">{p.deposit != null ? formatGBP(p.deposit) : "—"}</div>
+              Deposit
+            </div>
+            <div>
+              <div className="stat-value text-[18px] text-ink">{p.holdingFee != null ? formatGBP(p.holdingFee) : "—"}</div>
+              Holding fee
+            </div>
+            <div>
+              <div className="text-[13px] font-medium text-ink">{fmtDate(a.startDate) ?? "TBC"}</div>
+              Move-in
+            </div>
+          </div>
+
+          {/* ---- applicants ---- */}
+          <div className="mt-6">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+              {a.tenants.length === 1 ? "Tenant" : `Tenants (${a.tenants.length})`}
+            </h3>
+            <div className="mt-3 space-y-2.5">
+              {a.tenants.length ? (
+                a.tenants.map((t, i) => (
+                  <div key={i} className="rounded-xl border border-line p-4">
+                    <div className="flex items-center gap-2">
+                      <p className="text-[13px] font-medium">{t.name}</p>
+                      {t.isPrimary ? (
+                        <span className="rounded-full border border-line bg-page px-1.5 py-0.5 text-[9px] font-semibold text-muted">
+                          LEAD
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted">
+                      {t.email ? <a href={`mailto:${t.email}`} className="hover:text-ink">{t.email}</a> : null}
+                      {t.phone ? <a href={`tel:${t.phone}`} className="hover:text-ink">{t.phone}</a> : null}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-[13px] text-muted">No tenant details recorded yet.</p>
+              )}
+            </div>
+          </div>
+
+          {/* ---- go do it ---- */}
+          <div className="mt-6 flex items-center justify-between gap-3">
+            <p className="text-[11px] text-muted">
+              Live from Propoly — updates within a minute of anything moving.
+            </p>
+            <a
+              href={PROPOLY_APP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-press shrink-0 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition"
+              style={{ background: BRAND.accent }}
+            >
+              Open in Propoly
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -225,17 +454,26 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<AgentApplication | null>(null);
   const [showClosed, setShowClosed] = useState(false);
+  const [fromPropoly, setFromPropoly] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/my/applications", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { linked?: boolean; applications?: AgentApplication[]; error?: string }) => {
-        if (cancelled) return;
-        setLinked(d.linked !== false);
-        setApplications(d.applications ?? []);
-        setError(d.error ?? null);
-      })
+      .then(
+        (d: {
+          linked?: boolean;
+          applications?: AgentApplication[];
+          source?: string;
+          error?: string;
+        }) => {
+          if (cancelled) return;
+          setLinked(d.linked !== false);
+          setApplications(d.applications ?? []);
+          setFromPropoly(d.source === "propoly");
+          setError(d.error ?? null);
+        }
+      )
       .catch(() => !cancelled && setError("Couldn't load your applications."))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -255,8 +493,9 @@ export default function ApplicationsPage() {
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">Applications</h1>
         <p className="mt-1 text-[13px] text-muted">
-          Offers on your properties and where each one is up to. Tap one for the
-          applicant.
+          {fromPropoly
+            ? "Every tenancy in progress and exactly where it's up to — live from Propoly. Tap one for the full picture."
+            : "Offers on your properties and where each one is up to. Tap one for the applicant."}
         </p>
       </div>
 
@@ -285,7 +524,17 @@ export default function ApplicationsPage() {
             {(["received", "communicated", "accepted"] as ApplicationStage[]).map((s) => (
               <div key={s} className="card p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  {s === "received" ? "Received" : s === "communicated" ? "With landlord" : "Accepted"}
+                  {fromPropoly
+                    ? s === "received"
+                      ? "Getting started"
+                      : s === "communicated"
+                        ? "References & agreement"
+                        : "Signing & move-in"
+                    : s === "received"
+                      ? "Received"
+                      : s === "communicated"
+                        ? "With landlord"
+                        : "Accepted"}
                 </div>
                 <div className="stat-value mt-1 text-[24px]">{count(s)}</div>
               </div>
@@ -312,7 +561,13 @@ export default function ApplicationsPage() {
         </>
       ) : null}
 
-      {open ? <Drawer a={open} onClose={() => setOpen(null)} /> : null}
+      {open ? (
+        open.propoly ? (
+          <PropolyDrawer a={open} onClose={() => setOpen(null)} />
+        ) : (
+          <Drawer a={open} onClose={() => setOpen(null)} />
+        )
+      ) : null}
     </div>
   );
 }

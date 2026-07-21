@@ -642,6 +642,13 @@ export interface AgentApplication {
   tenants: ApplicationTenant[];
   notes: string | null;
   conditions: string | null;
+  /** Present when the row came from Propoly — powers the progression board. */
+  propoly?: {
+    statusKey: string; // raw Propoly status, e.g. "references"
+    holdingFee: number | null; // £
+    deposit: number | null; // £
+    service: string | null; // "Fully managed" | "Tenant find" | "Rent collect"
+  };
 }
 
 function stageOfStatus(id: string): ApplicationStage {

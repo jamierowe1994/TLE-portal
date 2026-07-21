@@ -174,6 +174,8 @@ function toApplication(d: Record<string, unknown>, statusKey: string): AgentAppl
   }));
 
   const pencePcm = typeof d.price_pcm_pence === "number" ? d.price_pcm_pence : null;
+  const depositPence = typeof d.deposit_pence === "number" ? d.deposit_pence : null;
+  const holdingPence = typeof d.holding_fee_pence === "number" ? d.holding_fee_pence : null;
   const service = SERVICE_LABELS[String(d.tenancy_service_level ?? "")] ?? null;
   const pets = d.pets;
   const hasPets =
@@ -195,9 +197,15 @@ function toApplication(d: Record<string, unknown>, statusKey: string): AgentAppl
     occupants: tenants.length || null,
     hasPets,
     tenants,
-    // Service level is worth surfacing — the drawer shows notes when present.
-    notes: service ? `Service level: ${service}` : null,
+    notes: null,
     conditions: null,
+    // The progression board on the Applications drawer runs off this.
+    propoly: {
+      statusKey,
+      holdingFee: holdingPence != null ? Math.round(holdingPence / 100) : null,
+      deposit: depositPence != null ? Math.round(depositPence / 100) : null,
+      service,
+    },
   };
 }
 
