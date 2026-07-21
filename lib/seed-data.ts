@@ -730,3 +730,302 @@ export function agentCompliance(agentKey: string): ComplianceAgentRow | null {
 export function agentPortfolio(agentKey: string): PortfolioRow | null {
   return SEED.portfolio.byPartner.find((r) => nameMatchesAgent(r.agent, agentKey)) ?? null;
 }
+
+/* ==================== Per-period KPIs (Base44, 21 Jul 2026) ==================== */
+// Susan's Base44 dashboard has working period pills; these figures were read
+// straight off her live page (tle-business-dashboard.base44.app) on 21 Jul
+// 2026, period by period, so the portal's pills answer identically. When the
+// live integrations grow month filters (REX MAs already have one), matching
+// tiles upgrade to LIVE and these become the fallback.
+
+const PERIOD_CAPTURE_DATE = "2026-07-21";
+
+function snapP(value: number | null, display?: string, src?: string): StatValue {
+  const note = src
+    ? `Figure from Susan's Base44 dashboard, period view (captured 21 Jul 2026) · Source: ${src}`
+    : `Figure from Susan's Base44 dashboard, period view (captured 21 Jul 2026)`;
+  const stat: StatValue = { value, source: "snapshot", note, asOf: PERIOD_CAPTURE_DATE };
+  if (display) stat.display = display;
+  return stat;
+}
+
+export interface PeriodKpis {
+  label: string;
+  funnel: {
+    marketAppraisals: StatValue;
+    listings: StatValue;
+    viewings: StatValue;
+    applications: StatValue;
+    moveIns: StatValue;
+    liveListings: StatValue;
+    pipeline: StatValue;
+  };
+  conversions: {
+    maToListing: StatValue;
+    listingToMoveIn: StatValue;
+    rlpConversion: StatValue;
+    gciPerMoveIn: StatValue;
+    gciPerAgent: StatValue;
+  };
+  ramp: {
+    newStarters: StatValue;
+    maInMonths1To2: StatValue;
+    listingInMonths1To2: StatValue;
+    moveInWithin60Days: StatValue;
+  };
+}
+
+const noPipe = () => snapP(null, "—", "Forward pipeline not tracked for this period on the source dashboard");
+
+export const PERIOD_KPIS: Record<string, PeriodKpis> = {
+  jul: {
+    label: "July MTD",
+    funnel: {
+      marketAppraisals: snapP(10, undefined, "REX KPI reports"),
+      listings: snapP(9, undefined, "REX KPI reports"),
+      viewings: snapP(46, undefined, "REX KPI reports"),
+      applications: snapP(6, undefined, "REX KPI reports"),
+      moveIns: snapP(10, undefined, "Lettings Support - Move In Report"),
+      liveListings: snapP(28, undefined, "REX KPI reports"),
+      pipeline: snapP(51, undefined, "REX KPI reports (forward pipeline)"),
+    },
+    conversions: {
+      maToListing: snapP(90, "90%", "9 listings from 10 combined MAs · 1 recorded + 9 listing-only · Jul MTD"),
+      listingToMoveIn: snapP(111, "111%", "10 move-ins from 9 listings · Jul MTD · 6 Jul"),
+      rlpConversion: snapP(50, "50%", "5 of 10 EFM managed · Jul MTD preliminary"),
+      gciPerMoveIn: snapP(1200, "£1,200", "£12,000 est GCI ÷ 10 fee-generating MIs · Jul MTD preliminary"),
+      gciPerAgent: snapP(400, "£400", "£12,000 est GCI ÷ 30 partners · Jul MTD preliminary"),
+    },
+    ramp: {
+      newStarters: snapP(0, undefined, "No new starters in July · Chanade Patrick starting Aug 2026 · June cohort now in month 2"),
+      maInMonths1To2: snapP(null, "—", "No July starters · June cohort: Rovena Buci got MA in month 1"),
+      listingInMonths1To2: snapP(null, "—", "No July starters · Rovena Buci listed in month 1"),
+      moveInWithin60Days: snapP(null, "—", "No move-ins from June cohort yet"),
+    },
+  },
+  jun: {
+    label: "June",
+    funnel: {
+      marketAppraisals: snapP(40),
+      listings: snapP(35),
+      viewings: snapP(202),
+      applications: snapP(25),
+      moveIns: snapP(30),
+      liveListings: snapP(28),
+      pipeline: noPipe(),
+    },
+    conversions: {
+      maToListing: snapP(88, "88%", "35 listings from 40 combined MAs · 10 recorded + 30 listing-only · Jun final"),
+      listingToMoveIn: snapP(86, "86%", "30 completed move-ins from 35 listings · Jun final · incl 3 mktg only + 7 man trans"),
+      rlpConversion: snapP(50, "50%", "9 of 18 EFM managed move-ins · Jun final"),
+      gciPerMoveIn: snapP(2201, "£2,201", "£39,609 GCI ÷ 18 fee-generating MIs · excl 9 man trans + 3 mktg only · combined E&W + Glasgow"),
+      gciPerAgent: snapP(1320, "£1,320", "£39,609 GCI ÷ 30 partners · Jun final"),
+    },
+    ramp: {
+      newStarters: snapP(1, undefined, "Rovena Buci (TLE, London)"),
+      maInMonths1To2: snapP(100, "100%", "1 of 1 Jun starters got MA in month 1 · Rovena Buci"),
+      listingInMonths1To2: snapP(100, "100%", "1 of 1 Jun starters listed in month 1 · Rovena Buci"),
+      moveInWithin60Days: snapP(null, "—", "No move-ins yet from June starter"),
+    },
+  },
+  may: {
+    label: "May",
+    funnel: {
+      marketAppraisals: snapP(22),
+      listings: snapP(23),
+      viewings: snapP(150),
+      applications: snapP(35),
+      moveIns: snapP(60),
+      liveListings: snapP(43),
+      pipeline: noPipe(),
+    },
+    conversions: {
+      maToListing: snapP(105, "105%", "23 listings from 22 MAs"),
+      listingToMoveIn: snapP(207, "207%", "60 move-ins from 23 listings · incl 29 mgmt transfers"),
+      rlpConversion: snapP(41, "41%", "9 of 22 EFM managed move-ins with RLP"),
+      gciPerMoveIn: snapP(1136, "£1,136", "£35,235 GCI ÷ 31 fee-generating MIs · excl 29 mgmt transfers & Lianna Denholm portfolio fees (£3,637)"),
+      gciPerAgent: snapP(1296, "£1,296", "£38,872 GCI ÷ 30 partners · May final"),
+    },
+    ramp: {
+      newStarters: snapP(3, undefined, "Lorna Fieldson · Angela Davey · Darren Jardine (Lettings Lite)"),
+      maInMonths1To2: snapP(0, "0%", "0 of 3 May starters got MA in months 1–2 (so far)"),
+      listingInMonths1To2: snapP(0, "0%", "0 of 3 May starters listed in months 1–2"),
+      moveInWithin60Days: snapP(null, "—", "No listings yet · move-ins pending"),
+    },
+  },
+  apr: {
+    label: "April",
+    funnel: {
+      marketAppraisals: snapP(20),
+      listings: snapP(24),
+      viewings: snapP(103),
+      applications: snapP(29),
+      moveIns: snapP(20),
+      liveListings: snapP(37),
+      pipeline: snapP(75),
+    },
+    conversions: {
+      maToListing: snapP(126, "126%", "24 rental listings from 19 MAs"),
+      listingToMoveIn: snapP(83, "83%", "20 MIs · 17 EFM + 3 let only (Sean Mc Mahon)"),
+      rlpConversion: snapP(60, "60%", "3 of 6 EFM managed"),
+      gciPerMoveIn: snapP(1851, "£1,851", "Apr EFM avg (12 month fees)"),
+      gciPerAgent: snapP(588, "£588", "£14,687 ÷ 25 agents"),
+    },
+    ramp: {
+      newStarters: snapP(4, undefined, "Lianna Denholm · Alishba Tahir · Edward Westwood · Hulusi Eren"),
+      maInMonths1To2: snapP(25, "25%", "1 of 4 Apr starters got MA in months 1–2 · Lianna Denholm (May)"),
+      listingInMonths1To2: snapP(25, "25%", "1 of 4 Apr starters listed in months 1–2 · Lianna Denholm (May)"),
+      moveInWithin60Days: snapP(100, "100%", "Lianna: 2 move-ins in May · only starter to list so far"),
+    },
+  },
+  q2: {
+    label: "Q2 2026",
+    funnel: {
+      marketAppraisals: snapP(82),
+      listings: snapP(82),
+      viewings: snapP(455),
+      applications: snapP(89),
+      moveIns: snapP(110),
+      liveListings: snapP(28),
+      pipeline: snapP(75),
+    },
+    conversions: {
+      maToListing: snapP(100, "100%", "82 listings from 82 combined MAs · Apr+May+Jun final"),
+      listingToMoveIn: snapP(134, "134%", "110 MIs · Apr 20 + May 60 + Jun 30 final"),
+      rlpConversion: snapP(60, "60%", "3 of 6 EFM managed · Apr"),
+      gciPerMoveIn: snapP(1851, "£1,851", "Apr EFM avg (12 month fees)"),
+      gciPerAgent: snapP(588, "£588", "£14,687 ÷ 25 agents · Apr only"),
+    },
+    ramp: {
+      newStarters: snapP(8, undefined, "Apr: Lianna Denholm · Alishba Tahir · Edward Westwood · Hulusi Eren | May: Lorna Fieldson · Angela Davey · Darren Jardine | Jun: Rovena Buci"),
+      maInMonths1To2: snapP(25, "25%", "2 of 8 Q2 starters got MA in months 1–2 · Lianna Denholm · Rovena Buci"),
+      listingInMonths1To2: snapP(25, "25%", "2 of 8 Q2 starters listed · Lianna Denholm · Rovena Buci · 6 still ramping"),
+      moveInWithin60Days: snapP(50, "50%", "1 of 2 Q2 listers converted · Lianna Denholm (2 MIs) · Rovena Buci pending"),
+    },
+  },
+  mar: {
+    label: "March",
+    funnel: {
+      marketAppraisals: snapP(26),
+      listings: snapP(26),
+      viewings: snapP(128),
+      applications: snapP(25),
+      moveIns: snapP(30),
+      liveListings: snapP(34),
+      pipeline: noPipe(),
+    },
+    conversions: {
+      maToListing: snapP(100, "100%", "26 listings from 26 MAs"),
+      listingToMoveIn: snapP(108, "108%", "28 MIs from 26 listings"),
+      rlpConversion: snapP(62, "62%", "8 of 13 EFM managed"),
+      gciPerMoveIn: snapP(1708, "£1,708", "March EFM avg"),
+      gciPerAgent: snapP(1040, "£1,040", "£27,030 ÷ 26 agents"),
+    },
+    ramp: {
+      newStarters: snapP(1, undefined, "Elizabeth Ogunfowokan"),
+      maInMonths1To2: snapP(100, "100%", "1 of 1 Mar starter got an MA in months 1–2 (Apr)"),
+      listingInMonths1To2: snapP(0, "0%", "0 of 1 Mar starter listed in months 1–2"),
+      moveInWithin60Days: snapP(null, "—", "No listing yet · move-in pending"),
+    },
+  },
+  feb: {
+    label: "February",
+    funnel: {
+      marketAppraisals: snapP(34),
+      listings: snapP(34),
+      viewings: snapP(118),
+      applications: snapP(23),
+      moveIns: snapP(16),
+      liveListings: snapP(40),
+      pipeline: noPipe(),
+    },
+    conversions: {
+      maToListing: snapP(100, "100%", "34 listings from 34 MAs"),
+      listingToMoveIn: snapP(47, "47%", "16 MIs from 34 listings"),
+      rlpConversion: snapP(90, "90%", "9 of 10 EFM managed"),
+      gciPerMoveIn: snapP(1996, "£1,996", "February EFM avg"),
+      gciPerAgent: snapP(1270, "£1,270", "£22,861 ÷ 18 agents"),
+    },
+    ramp: {
+      newStarters: snapP(2, undefined, "Richard Callow · Zilvinas Navickis"),
+      maInMonths1To2: snapP(100, "100%", "2 of 2 Feb starters got an MA in months 1–2"),
+      listingInMonths1To2: snapP(100, "100%", "2 of 2 Feb starters listed in months 1–2"),
+      moveInWithin60Days: snapP(100, "100%", "Both converted within 60 days"),
+    },
+  },
+  jan: {
+    label: "January",
+    funnel: {
+      marketAppraisals: snapP(32),
+      listings: snapP(30),
+      viewings: snapP(98),
+      applications: snapP(22),
+      moveIns: snapP(18),
+      liveListings: snapP(25),
+      pipeline: noPipe(),
+    },
+    conversions: {
+      maToListing: snapP(94, "94%", "30 listings from 32 MAs"),
+      listingToMoveIn: snapP(60, "60%", "18 MIs from 30 listings"),
+      rlpConversion: snapP(42, "42%", "5 of 12 EFM managed"),
+      gciPerMoveIn: snapP(1591, "£1,591", "January EFM avg"),
+      gciPerAgent: snapP(801, "£801", "£20,016 ÷ 25 agents"),
+    },
+    ramp: {
+      newStarters: snapP(0, undefined, "No new starters in January"),
+      maInMonths1To2: snapP(null, "—", "Richard Callow & Zilvinas Navickis started Feb 2026"),
+      listingInMonths1To2: snapP(null, "—", "See February for Jan rampers"),
+      moveInWithin60Days: snapP(null, "—", "No January starters"),
+    },
+  },
+  q1: {
+    label: "Q1 2026",
+    funnel: {
+      marketAppraisals: snapP(92),
+      listings: snapP(90),
+      viewings: snapP(344),
+      applications: snapP(70),
+      moveIns: snapP(65),
+      liveListings: snapP(99),
+      pipeline: noPipe(),
+    },
+    conversions: {
+      maToListing: snapP(98, "98%", "90 listings from 92 MAs"),
+      listingToMoveIn: snapP(69, "69%", "62 MIs from 90 listings"),
+      rlpConversion: snapP(63, "63%", "22 of 35 EFM managed"),
+      gciPerMoveIn: snapP(1752, "£1,752", "Q1 EFM avg"),
+      gciPerAgent: snapP(2689, "£2,689", "£69,907 ÷ 26 agents"),
+    },
+    ramp: {
+      newStarters: snapP(3, undefined, "Richard Callow · Zilvinas Navickis · Elizabeth Ogunfowokan"),
+      maInMonths1To2: snapP(100, "100%", "3 of 3 Q1 starters got an MA in months 1–2"),
+      listingInMonths1To2: snapP(67, "67%", "2 of 3 Q1 starters listed in months 1–2"),
+      moveInWithin60Days: snapP(100, "100%", "Both who listed converted within 60 days"),
+    },
+  },
+  ytd: {
+    label: "YTD 2026",
+    funnel: {
+      marketAppraisals: snapP(174),
+      listings: snapP(172),
+      viewings: snapP(845),
+      applications: snapP(165),
+      moveIns: snapP(185),
+      liveListings: snapP(28),
+      pipeline: snapP(51),
+    },
+    conversions: {
+      maToListing: snapP(99, "99%", "172 rental listings from 174 combined MAs YTD"),
+      listingToMoveIn: snapP(108, "108%", "185 MIs from 172 listings · Jan–Jul"),
+      rlpConversion: snapP(62, "62%", "27 of 42 EFM managed"),
+      gciPerMoveIn: snapP(1579, "£1,579", "£173,707 GCI ÷ 110 move-ins · Jan–May (excl Jun–Jul)"),
+      gciPerAgent: snapP(5790, "£5,790", "£173,707 GCI ÷ 30 partners · Jan–May (excl Jun–Jul)"),
+    },
+    ramp: {
+      newStarters: snapP(11, undefined, "3 Q1 (Feb+Mar) + 4 Apr + 3 May + 1 Jun (Rovena Buci)"),
+      maInMonths1To2: snapP(45, "45%", "5 of 11 YTD starters got an MA in months 1–2 · 3 Q1 + Lianna Denholm + Rovena Buci"),
+      listingInMonths1To2: snapP(36, "36%", "4 of 11 YTD starters listed in months 1–2 · 2 Q1 + Lianna Denholm + Rovena Buci"),
+      moveInWithin60Days: snapP(75, "75%", "3 of 4 listers converted within 60 days · 2 Q1 + Lianna Denholm · Rovena Buci pending"),
+    },
+  },
+};

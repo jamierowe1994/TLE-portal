@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
-import { SEED } from "@/lib/seed-data";
+import { SEED, PERIOD_KPIS } from "@/lib/seed-data";
 import { getOverrides } from "@/lib/actuals-store";
 import { resolveStat } from "@/lib/stats";
 import type { StatValue } from "@/lib/types";
@@ -82,5 +82,8 @@ export async function GET(req: NextRequest) {
     yoyGrowth: SEED.yoyGrowth,
     gciByMonth,
     sources: SEED.sources,
+    // Every period Susan's dashboard can show, captured 21 Jul 2026 — powers
+    // the working period pills on the mirrored Overview.
+    periods: PERIOD_KPIS,
   });
 }

@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Bars from "@/components/charts/Bars";
-import type { SeedData } from "@/lib/seed-data";
+import type { SeedData, PeriodKpis } from "@/lib/seed-data";
 import type { StatValue } from "@/lib/types";
 import { formatNum } from "@/lib/format";
 
@@ -43,7 +43,11 @@ interface OverviewPayload {
   yoyGrowth: SeedData["yoyGrowth"];
   gciByMonth: { labels: string[]; actual: (number | null)[]; budget: null; budgetNote: string };
   sources: SeedData["sources"];
+  periods: Record<string, PeriodKpis>;
 }
+
+// Period order exactly as on Susan's dashboard.
+const PERIOD_ORDER = ["jul", "jun", "may", "apr", "q2", "mar", "feb", "jan", "q1", "ytd"] as const;
 
 /* --------------------------------- tiles --------------------------------- */
 
@@ -131,21 +135,32 @@ function Section({
   );
 }
 
-/** Her period pill row. Only July is in the snapshot, so the rest sit dimmed
-    until the month-by-month history arrives with the live integrations. */
-function PeriodPills({ periods }: { periods: string[] }) {
+/** Her period pill row — now the real thing: click a period, tiles follow. */
+function PeriodPills({
+  options,
+  active,
+  onChange,
+}: {
+  options: { key: string; label: string }[];
+  active: string;
+  onChange: (key: string) => void;
+}) {
   return (
     <div className="mb-3 flex flex-wrap gap-1.5">
-      {periods.map((p, i) => (
-        <span
-          key={p}
-          title={i === 0 ? undefined : "Month-by-month history arrives with the live integrations — the snapshot holds July."}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-            i === 0 ? "bg-ink text-white" : "cursor-default bg-page text-muted/50"
+      {options.map((p) => (
+        <button
+          key={p.key}
+          type="button"
+          onClick={() => onChange(p.key)}
+          aria-pressed={p.key === active}
+          className={`btn-press rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+            p.key === active
+              ? "bg-ink text-white"
+              : "bg-page text-muted hover:text-ink"
           }`}
         >
-          {p}
-        </span>
+          {p.label}
+        </button>
       ))}
     </div>
   );
@@ -159,6 +174,9 @@ export default function Overview({ month }: { month: string }) {
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<LiveBusiness | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
+  // Working period pills — one per pill-driven section, exactly like hers.
+  const [rampKey, setRampKey] = useState<string>("jul");
+  const [kpiKey, setKpiKey] = useState<string>("jul");
 
   useEffect(() => {
     let cancelled = false;
@@ -206,7 +224,13 @@ export default function Overview({ month }: { month: string }) {
   }
   const d = data;
 
-  // Upgrade a snapshot stat to live when the live layer carries the same figure.
+  // Per-period figures (from Susan's dashboard, all the way back to January).
+  const kpiPeriod = d.periods[kpiKey] ?? d.periods.jul;
+  const rampPeriod = d.periods[rampKey] ?? d.periods.jul;
+
+  // Upgrade a snapshot stat to live when the live layer carries the same
+  // figure — current month (July) only; history months are final numbers.
+  const isCurrent = kpiKey === "jul";
   const asLive = (value: number, note: string, display?: string): StatValue => ({
     value,
     display,
@@ -214,25 +238,37 @@ export default function Overview({ month }: { month: string }) {
     note,
     asOf: new Date().toISOString().slice(0, 10),
   });
-  const funnelMas = live?.totals
-    ? asLive(live.totals.marketAppraisals, "Live from REX — summed across every lettings agent.")
-    : d.funnel.marketAppraisals;
-  const funnelLiveListings = live?.totals
-    ? asLive(live.totals.onMarketListings, "Live from REX — on-market listings right now.")
-    : d.funnel.liveListings ?? d.funnel.listings;
-  const funnelPipeline = live?.totals
-    ? asLive(live.totals.pipeline, "Live from REX — let-agreed forward pipeline right now.")
-    : d.funnel.pipeline;
-  const funnelMoveIns: StatValue = live?.propoly
-    ? {
-        value: live.propoly.moveInsThisMonth,
-        source: "live-propoly",
-        note: "Live from Propoly — completed deals with a move-in date this month.",
-        asOf: live.propoly.generatedAt.slice(0, 10),
-      }
-    : d.funnel.moveIns;
+  const funnelMas =
+    isCurrent && live?.totals
+      ? asLive(live.totals.marketAppraisals, "Live from REX — summed across every lettings agent.")
+      : kpiPeriod.funnel.marketAppraisals;
+  const funnelLiveListings =
+    isCurrent && live?.totals
+      ? asLive(live.totals.onMarketListings, "Live from REX — on-market listings right now.")
+      : kpiPeriod.funnel.liveListings;
+  const funnelPipeline =
+    isCurrent && live?.totals
+      ? asLive(live.totals.pipeline, "Live from REX — let-agreed forward pipeline right now.")
+      : kpiPeriod.funnel.pipeline;
+  const funnelMoveIns: StatValue =
+    isCurrent && live?.propoly
+      ? {
+          value: live.propoly.moveInsThisMonth,
+          source: "live-propoly",
+          note: "Live from Propoly — completed deals with a move-in date this month.",
+          asOf: live.propoly.generatedAt.slice(0, 10),
+        }
+      : kpiPeriod.funnel.moveIns;
 
-  const PERIODS = ["July", "June", "May", "April", "Q2 2026", "March", "February", "January", "Q1 2026", "YTD 2026"];
+  const pillOptions = PERIOD_ORDER.filter((k) => d.periods[k]).map((k) => ({
+    key: k,
+    label: d.periods[k].label,
+  }));
+  // Her ramp pills say "July" rather than "July MTD".
+  const rampPillOptions = pillOptions.map((p) => ({
+    ...p,
+    label: p.label.replace(" MTD", ""),
+  }));
 
   return (
     <div className="space-y-5">
@@ -287,24 +323,24 @@ export default function Overview({ month }: { month: string }) {
         title="Partner Productivity & Ramp Time"
         source={`${d.sources.headcount} · REX KPI reports · Target: MA months 1–2 · MI within 60 days`}
       >
-        <PeriodPills periods={PERIODS} />
+        <PeriodPills options={rampPillOptions} active={rampKey} onChange={setRampKey} />
         <div className={TILE_GRID}>
-          <Tile label="New Starters" stat={d.partnerRamp.newStarters} sub={d.partnerRamp.note} />
-          <Tile label="MA in Months 1–2" stat={d.partnerRamp.maInMonths1To2} sub={subNote(d.partnerRamp.maInMonths1To2)} />
-          <Tile label="Listing in Months 1–2" stat={d.partnerRamp.listingInMonths1To2} sub={subNote(d.partnerRamp.listingInMonths1To2)} />
-          <Tile label="Move-in within 60 Days" stat={d.partnerRamp.moveInWithin60Days} sub={subNote(d.partnerRamp.moveInWithin60Days)} />
+          <Tile label="New Starters" stat={rampPeriod.ramp.newStarters} sub={subNote(rampPeriod.ramp.newStarters)} />
+          <Tile label="MA in Months 1–2" stat={rampPeriod.ramp.maInMonths1To2} sub={subNote(rampPeriod.ramp.maInMonths1To2)} />
+          <Tile label="Listing in Months 1–2" stat={rampPeriod.ramp.listingInMonths1To2} sub={subNote(rampPeriod.ramp.listingInMonths1To2)} />
+          <Tile label="Move-in within 60 Days" stat={rampPeriod.ramp.moveInWithin60Days} sub={subNote(rampPeriod.ramp.moveInWithin60Days)} />
         </div>
       </Section>
 
       {/* ---- 3. Business KPIs — Sales Funnel ---- */}
       <Section title="Business KPIs" source={d.sources.businessFunnel}>
-        <PeriodPills periods={["July MTD", ...PERIODS.slice(1)]} />
+        <PeriodPills options={pillOptions} active={kpiKey} onChange={setKpiKey} />
         <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Sales Funnel</h3>
         <div className={TILE_GRID}>
           <Tile label="Market Appraisals" stat={funnelMas} />
-          <Tile label="Listings" stat={d.funnel.listings} />
-          <Tile label="Viewings" stat={d.funnel.viewings} />
-          <Tile label="Applications" stat={d.funnel.applications} />
+          <Tile label="Listings" stat={isCurrent ? d.funnel.listings : kpiPeriod.funnel.listings} />
+          <Tile label="Viewings" stat={isCurrent ? d.funnel.viewings : kpiPeriod.funnel.viewings} />
+          <Tile label="Applications" stat={isCurrent ? d.funnel.applications : kpiPeriod.funnel.applications} />
           <Tile label="Move-ins" stat={funnelMoveIns} />
           <Tile label="Live Listings" stat={funnelLiveListings} />
           <Tile label="Forward Pipeline" stat={funnelPipeline} />
@@ -312,19 +348,14 @@ export default function Overview({ month }: { month: string }) {
       </Section>
 
       {/* ---- 4. Conversion Rates ---- */}
-      <Section title="Conversion Rates" source={d.sources.conversions}>
+      {/* Follows the Business KPIs pill, exactly as on her dashboard. */}
+      <Section title={`Conversion Rates — ${kpiPeriod.label}`} source={d.sources.conversions}>
         <div className={TILE_GRID}>
-          <Tile label="MA → Listing" stat={d.conversions.maToListing} sub={subNote(d.conversions.maToListing)} />
-          <Tile label="Listing → Move-in" stat={d.conversions.listingToMoveIn} sub={subNote(d.conversions.listingToMoveIn)} />
-          {d.conversions.rlpConversion ? (
-            <Tile label="RLP Conversion" stat={d.conversions.rlpConversion} sub={subNote(d.conversions.rlpConversion)} />
-          ) : null}
-          {d.conversions.gciPerMoveIn ? (
-            <Tile label="GCI per Move-in" stat={d.conversions.gciPerMoveIn} sub={subNote(d.conversions.gciPerMoveIn)} />
-          ) : null}
-          {d.conversions.gciPerAgent ? (
-            <Tile label="GCI per Agent" stat={d.conversions.gciPerAgent} sub={subNote(d.conversions.gciPerAgent)} />
-          ) : null}
+          <Tile label="MA → Listing" stat={kpiPeriod.conversions.maToListing} sub={subNote(kpiPeriod.conversions.maToListing)} />
+          <Tile label="Listing → Move-in" stat={kpiPeriod.conversions.listingToMoveIn} sub={subNote(kpiPeriod.conversions.listingToMoveIn)} />
+          <Tile label="RLP Conversion" stat={kpiPeriod.conversions.rlpConversion} sub={subNote(kpiPeriod.conversions.rlpConversion)} />
+          <Tile label="GCI per Move-in" stat={kpiPeriod.conversions.gciPerMoveIn} sub={subNote(kpiPeriod.conversions.gciPerMoveIn)} />
+          <Tile label="GCI per Agent" stat={kpiPeriod.conversions.gciPerAgent} sub={subNote(kpiPeriod.conversions.gciPerAgent)} />
         </div>
       </Section>
 
