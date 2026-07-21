@@ -247,24 +247,60 @@ export async function getAgentFunnel(
 
 /* ----------------------- business-wide month counts ----------------------- */
 
-// Month-bound funnel counts summed across the whole lettings side, one REX
-// search each (agent-id "in" criteria keeps The Property Experts' sales data
-// out — the REX account is shared). Each stat is independent: a null means
-// "couldn't compute, keep the snapshot", never zero.
+// Month-bound funnel counts summed across the whole lettings side (agent-id
+// "in" criteria keep The Property Experts' sales data out — the REX account is
+// shared). Each stat is independent: a null means "couldn't compute, keep the
+// snapshot", never zero.
 //
-// Date semantics:
-//   applications — TenancyApplications.date_received (the field the agent
-//                  Applications tab already renders, so it's proven real).
-//   newListings  — Listings.system_ctime (record created in the month). This
-//                  is the best available "listed this month" proxy until
-//                  /api/admin/rex-validate confirms it against Susan's figures.
+// Date semantics — VALIDATED against Susan's June finals (21 Jul 2026):
+//   applications — application.date_accepted in month (June: 24 vs her 25).
+//                  Her "Applications" column means ACCEPTED applications;
+//                  date_received counts every application (June: 83).
+//   newListings  — created in month (system_ctime, EPOCH SECONDS — date
+//                  strings silently match nothing), Residential Rental only,
+//                  drafts excluded (June: ~38 vs her 35).
+//   viewings     — CalendarEvents typed "TLE Accompanied/Unaccompanied
+//                  Viewing" (ids 953/956) starting in month, cancellations
+//                  excluded (June: 221 vs her 202). Business-wide by type —
+//                  calendar events carry no owning agent.
 export interface BusinessMonthCounts {
   applications: number | null;
   newListings: number | null;
+  viewings: number | null;
 }
+
+const TLE_VIEWING_TYPE_IDS = ["953", "956"];
 
 const monthCountsCache = new Map<string, { at: number; data: BusinessMonthCounts }>();
 const MONTH_COUNTS_TTL_MS = 5 * 60 * 1000;
+// Month counts page through a few hundred calendar rows — allow more than the
+// per-agent 8s budget, but still bounded (the admin Overview races this).
+const MONTH_COUNTS_DEADLINE_MS = 25_000;
+
+// All rows matching criteria, paged past REX's 100-row cap. null on failure.
+async function pagedSearch(
+  service: string,
+  criteria: Criterion[],
+  maxRows = 1000
+): Promise<Array<Record<string, unknown>> | null> {
+  const out: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < maxRows; offset += COUNT_LIMIT) {
+    try {
+      const res = await rexCall(service, "search", { criteria, limit: COUNT_LIMIT, offset });
+      if (!res.ok) return null;
+      const page = rexRows(res.result);
+      out.push(...page);
+      if (page.length < COUNT_LIMIT) break;
+    } catch {
+      return null;
+    }
+  }
+  return out;
+}
+
+function epoch(date: string): string {
+  return String(Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000));
+}
 
 export async function getBusinessMonthCounts(
   month: string,
@@ -279,26 +315,46 @@ export async function getBusinessMonthCounts(
   if (!force && cached && Date.now() - cached.at < MONTH_COUNTS_TTL_MS) return cached.data;
 
   const work = (async (): Promise<BusinessMonthCounts | null> => {
-    const [applications, newListings] = await Promise.all([
+    const [applications, listingRows, viewingRows] = await Promise.all([
       countSearch("TenancyApplications", [
         { name: "application.agent_id", type: "in", value: agentIds },
-        { name: "date_received", type: ">=", value: range.start },
-        { name: "date_received", type: "<=", value: range.end },
+        { name: "application.date_accepted", type: ">=", value: range.start },
+        { name: "application.date_accepted", type: "<=", value: range.end },
       ]),
-      countSearch("Listings", [
+      pagedSearch("Listings", [
         { name: "listing_agent_1_id", type: "in", value: agentIds },
-        { name: "system_ctime", type: ">=", value: range.start },
-        { name: "system_ctime", type: "<=", value: `${range.end} 23:59:59` },
+        { name: "system_ctime", type: ">=", value: epoch(range.start) },
+        { name: "system_ctime", type: "<", value: String(Number(epoch(range.end)) + 86_400) },
+      ]),
+      pagedSearch("CalendarEvents", [
+        { name: "appointment_type_id", type: "in", value: TLE_VIEWING_TYPE_IDS },
+        { name: "starts_at", type: ">=", value: `${range.start} 00:00:00` },
+        { name: "starts_at", type: "<=", value: `${range.end} 23:59:59` },
       ]),
     ]);
-    if (applications == null && newListings == null) return null;
-    const data = { applications, newListings };
+
+    const newListings = listingRows
+      ? listingRows.filter((r) => {
+          const cat = r.listing_category as { id?: string; text?: string } | string | null;
+          const catText = typeof cat === "object" && cat ? (cat.text ?? cat.id) : cat;
+          const pub = r.system_publication_status as { id?: string } | string | null;
+          const pubId = typeof pub === "object" && pub ? pub.id : pub;
+          return String(catText ?? "").toLowerCase().includes("rental") && pubId !== "draft";
+        }).length
+      : null;
+
+    const viewings = viewingRows
+      ? viewingRows.filter((r) => !(r.is_cancelled === true || r.is_cancelled === 1)).length
+      : null;
+
+    if (applications == null && newListings == null && viewings == null) return null;
+    const data = { applications, newListings, viewings };
     monthCountsCache.set(month, { at: Date.now(), data });
     return data;
   })();
 
   const deadline = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+    setTimeout(() => resolve(null), MONTH_COUNTS_DEADLINE_MS)
   );
   try {
     return await Promise.race([work, deadline]);

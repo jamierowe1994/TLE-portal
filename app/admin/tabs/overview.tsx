@@ -29,7 +29,7 @@ interface LiveBusiness {
     moveInsThisMonth: number;
     generatedAt: string;
   } | null;
-  monthCounts?: { applications: number | null; newListings: number | null } | null;
+  monthCounts?: { applications: number | null; newListings: number | null; viewings: number | null } | null;
   masByType?: { total: number; tle: number; tleDual: number; unmatched: number } | null;
   teg?: {
     activeAgents: number;
@@ -283,16 +283,23 @@ export default function Overview({ month }: { month: string }) {
     isCurrent && live?.monthCounts?.applications != null
       ? asLive(
           live.monthCounts.applications,
-          "Live from REX — tenancy applications received this month, all lettings agents."
+          "Live from REX — applications ACCEPTED this month (Susan's definition — validated vs her June final: 24 vs 25)."
         )
       : kpiPeriod.funnel.applications;
   const funnelListings =
     isCurrent && live?.monthCounts?.newListings != null
       ? asLive(
           live.monthCounts.newListings,
-          "Live from REX — listings created this month, all lettings agents. Definition pending validation against Susan's report."
+          "Live from REX — rental listings created this month, drafts excluded (June check: 38 vs Susan's 35)."
         )
       : kpiPeriod.funnel.listings;
+  const funnelViewings =
+    isCurrent && live?.monthCounts?.viewings != null
+      ? asLive(
+          live.monthCounts.viewings,
+          "Live from REX — TLE viewing appointments this month, cancellations excluded (June check: 221 vs Susan's 202)."
+        )
+      : kpiPeriod.funnel.viewings;
 
   // Conversion rates go live only when BOTH inputs are live — a live/snapshot
   // hybrid ratio would be a made-up number.
@@ -453,7 +460,7 @@ export default function Overview({ month }: { month: string }) {
         <div className={TILE_GRID}>
           <Tile label="Market Appraisals" stat={funnelMas} />
           <Tile label="Listings" stat={funnelListings} />
-          <Tile label="Viewings" stat={isCurrent ? d.funnel.viewings : kpiPeriod.funnel.viewings} />
+          <Tile label="Viewings" stat={funnelViewings} />
           <Tile label="Applications" stat={funnelApplications} />
           <Tile label="Move-ins" stat={funnelMoveIns} />
           <Tile label="Live Listings" stat={funnelLiveListings} />
