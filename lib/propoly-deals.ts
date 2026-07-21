@@ -306,3 +306,71 @@ export async function getPropolyPipelineCount(
   if (apps == null) return null;
   return apps.filter((a) => a.stage !== "unsuccessful").length;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Business-wide stats (admin dashboard)                                     */
+/* ------------------------------------------------------------------------ */
+
+export interface PropolyBusinessStats {
+  month: string;
+  pipelineTotal: number; // every deal in progression, whole business
+  pipelineByStage: { key: string; label: string; count: number }[];
+  moveInsThisMonth: number; // completed deals whose move-in falls in `month`
+  generatedAt: string;
+}
+
+// Completed deals are the big list (500+) — cached separately and longer.
+let completesCache: { at: number; moveInDates: (string | null)[] } | null = null;
+const COMPLETES_TTL_MS = 10 * 60_000;
+
+/**
+ * Whole-business Propoly aggregates for Susan's dashboard: the live
+ * progression pipeline broken down by stage, and completed move-ins for a
+ * month. null when unconfigured/unreachable so callers keep the snapshot.
+ */
+export async function getPropolyBusinessStats(
+  month: string
+): Promise<PropolyBusinessStats | null> {
+  if (!propolyConfigured()) return null;
+
+  const work = (async (): Promise<PropolyBusinessStats | null> => {
+    const deals = await fetchAllDeals();
+    if (!deals) return null;
+
+    if (!completesCache || Date.now() - completesCache.at > COMPLETES_TTL_MS) {
+      const rows = await listAll("/api/v1/deals?tenancy_status=complete", 40);
+      if (rows) {
+        completesCache = {
+          at: Date.now(),
+          moveInDates: rows.map((r) =>
+            typeof r.move_in_date === "string" ? r.move_in_date : null
+          ),
+        };
+      }
+    }
+
+    const active = deals.filter((d) => d.statusKey !== "cancelled");
+    return {
+      month,
+      pipelineTotal: active.length,
+      pipelineByStage: ACTIVE_STATUSES.map((key) => ({
+        key,
+        label: STATUS_INFO[key].label,
+        count: active.filter((d) => d.statusKey === key).length,
+      })),
+      moveInsThisMonth: (completesCache?.moveInDates ?? []).filter((d) =>
+        d?.startsWith(month)
+      ).length,
+      generatedAt: new Date().toISOString(),
+    };
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}

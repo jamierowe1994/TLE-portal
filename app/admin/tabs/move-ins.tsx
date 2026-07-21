@@ -107,6 +107,14 @@ function overrideToRow(o: ActualOverride): MoveInRow | null {
 
 /* --------------------------------- the tab --------------------------------- */
 
+interface PropolyBiz {
+  month: string;
+  pipelineTotal: number;
+  pipelineByStage: { key: string; label: string; count: number }[];
+  moveInsThisMonth: number;
+  generatedAt: string;
+}
+
 export default function MoveInsTab({ month, seed }: { month: string; seed: SeedData }) {
   const h = seed.moveInHeader;
   const isSnapshotMonth = month === "2026-07";
@@ -117,6 +125,21 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Live Propoly strip — the true progression pipeline + completed move-ins.
+  const [livePropoly, setLivePropoly] = useState<PropolyBiz | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/admin/live-business?month=${encodeURIComponent(month)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!cancelled) setLivePropoly((j as { propoly?: PropolyBiz | null }).propoly ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
 
   // Add-a-move-in form fields
   const [fAgent, setFAgent] = useState("");
@@ -249,6 +272,58 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
 
   return (
     <div className="space-y-6">
+      {/* ---- LIVE from Propoly: the true progression picture, today ---- */}
+      {livePropoly ? (
+        <section className="card p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-[13px] font-semibold uppercase tracking-wide">
+              Live progression — Propoly
+            </h2>
+            <SourceBadge
+              source="live-propoly"
+              note="Live from Propoly tenancy progression — the whole business, refreshed every minute or so."
+            />
+          </div>
+          <div className="mt-3 grid gap-3 grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
+            <StatCard
+              size="sm"
+              label="Move-ins"
+              stat={{
+                value: livePropoly.moveInsThisMonth,
+                source: "live-propoly",
+                note: "Completed Propoly deals with a move-in date this month.",
+                asOf: livePropoly.generatedAt.slice(0, 10),
+              }}
+              sub={`${monthLabel(livePropoly.month).split(" ")[0]} · completed`}
+            />
+            <StatCard
+              size="sm"
+              label="In progression"
+              stat={{
+                value: livePropoly.pipelineTotal,
+                source: "live-propoly",
+                note: "Every live deal, deal started through signing & move-in monies.",
+                asOf: livePropoly.generatedAt.slice(0, 10),
+              }}
+              sub="All stages"
+            />
+            {livePropoly.pipelineByStage.map((s) => (
+              <StatCard
+                key={s.key}
+                size="sm"
+                label={s.label}
+                stat={{
+                  value: s.count,
+                  source: "live-propoly",
+                  asOf: livePropoly.generatedAt.slice(0, 10),
+                }}
+                sub="Right now"
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {!isSnapshotMonth ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
           Snapshot data covers July 2026 — tables below are from the 11 Jul

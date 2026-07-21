@@ -20,10 +20,17 @@ import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 
 interface LiveBusiness {
   month: string;
-  agentsCounted: number;
-  agentsTotal: number;
-  totals: { marketAppraisals: number; onMarketListings: number; pipeline: number; managed: number; rentRoll: number };
-  generatedAt: string;
+  agentsCounted?: number;
+  agentsTotal?: number;
+  totals?: { marketAppraisals: number; onMarketListings: number; pipeline: number; managed: number; rentRoll: number };
+  propoly?: {
+    month: string;
+    pipelineTotal: number;
+    pipelineByStage: { key: string; label: string; count: number }[];
+    moveInsThisMonth: number;
+    generatedAt: string;
+  } | null;
+  generatedAt?: string;
 }
 
 function agoLabel(iso: string): string {
@@ -38,6 +45,10 @@ function agoLabel(iso: string): string {
 
 function liveStat(value: number, display?: string): StatValue {
   return { value, display, source: "live-rex", asOf: new Date().toISOString().slice(0, 10) };
+}
+
+function livePropolyStat(value: number, note?: string): StatValue {
+  return { value, source: "live-propoly", note, asOf: new Date().toISOString().slice(0, 10) };
 }
 
 interface OverviewPayload {
@@ -149,6 +160,8 @@ export default function Overview({ month }: { month: string }) {
         );
         const j = await res.json();
         if (j?.configured === false) {
+          // REX off — Propoly may still have answered; keep whatever we got.
+          setLive(j as LiveBusiness);
           setLiveState("off");
           return;
         }
@@ -200,8 +213,8 @@ export default function Overview({ month }: { month: string }) {
       render: () => (
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h2 className="text-[13px] font-semibold uppercase tracking-wide">Live from REX — Business</h2>
-            {liveState === "ready" && live ? (
+            <h2 className="text-[13px] font-semibold uppercase tracking-wide">Live — Business (REX + Propoly)</h2>
+            {liveState === "ready" && live?.generatedAt ? (
               <span className="text-[11px] text-muted">
                 {live.agentsCounted} agents · updated {agoLabel(live.generatedAt)}
               </span>
@@ -222,9 +235,37 @@ export default function Overview({ month }: { month: string }) {
           </div>
 
           {liveState === "off" ? (
-            <div className="card p-5 text-[13px] text-muted">
-              REX isn&apos;t connected on this server, so live business figures aren&apos;t available here.
-            </div>
+            live?.propoly ? (
+              <>
+                <div className={CARD_GRID}>
+                  <StatCard
+                    size="sm"
+                    label="Progression pipeline"
+                    stat={livePropolyStat(live.propoly.pipelineTotal, "Live from Propoly — every deal from deal started to signing & move-in monies.")}
+                    sub="Propoly · whole business"
+                  />
+                  <StatCard
+                    size="sm"
+                    label="Move-ins"
+                    stat={livePropolyStat(live.propoly.moveInsThisMonth, "Completed Propoly deals with a move-in date this month.")}
+                    sub={`${monthLabel(live.propoly.month).split(" ")[0]} · completed`}
+                  />
+                  {live.propoly.pipelineByStage
+                    .filter((s) => s.count > 0)
+                    .slice(0, 3)
+                    .map((s) => (
+                      <StatCard key={s.key} size="sm" label={s.label} stat={livePropolyStat(s.count)} sub="In progression" />
+                    ))}
+                </div>
+                <p className="mt-2 text-[11px] text-muted">
+                  REX isn&apos;t connected on this server — showing the live Propoly figures.
+                </p>
+              </>
+            ) : (
+              <div className="card p-5 text-[13px] text-muted">
+                REX isn&apos;t connected on this server, so live business figures aren&apos;t available here.
+              </div>
+            )
           ) : liveState === "error" ? (
             <div className="card p-5 text-[13px] text-muted">
               Couldn&apos;t reach REX just now.{" "}
@@ -236,7 +277,7 @@ export default function Overview({ month }: { month: string }) {
                 <div key={i} className="card h-24 animate-pulse" />
               ))}
             </div>
-          ) : live ? (
+          ) : live && live.totals ? (
             <>
               {/* Managed & rent roll are a REX cut that reads LOW against the
                   official PayProp totals, so they're kept out of presentation —
@@ -246,6 +287,22 @@ export default function Overview({ month }: { month: string }) {
                 <StatCard size="sm" label="Market Appraisals" stat={liveStat(live.totals.marketAppraisals)} sub={`${monthLabel(live.month).split(" ")[0]} so far`} />
                 <StatCard size="sm" label="On-market Listings" stat={liveStat(live.totals.onMarketListings)} sub="Taking viewings" />
                 <StatCard size="sm" label="Pipeline" stat={liveStat(live.totals.pipeline)} sub="Let agreed" />
+                {live.propoly ? (
+                  <>
+                    <StatCard
+                      size="sm"
+                      label="Progression pipeline"
+                      stat={livePropolyStat(live.propoly.pipelineTotal, "Live from Propoly — every deal from deal started to signing & move-in monies.")}
+                      sub="Propoly · in progression"
+                    />
+                    <StatCard
+                      size="sm"
+                      label="Move-ins"
+                      stat={livePropolyStat(live.propoly.moveInsThisMonth, "Completed Propoly deals with a move-in date this month.")}
+                      sub={`${monthLabel(live.propoly.month).split(" ")[0]} · completed`}
+                    />
+                  </>
+                ) : null}
                 <div className="hide-when-presenting">
                   <StatCard size="sm" label="Managed (REX)" stat={liveStat(live.totals.managed)} sub="Let & managed" />
                 </div>
@@ -255,7 +312,8 @@ export default function Overview({ month }: { month: string }) {
               </div>
               <DetailNote label="How these figures are calculated">
                 Summed live from REX across {live.agentsCounted} lettings agents. Listings &amp; pipeline are live REX
-                figures. Managed &amp; rent roll are a REX cut and read lower than the PayProp portfolio report (Glasgow
+                figures. Progression pipeline &amp; move-ins are live from Propoly (tenancy progression) across the whole
+                business. Managed &amp; rent roll are a REX cut and read lower than the PayProp portfolio report (Glasgow
                 and rent-collect properties aren&apos;t in this pull) — the PayProp figures below remain the official
                 totals until that integration lands.
               </DetailNote>

@@ -3,13 +3,19 @@ import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { rexConfigured, rexLettingsAgents } from "@/lib/rex";
 import { getAgentFunnel, getAgentPortfolio } from "@/lib/rex-stats";
+import {
+  getPropolyBusinessStats,
+  type PropolyBusinessStats,
+} from "@/lib/propoly-deals";
 import { currentMonth } from "@/lib/format";
 
-// Business-wide LIVE figures: resolve every lettings agent straight from REX,
-// pull each one's funnel + portfolio, and sum. This is the true business total
-// (not just agents who happen to have a portal account). Heavy (several REX
-// calls per agent) so it's cached server-side and concurrency-limited; the
-// admin Overview fetches it in the background and upgrades snapshot → live.
+// Business-wide LIVE figures from two sources:
+//   REX     — every lettings agent's funnel + portfolio, summed (heavy,
+//             cached, concurrency-limited).
+//   Propoly — the whole progression pipeline by stage + completed move-ins
+//             for the month (cached inside lib/propoly-deals).
+// Propoly answers even when REX isn't configured, so the admin Overview can
+// upgrade whatever it can rather than all-or-nothing.
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -27,6 +33,7 @@ interface Payload {
   agentsCounted: number; // agents that returned any live figure
   agentsTotal: number; // lettings agents found in REX
   totals: Totals;
+  propoly: PropolyBusinessStats | null;
   generatedAt: string;
 }
 
@@ -51,20 +58,25 @@ export async function GET(req: NextRequest) {
   if (!admin || !isAdminEmail(admin.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!rexConfigured()) {
-    return NextResponse.json({ configured: false }, { status: 200 });
-  }
-
   const monthParam = req.nextUrl.searchParams.get("month");
   const month = monthParam && MONTH_RE.test(monthParam) ? monthParam : currentMonth();
   const force = req.nextUrl.searchParams.get("refresh") === "1";
+
+  if (!rexConfigured()) {
+    // No REX here — Propoly still answers (its own cache handles load).
+    const propoly = await getPropolyBusinessStats(month).catch(() => null);
+    return NextResponse.json({ configured: false, month, propoly }, { status: 200 });
+  }
 
   const cached = cache.get(month);
   if (!force && cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return NextResponse.json({ ...cached.data, cached: true });
   }
 
-  const agents = await rexLettingsAgents();
+  const [agents, propoly] = await Promise.all([
+    rexLettingsAgents(),
+    getPropolyBusinessStats(month).catch(() => null),
+  ]);
 
   const rows = await mapLimit(agents, CONCURRENCY, async (a) => {
     const [funnel, portfolio] = await Promise.all([
@@ -96,6 +108,7 @@ export async function GET(req: NextRequest) {
     agentsCounted: counted.length,
     agentsTotal: agents.length,
     totals,
+    propoly,
     generatedAt: new Date().toISOString(),
   };
   cache.set(month, { at: Date.now(), data });
