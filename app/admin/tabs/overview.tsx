@@ -31,6 +31,8 @@ interface LiveBusiness {
   } | null;
   teg?: {
     activeAgents: number;
+    tlePrimary: number;
+    tleDual: number;
     byStatus: Record<string, number>;
     byPackage: Record<string, number>;
     startingSoon: number;
@@ -274,11 +276,11 @@ export default function Overview({ month }: { month: string }) {
         }
       : kpiPeriod.funnel.moveIns;
 
-  // Agent Headcount — upgraded live from the TEG Team Hub (the group's people
-  // database) when the secret is configured. Package splits (TLE / TLE Dual /
-  // Lettings Lite) upgrade only when the hub's package labels actually match —
-  // otherwise those tiles stay on the snapshot until we calibrate via
-  // /api/admin/teg-hub-probe.
+  // Agent Headcount — live from the TEG Team Hub (the group's people database)
+  // when the secret is configured. TLE = primary-brand Active partners; Dual =
+  // partners on another brand with TLE in sub_brands. "Lettings Lite" doesn't
+  // exist as a hub category (packages are Basic/Pro/Academy), so that tile
+  // stays on the snapshot.
   const teg = live?.teg ?? null;
   const asTeg = (value: number, note: string, display?: string): StatValue => ({
     value,
@@ -287,26 +289,25 @@ export default function Overview({ month }: { month: string }) {
     note,
     asOf: teg?.generatedAt.slice(0, 10),
   });
-  const pkgCount = (match: (k: string) => boolean): number | null => {
-    if (!teg) return null;
-    const keys = Object.keys(teg.byPackage).filter(match);
-    return keys.length ? keys.reduce((t, k) => t + teg.byPackage[k], 0) : null;
-  };
-  const pkgTleDual = pkgCount((k) => /dual/i.test(k));
-  const pkgLite = pkgCount((k) => /lite/i.test(k));
-  const pkgTle = pkgCount((k) => /tle|letting/i.test(k) && !/dual|lite/i.test(k));
   const hc = {
     activeAgents: teg
-      ? asTeg(teg.activeAgents, "Live from TEG Team Hub — active TLE partners with a trading status.")
+      ? asTeg(teg.activeAgents, "Live from TEG Team Hub — active TLE partners (primary + dual brand).")
       : d.headcount.activeAgents,
-    tle: pkgTle != null ? asTeg(pkgTle, "Live from TEG Team Hub — partner package.") : d.headcount.tle,
-    tleDual: pkgTleDual != null ? asTeg(pkgTleDual, "Live from TEG Team Hub — partner package.") : d.headcount.tleDual,
-    lettingsLite: pkgLite != null ? asTeg(pkgLite, "Live from TEG Team Hub — partner package.") : d.headcount.lettingsLite,
+    tle: teg
+      ? asTeg(teg.tlePrimary, "Live from TEG Team Hub — partners with The Letting Experts as primary brand.")
+      : d.headcount.tle,
+    tleDual: teg
+      ? asTeg(teg.tleDual, "Live from TEG Team Hub — partners on another Experts brand with TLE as a sub-brand.")
+      : d.headcount.tleDual,
+    lettingsLite: d.headcount.lettingsLite,
     startingSoon: teg
       ? asTeg(teg.startingSoon, "Live from TEG Team Hub — signed partners still onboarding.")
       : d.headcount.startingSoon,
     startersYtd: teg
-      ? asTeg(teg.startersYtd, "Live from TEG Team Hub — launched since 1 Jan.")
+      ? asTeg(
+          teg.startersYtd,
+          "Live from TEG Team Hub — launch date since 1 Jan. Launch dates are patchy in the hub, so this can undercount."
+        )
       : d.headcount.startersYtd,
     leaversYtd: teg
       ? asTeg(teg.leaversYtd, "Live from TEG Team Hub — leave date since 1 Jan.")

@@ -105,8 +105,11 @@ const TM_FIELDS = [
 
 /* ------------------------------ headcount -------------------------------- */
 
-// Statuses that count as "actively trading" for the Active Agents tile.
+// Calibrated against real hub data (21 Jul 2026): TLE-primary partners carry
+// status "Active"/"Departed"; dual-brand partners (primary TPE/Prestige with
+// TLE in sub_brands) mostly have NO status — active:true is their signal.
 const TRADING_STATUSES = new Set(["Trading", "Active"]);
+const EXCLUDED_STATUSES = new Set(["Departed", "Duplicate"]);
 // Signed but not yet launched — Susan's "Starting Soon".
 const PIPELINE_STATUSES = new Set(["Onboarding", "Onboarded", "Pre Compliant"]);
 
@@ -122,9 +125,11 @@ export interface TegAgent {
 }
 
 export interface TegHeadcount {
-  activeAgents: number;
+  activeAgents: number; // tlePrimary + tleDual
+  tlePrimary: number; // primary brand = The Letting Experts, status Active
+  tleDual: number; // other primary brand (TPE/Prestige…) with TLE in sub_brands
   byStatus: Record<string, number>;
-  byPackage: Record<string, number>; // partner_package (or brand-name fallback), trading agents only
+  byPackage: Record<string, number>; // partner_package (Basic/Pro/Academy…), trading agents only
   startingSoon: number;
   startersYtd: number; // date_launched in the current year
   leaversYtd: number; // leave_date in the current year (Departed included)
@@ -174,9 +179,11 @@ export async function getTegHeadcount(force = false): Promise<TegHeadcount | nul
   const locationNames: Record<string, string> = {};
   for (const l of locations ?? []) locationNames[l.id] = l.name;
 
+  // "The Letting Experts" brand id — matched by name so a Base44 re-seed
+  // can't silently break us.
   const isTleBrand = (id?: string) => {
     const n = (id && brandNames[id])?.toLowerCase() ?? "";
-    return n.includes("letting") || n.includes("tle");
+    return n.includes("letting") && !n.includes("lite");
   };
   const tle = (partners ?? []).filter(
     (p) => isTleBrand(p.primary_brand_id) || (p.sub_brands ?? []).some(isTleBrand)
@@ -185,23 +192,32 @@ export async function getTegHeadcount(force = false): Promise<TegHeadcount | nul
   const byStatus: Record<string, number> = {};
   const byPackage: Record<string, number> = {};
   const agents: TegAgent[] = [];
-  let active = 0;
+  let tlePrimary = 0;
+  let tleDual = 0;
   let startingSoon = 0;
   let startersYtd = 0;
 
   const ys = yearStart();
   for (const p of tle) {
-    const status = p.status ?? "Unknown";
+    const status = p.status?.trim() || "No status";
     byStatus[status] = (byStatus[status] ?? 0) + 1;
-    const trading = TRADING_STATUSES.has(status);
-    if (trading) {
-      active += 1;
-      const pkg = p.partner_package?.trim() || brandNames[p.primary_brand_id ?? ""] || "Unlabelled";
+    if (EXCLUDED_STATUSES.has(status) || p.active === false) continue;
+
+    const isPrimary = isTleBrand(p.primary_brand_id);
+    // Primary-brand partners must be explicitly Active (status is maintained
+    // for them); dual-brand partners rarely have a status — active:true counts.
+    const counted = isPrimary
+      ? TRADING_STATUSES.has(status) || status === "No status"
+      : true;
+    if (counted) {
+      if (isPrimary) tlePrimary += 1;
+      else tleDual += 1;
+      const pkg = p.partner_package?.trim() || "Unlabelled";
       byPackage[pkg] = (byPackage[pkg] ?? 0) + 1;
     }
     if (PIPELINE_STATUSES.has(status)) startingSoon += 1;
     if (p.date_launched && p.date_launched >= ys) startersYtd += 1;
-    if (trading || PIPELINE_STATUSES.has(status)) {
+    if (counted || PIPELINE_STATUSES.has(status)) {
       agents.push({
         name: [p.first_name, p.last_name].filter(Boolean).join(" ") || p.trading_name || p.email || p.id,
         email: p.email,
@@ -221,7 +237,9 @@ export async function getTegHeadcount(force = false): Promise<TegHeadcount | nul
   const leaversYtd = tleLeavers.length;
 
   const data: TegHeadcount = {
-    activeAgents: active,
+    activeAgents: tlePrimary + tleDual,
+    tlePrimary,
+    tleDual,
     byStatus,
     byPackage,
     startingSoon,
