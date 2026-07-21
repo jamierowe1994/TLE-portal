@@ -21,6 +21,7 @@ interface StatusPayload {
   meta: {
     configured: { token: boolean; appSecret: boolean; adAccount: boolean; page: boolean };
   };
+  propoly: { configured: boolean };
   payprop: { status: string };
   ghl: { status: string };
   env: { present: string[] };
@@ -40,6 +41,8 @@ const ENV_CHECKLIST = [
   "META_APP_SECRET",
   "META_AD_ACCOUNT_LETTINGS",
   "META_PAGE_LETTINGS",
+  "PROPOLY_API_KEY",
+  "PROPOLY_AGENT_NAME",
 ];
 
 const REX_CAPABILITY_LABELS: Record<string, string> = {
@@ -210,6 +213,28 @@ export default function DiagnosticsTab({ month }: { month: string }) {
               <Dot ok={!!metaConfigured?.page} /> TLE Facebook page (META_PAGE_LETTINGS)
             </li>
           </ul>
+        </section>
+
+        {/* Propoly */}
+        <section className="card p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Propoly</h2>
+            <StatusPill
+              tone={status?.propoly?.configured ? "ok" : "off"}
+              label={status?.propoly?.configured ? "CONFIGURED" : "NOT CONFIGURED"}
+            />
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            Tenancy progression — referencing, Right to Rent, AML and digital
+            agreements. Auth: x-api-key + agent-name → JWT.
+          </p>
+          <p className="mt-3 text-[13px]">
+            Candidate live source for <span className="font-semibold">Applications</span>{" "}
+            and the <span className="font-semibold">Pipeline</span> stat (their
+            &ldquo;deals&rdquo; are lets in progression). Once configured, open{" "}
+            <code className="text-xs">/api/admin/propoly-probe</code> to see the
+            real response shapes and wire the mappings.
+          </p>
         </section>
 
         {/* PayProp */}
