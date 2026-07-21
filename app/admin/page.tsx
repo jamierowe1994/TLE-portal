@@ -25,6 +25,7 @@ import Agents from "@/app/admin/tabs/agents";
 import Portfolio from "@/app/admin/tabs/portfolio";
 import Arrears from "@/app/admin/tabs/arrears";
 import Compliance from "@/app/admin/tabs/compliance";
+import AssistantTab from "@/app/admin/tabs/assistant";
 import Diagnostics from "@/app/admin/tabs/diagnostics";
 
 /* ------------------------------- tabs ------------------------------- */
@@ -45,6 +46,7 @@ const TABS: { key: string; label: string; Component: TabComponent }[] = [
   { key: "portfolio", label: "Portfolio", Component: Portfolio },
   { key: "arrears", label: "Arrears", Component: Arrears },
   { key: "compliance", label: "Compliance", Component: Compliance },
+  { key: "assistant", label: "Assistant", Component: AssistantTab },
   { key: "diagnostics", label: "Diagnostics", Component: Diagnostics },
 ];
 

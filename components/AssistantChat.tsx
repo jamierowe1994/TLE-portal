@@ -112,7 +112,7 @@ export default function AssistantChat({ firstName }: { firstName?: string }) {
   );
 
   return (
-    <div className={started ? "card card-lift overflow-hidden" : undefined}>
+    <div>
       {!started ? (
         /* ---- Blank-chat state: no card — the bubble and the chat bar float
                 straight on the page. min-h keeps the footprint the same. ---- */
@@ -134,9 +134,9 @@ export default function AssistantChat({ firstName }: { firstName?: string }) {
           ) : null}
         </div>
       ) : (
-        /* ---- Conversation state: thread above, input pinned below ---- */
+        /* ---- Conversation state: a floating thread, no box around it ---- */
         <div className="flex flex-col">
-          <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <div className="flex items-center justify-between px-1 pb-3">
             <div className="flex items-center gap-2">
               <BrandMark size={20} />
               <span className="text-[12px] font-semibold uppercase tracking-wide text-muted">
@@ -155,11 +155,11 @@ export default function AssistantChat({ firstName }: { firstName?: string }) {
             </button>
           </div>
 
-          <div ref={threadRef} className="max-h-[380px] space-y-4 overflow-y-auto px-5 py-4">
+          <div ref={threadRef} className="max-h-[420px] space-y-4 overflow-y-auto px-1 py-2">
             {messages.map((m, i) =>
               m.role === "user" ? (
                 <div key={i} className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2.5 text-[14px] text-white" style={{ background: "#111827" }}>
+                  <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2.5 text-[14px] text-white shadow-sm" style={{ background: "#111827" }}>
                     {m.content}
                   </div>
                 </div>
@@ -168,15 +168,28 @@ export default function AssistantChat({ firstName }: { firstName?: string }) {
                   <span className="mt-1 shrink-0">
                     <BrandMark size={18} />
                   </span>
-                  <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-page px-4 py-2.5 text-[14px] leading-relaxed text-ink">
-                    {m.content}
-                    {streaming && i === messages.length - 1 ? (
-                      <span
-                        className="ml-1 inline-block h-3.5 w-1.5 animate-pulse rounded-sm align-middle"
-                        style={{ background: BRAND.accent }}
-                      />
-                    ) : null}
-                  </div>
+                  {streaming && i === messages.length - 1 && !m.content ? (
+                    /* typing — three bouncing dots while the answer is thought up */
+                    <div className="flex items-center gap-1 rounded-2xl rounded-tl-md bg-white px-4 py-3.5 shadow-sm">
+                      {[0, 150, 300].map((delay) => (
+                        <span
+                          key={delay}
+                          className="h-1.5 w-1.5 animate-bounce rounded-full"
+                          style={{ background: BRAND.accent, animationDelay: `${delay}ms` }}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-white px-4 py-2.5 text-[14px] leading-relaxed text-ink shadow-sm">
+                      {m.content}
+                      {streaming && i === messages.length - 1 ? (
+                        <span
+                          className="ml-1 inline-block h-3.5 w-1.5 animate-pulse rounded-sm align-middle"
+                          style={{ background: BRAND.accent }}
+                        />
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               )
             )}
@@ -185,7 +198,7 @@ export default function AssistantChat({ firstName }: { firstName?: string }) {
             ) : null}
           </div>
 
-          <div className="border-t border-line px-5 py-3">{inputRow}</div>
+          <div className="px-1 pt-3">{inputRow}</div>
         </div>
       )}
     </div>

@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS actual_overrides (
   note             TEXT,
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS assistant_knowledge (
+  id               TEXT PRIMARY KEY,
+  title            TEXT NOT NULL,
+  content          TEXT NOT NULL,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
 
 // Schema is created lazily on first query; the promise is cached and reset on

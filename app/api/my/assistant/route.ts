@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { listUserForecasts } from "@/lib/forecast-store";
+import { listKnowledge } from "@/lib/knowledge-store";
 import { getPropolyAgentDeals } from "@/lib/propoly-deals";
 import { nameMatchesAgent, ROSTER } from "@/lib/roster";
 import {
@@ -161,7 +162,25 @@ How to answer:
 - When asked "what do I need to do today/next", lead with overdue compliance items (worst first), then tenancyProgression deals (LIVE from Propoly — chase the ones closest to move-in: signing & move-in monies, then tenancy generation, then references), then this month's targets vs progress.
 - When comparing months, use earningsByMonth2026. July's earned figure isn't in yet — say so if they ask about July earnings, and offer the forecast target instead.
 - Plain text only — no markdown headings, no bold, no tables. Simple hyphen lists are fine.
-- You can't take actions (no emails, no edits, no bookings) — you only inform. If asked to do something, explain what to do and where.`;
+- You can't take actions (no emails, no edits, no bookings) — you only inform. If asked to do something, explain what to do and where.
+- A "Head office knowledge" block may follow — guidance TLE head office curated for you (fees, processes, policies). Treat it as authoritative for policy/process questions and mention which entry you're drawing on. For numbers, the agent's own data block always wins.`;
+}
+
+/** Susan's briefing library, as one capped text block (oldest dropped first). */
+async function knowledgeBlock(): Promise<string | null> {
+  const MAX_TOTAL = 60_000;
+  const entries = await listKnowledge().catch(() => []);
+  if (entries.length === 0) return null;
+  const parts: string[] = [];
+  let used = 0;
+  for (const e of entries) {
+    const text = `### ${e.title} (updated ${e.updatedAt.slice(0, 10)})\n${e.content}`;
+    if (used + text.length > MAX_TOTAL) break;
+    parts.push(text);
+    used += text.length;
+  }
+  if (parts.length === 0) return null;
+  return `Head office knowledge (curated by TLE head office for you):\n\n${parts.join("\n\n---\n\n")}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -202,7 +221,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const context = await buildAgentContext(user.id, user.name, user.email, user.agentKey);
+  const [context, knowledge] = await Promise.all([
+    buildAgentContext(user.id, user.name, user.email, user.agentKey),
+    knowledgeBlock(),
+  ]);
   const today = new Date().toISOString().slice(0, 10);
 
   const client = new Anthropic();
@@ -213,6 +235,11 @@ export async function POST(req: NextRequest) {
     output_config: { effort: "medium" },
     system: [
       { type: "text", text: systemPrompt(today) },
+      // Knowledge is shared across every agent — its own cache breakpoint so
+      // the per-agent block after it doesn't invalidate it.
+      ...(knowledge
+        ? [{ type: "text" as const, text: knowledge, cache_control: { type: "ephemeral" as const } }]
+        : []),
       {
         type: "text",
         text: `The signed-in agent's data:\n${JSON.stringify(context)}`,
