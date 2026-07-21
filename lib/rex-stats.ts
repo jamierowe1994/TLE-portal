@@ -28,7 +28,7 @@ const COUNT_LIMIT = 100; // REX hard-caps the default result format at 100 rows
 const LISTINGS_TTL_MS = 60_000;
 const listingsCache = new Map<string, { at: number; data: AgentListing[] }>();
 
-type Criterion = { name: string; type: string; value: string };
+type Criterion = { name: string; type: string; value: string | string[] };
 
 export interface RexStatus {
   ok: boolean;
@@ -238,6 +238,68 @@ export async function getAgentFunnel(
     setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
   );
 
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
+/* ----------------------- business-wide month counts ----------------------- */
+
+// Month-bound funnel counts summed across the whole lettings side, one REX
+// search each (agent-id "in" criteria keeps The Property Experts' sales data
+// out — the REX account is shared). Each stat is independent: a null means
+// "couldn't compute, keep the snapshot", never zero.
+//
+// Date semantics:
+//   applications — TenancyApplications.date_received (the field the agent
+//                  Applications tab already renders, so it's proven real).
+//   newListings  — Listings.system_ctime (record created in the month). This
+//                  is the best available "listed this month" proxy until
+//                  /api/admin/rex-validate confirms it against Susan's figures.
+export interface BusinessMonthCounts {
+  applications: number | null;
+  newListings: number | null;
+}
+
+const monthCountsCache = new Map<string, { at: number; data: BusinessMonthCounts }>();
+const MONTH_COUNTS_TTL_MS = 5 * 60 * 1000;
+
+export async function getBusinessMonthCounts(
+  month: string,
+  agentIds: string[],
+  force = false
+): Promise<BusinessMonthCounts | null> {
+  if (!rexConfigured() || agentIds.length === 0) return null;
+  const range = monthRange(month);
+  if (!range) return null;
+
+  const cached = monthCountsCache.get(month);
+  if (!force && cached && Date.now() - cached.at < MONTH_COUNTS_TTL_MS) return cached.data;
+
+  const work = (async (): Promise<BusinessMonthCounts | null> => {
+    const [applications, newListings] = await Promise.all([
+      countSearch("TenancyApplications", [
+        { name: "application.agent_id", type: "in", value: agentIds },
+        { name: "date_received", type: ">=", value: range.start },
+        { name: "date_received", type: "<=", value: range.end },
+      ]),
+      countSearch("Listings", [
+        { name: "listing_agent_1_id", type: "in", value: agentIds },
+        { name: "system_ctime", type: ">=", value: range.start },
+        { name: "system_ctime", type: "<=", value: `${range.end} 23:59:59` },
+      ]),
+    ]);
+    if (applications == null && newListings == null) return null;
+    const data = { applications, newListings };
+    monthCountsCache.set(month, { at: Date.now(), data });
+    return data;
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
   try {
     return await Promise.race([work, deadline]);
   } catch {

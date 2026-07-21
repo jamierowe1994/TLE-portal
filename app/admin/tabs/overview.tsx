@@ -29,6 +29,8 @@ interface LiveBusiness {
     moveInsThisMonth: number;
     generatedAt: string;
   } | null;
+  monthCounts?: { applications: number | null; newListings: number | null } | null;
+  masByType?: { total: number; tle: number; tleDual: number; unmatched: number } | null;
   teg?: {
     activeAgents: number;
     tlePrimary: number;
@@ -275,6 +277,61 @@ export default function Overview({ month }: { month: string }) {
           asOf: live.propoly.generatedAt.slice(0, 10),
         }
       : kpiPeriod.funnel.moveIns;
+  // Month-bound REX counts — applications by date_received (proven field);
+  // listings by created-this-month (validate via /api/admin/rex-validate).
+  const funnelApplications =
+    isCurrent && live?.monthCounts?.applications != null
+      ? asLive(
+          live.monthCounts.applications,
+          "Live from REX — tenancy applications received this month, all lettings agents."
+        )
+      : kpiPeriod.funnel.applications;
+  const funnelListings =
+    isCurrent && live?.monthCounts?.newListings != null
+      ? asLive(
+          live.monthCounts.newListings,
+          "Live from REX — listings created this month, all lettings agents. Definition pending validation against Susan's report."
+        )
+      : kpiPeriod.funnel.listings;
+
+  // Conversion rates go live only when BOTH inputs are live — a live/snapshot
+  // hybrid ratio would be a made-up number.
+  const pct = (num: number, den: number): number | null =>
+    den > 0 ? Math.round((num / den) * 100) : null;
+  const liveMaToListing =
+    isCurrent && funnelMas.source === "live-rex" && funnelListings.source === "live-rex"
+      ? pct(funnelListings.value ?? 0, funnelMas.value ?? 0)
+      : null;
+  const convMaToListing: StatValue =
+    liveMaToListing != null
+      ? asLive(liveMaToListing, "Derived from live funnel — listings ÷ market appraisals, this month.", `${liveMaToListing}%`)
+      : kpiPeriod.conversions.maToListing;
+  const liveListingToMoveIn =
+    isCurrent && funnelListings.source === "live-rex" && funnelMoveIns.source === "live-propoly"
+      ? pct(funnelMoveIns.value ?? 0, funnelListings.value ?? 0)
+      : null;
+  const convListingToMoveIn: StatValue =
+    liveListingToMoveIn != null
+      ? asLive(liveListingToMoveIn, "Derived from live funnel — move-ins ÷ listings, this month.", `${liveListingToMoveIn}%`)
+      : kpiPeriod.conversions.listingToMoveIn;
+
+  // MAs by partner type — live REX per-agent MAs split by the Team Hub's
+  // dual-brand flag. Lettings Lite has no hub category → snapshot.
+  const mbt = isCurrent ? (live?.masByType ?? null) : null;
+  const masTiles = {
+    total: mbt
+      ? asLive(mbt.total, "Live from REX — MAs this month across all lettings agents.")
+      : d.masByPartnerType.total,
+    tle: mbt
+      ? asLive(
+          mbt.tle,
+          `Live — REX MAs by agents the Team Hub lists as TLE-primary${mbt.unmatched ? ` (includes ${mbt.unmatched} from agents not yet matched to the hub)` : ""}.`
+        )
+      : d.masByPartnerType.tle,
+    tleDual: mbt
+      ? asLive(mbt.tleDual, "Live — REX MAs by dual-brand partners (per the Team Hub).")
+      : d.masByPartnerType.tleDual,
+  };
 
   // Agent Headcount — live from the TEG Team Hub (the group's people database)
   // when the secret is configured. TLE = primary-brand Active partners; Dual =
@@ -395,9 +452,9 @@ export default function Overview({ month }: { month: string }) {
         <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Sales Funnel</h3>
         <div className={TILE_GRID}>
           <Tile label="Market Appraisals" stat={funnelMas} />
-          <Tile label="Listings" stat={isCurrent ? d.funnel.listings : kpiPeriod.funnel.listings} />
+          <Tile label="Listings" stat={funnelListings} />
           <Tile label="Viewings" stat={isCurrent ? d.funnel.viewings : kpiPeriod.funnel.viewings} />
-          <Tile label="Applications" stat={isCurrent ? d.funnel.applications : kpiPeriod.funnel.applications} />
+          <Tile label="Applications" stat={funnelApplications} />
           <Tile label="Move-ins" stat={funnelMoveIns} />
           <Tile label="Live Listings" stat={funnelLiveListings} />
           <Tile label="Forward Pipeline" stat={funnelPipeline} />
@@ -408,8 +465,8 @@ export default function Overview({ month }: { month: string }) {
       {/* Follows the Business KPIs pill, exactly as on her dashboard. */}
       <Section title={`Conversion Rates — ${kpiPeriod.label}`} source={d.sources.conversions}>
         <div className={TILE_GRID}>
-          <Tile label="MA → Listing" stat={kpiPeriod.conversions.maToListing} sub={subNote(kpiPeriod.conversions.maToListing)} />
-          <Tile label="Listing → Move-in" stat={kpiPeriod.conversions.listingToMoveIn} sub={subNote(kpiPeriod.conversions.listingToMoveIn)} />
+          <Tile label="MA → Listing" stat={convMaToListing} sub={subNote(convMaToListing)} />
+          <Tile label="Listing → Move-in" stat={convListingToMoveIn} sub={subNote(convListingToMoveIn)} />
           <Tile label="RLP Conversion" stat={kpiPeriod.conversions.rlpConversion} sub={subNote(kpiPeriod.conversions.rlpConversion)} />
           <Tile label="GCI per Move-in" stat={kpiPeriod.conversions.gciPerMoveIn} sub={subNote(kpiPeriod.conversions.gciPerMoveIn)} />
           <Tile label="GCI per Agent" stat={kpiPeriod.conversions.gciPerAgent} sub={subNote(kpiPeriod.conversions.gciPerAgent)} />
@@ -419,9 +476,9 @@ export default function Overview({ month }: { month: string }) {
       {/* ---- 5. MAs by Partner Type ---- */}
       <Section title="Market Appraisals by Partner Type" source={d.sources.masByPartnerType}>
         <div className={TILE_GRID}>
-          <Tile label="Total Appraisals" stat={d.masByPartnerType.total} />
-          <Tile label="TLE Partners" stat={d.masByPartnerType.tle} />
-          <Tile label="TLE Dual" stat={d.masByPartnerType.tleDual} />
+          <Tile label="Total Appraisals" stat={masTiles.total} />
+          <Tile label="TLE Partners" stat={masTiles.tle} />
+          <Tile label="TLE Dual" stat={masTiles.tleDual} />
           <Tile label="Lettings Lite" stat={d.masByPartnerType.lettingsLite} />
         </div>
       </Section>

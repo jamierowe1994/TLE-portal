@@ -116,6 +116,8 @@ const PIPELINE_STATUSES = new Set(["Onboarding", "Onboarded", "Pre Compliant"]);
 export interface TegAgent {
   name: string;
   email?: string;
+  /** true = another Experts brand is primary, TLE is a sub-brand. */
+  dual?: boolean;
   status?: string;
   package?: string;
   brand?: string;
@@ -221,6 +223,7 @@ export async function getTegHeadcount(force = false): Promise<TegHeadcount | nul
       agents.push({
         name: [p.first_name, p.last_name].filter(Boolean).join(" ") || p.trading_name || p.email || p.id,
         email: p.email,
+        dual: !isPrimary,
         status,
         package: p.partner_package,
         brand: brandNames[p.primary_brand_id ?? ""],

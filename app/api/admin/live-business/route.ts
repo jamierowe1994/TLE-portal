@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { rexConfigured, rexLettingsAgents } from "@/lib/rex";
-import { getAgentFunnel, getAgentPortfolio } from "@/lib/rex-stats";
+import {
+  getAgentFunnel,
+  getAgentPortfolio,
+  getBusinessMonthCounts,
+  type BusinessMonthCounts,
+} from "@/lib/rex-stats";
 import {
   getPropolyBusinessStats,
   type PropolyBusinessStats,
@@ -36,6 +41,10 @@ interface Payload {
   totals: Totals;
   propoly: PropolyBusinessStats | null;
   teg: TegHeadcount | null;
+  /** Month-bound REX counts (applications by date_received, listings created). */
+  monthCounts: BusinessMonthCounts | null;
+  /** Live MA split by partner type — REX per-agent MAs × TEG Hub dual flag. */
+  masByType: { total: number; tle: number; tleDual: number; unmatched: number } | null;
   generatedAt: string;
 }
 
@@ -84,6 +93,12 @@ export async function GET(req: NextRequest) {
     getTegHeadcount(force).catch(() => null),
   ]);
 
+  const monthCounts = await getBusinessMonthCounts(
+    month,
+    agents.map((a) => a.id),
+    force
+  ).catch(() => null);
+
   const rows = await mapLimit(agents, CONCURRENCY, async (a) => {
     const [funnel, portfolio] = await Promise.all([
       getAgentFunnel(a.id, month).catch(() => null),
@@ -101,6 +116,36 @@ export async function GET(req: NextRequest) {
   });
 
   const counted = rows.filter((r): r is NonNullable<typeof r> => r != null);
+
+  // MA split by partner type: REX gives per-agent MAs, the Team Hub says who's
+  // dual-brand. Match on email first, then "first.last" against the REX email
+  // local part (hub emails aren't always the @thelettingexperts.co.uk one).
+  let masByType: Payload["masByType"] = null;
+  if (teg) {
+    const dualKeys = new Set<string>();
+    const primaryKeys = new Set<string>();
+    for (const a of teg.agents) {
+      const keys = [
+        a.email?.toLowerCase(),
+        a.name.toLowerCase().replace(/[^a-z]+/g, "."),
+      ].filter((k): k is string => Boolean(k));
+      for (const k of keys) (a.dual ? dualKeys : primaryKeys).add(k);
+    }
+    let tle = 0;
+    let tleDual = 0;
+    let unmatched = 0;
+    for (const r of counted) {
+      const email = r.email.toLowerCase();
+      const local = email.split("@")[0];
+      const isDual = dualKeys.has(email) || dualKeys.has(local);
+      const isPrimary = primaryKeys.has(email) || primaryKeys.has(local);
+      if (isDual) tleDual += r.marketAppraisals;
+      else if (isPrimary) tle += r.marketAppraisals;
+      else unmatched += r.marketAppraisals;
+    }
+    masByType = { total: tle + tleDual + unmatched, tle: tle + unmatched, tleDual, unmatched };
+  }
+
   const totals: Totals = {
     marketAppraisals: counted.reduce((t, r) => t + r.marketAppraisals, 0),
     onMarketListings: counted.reduce((t, r) => t + r.onMarketListings, 0),
@@ -116,6 +161,8 @@ export async function GET(req: NextRequest) {
     totals,
     propoly,
     teg,
+    monthCounts,
+    masByType,
     generatedAt: new Date().toISOString(),
   };
   cache.set(month, { at: Date.now(), data });
