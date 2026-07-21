@@ -10,6 +10,7 @@ import {
 } from "@/lib/rex-stats";
 import {
   getPropolyBusinessStats,
+  getPropolyRlpMtd,
   type PropolyBusinessStats,
 } from "@/lib/propoly-deals";
 import { getTegHeadcount, tegHubConfigured, type TegHeadcount } from "@/lib/teg-hub";
@@ -46,6 +47,8 @@ interface Payload {
   monthCounts: BusinessMonthCounts | null;
   /** Live MA split by partner type — REX per-agent MAs × TEG Hub dual flag. */
   masByType: { total: number; tle: number; tleDual: number; unmatched: number } | null;
+  /** RLP input: this month's Propoly move-ins split by service level. */
+  rlpMtd: { total: number; fullyManaged: number } | null;
   generatedAt: string;
 }
 
@@ -88,10 +91,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ...cached.data, cached: true });
   }
 
-  const [agents, propoly, teg] = await Promise.all([
+  const [agents, propoly, teg, rlpMtd] = await Promise.all([
     rexLettingsAgents(),
     getPropolyBusinessStats(month).catch(() => null),
     getTegHeadcount(force).catch(() => null),
+    getPropolyRlpMtd(month).catch(() => null),
   ]);
 
   const monthCounts = await getBusinessMonthCounts(
@@ -164,6 +168,7 @@ export async function GET(req: NextRequest) {
     teg,
     monthCounts,
     masByType,
+    rlpMtd,
     generatedAt: new Date().toISOString(),
   };
   // Only cache a COMPLETE payload — a Propoly/TEG timeout on a cold run must

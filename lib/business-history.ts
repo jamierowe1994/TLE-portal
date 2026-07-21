@@ -18,7 +18,9 @@ import { getPropolyMoveInsInRange } from "@/lib/propoly-deals";
 
 export interface HistoryFunnel {
   month: string; // "YYYY-MM"
-  marketAppraisals: number | null; // recorded appraisals (not Susan's "combined")
+  marketAppraisals: number | null; // recorded appraisals only
+  /** Susan's "combined MAs" — recorded + listing-only (no same-month MA). */
+  combinedMas?: number | null;
   listings: number | null; // created in month, rental, drafts excluded
   viewings: number | null; // TLE viewing appts, cancellations excluded
   applications: number | null; // accepted in month
@@ -94,6 +96,7 @@ async function computeMonth(month: string): Promise<HistoryFunnel | null> {
   return {
     month,
     marketAppraisals: counts?.marketAppraisals ?? null,
+    combinedMas: counts?.combinedMas ?? null,
     listings: counts?.newListings ?? null,
     viewings: counts?.viewings ?? null,
     applications: counts?.applications ?? null,
@@ -107,6 +110,7 @@ async function computeMonth(month: string): Promise<HistoryFunnel | null> {
 function complete(h: HistoryFunnel): boolean {
   return (
     h.marketAppraisals != null &&
+    h.combinedMas != null && // added later — forces a one-off recompute of early stores
     h.listings != null &&
     h.viewings != null &&
     h.applications != null &&

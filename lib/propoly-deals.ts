@@ -327,22 +327,46 @@ export interface PropolyBusinessStats {
 }
 
 // Completed deals are the big list (500+) — cached separately and longer.
-let completesCache: { at: number; moveInDates: (string | null)[] } | null = null;
+interface CompletedDeal {
+  date: string | null; // move_in_date
+  service: string | null; // full_managed | tenant_find | rent_collect
+}
+
+let completesCache: { at: number; completes: CompletedDeal[] } | null = null;
 const COMPLETES_TTL_MS = 10 * 60_000;
 
-async function ensureCompletes(): Promise<(string | null)[] | null> {
+async function ensureCompletes(): Promise<CompletedDeal[] | null> {
   if (completesCache && Date.now() - completesCache.at < COMPLETES_TTL_MS) {
-    return completesCache.moveInDates;
+    return completesCache.completes;
   }
   const rows = await listAll("/api/v1/deals?tenancy_status=complete", 40);
-  if (!rows) return completesCache?.moveInDates ?? null;
+  if (!rows) return completesCache?.completes ?? null;
   completesCache = {
     at: Date.now(),
-    moveInDates: rows.map((r) =>
-      typeof r.move_in_date === "string" ? r.move_in_date : null
-    ),
+    completes: rows.map((r) => ({
+      date: typeof r.move_in_date === "string" ? r.move_in_date : null,
+      service:
+        typeof r.tenancy_service_level === "string" ? r.tenancy_service_level : null,
+    })),
   };
-  return completesCache.moveInDates;
+  return completesCache.completes;
+}
+
+/**
+ * RLP conversion input: this month's completed move-ins split by service
+ * level. RLP = fully-managed share of move-ins (Susan's "x of y EFM managed").
+ */
+export async function getPropolyRlpMtd(
+  month: string
+): Promise<{ total: number; fullyManaged: number } | null> {
+  if (!propolyConfigured()) return null;
+  const completes = await ensureCompletes().catch(() => null);
+  if (!completes) return null;
+  const inMonth = completes.filter((c) => c.date?.startsWith(month));
+  return {
+    total: inMonth.length,
+    fullyManaged: inMonth.filter((c) => c.service === "full_managed").length,
+  };
 }
 
 /**
@@ -361,9 +385,10 @@ export async function getPropolyMoveInsInRange(
 ): Promise<number | null> {
   if (!propolyConfigured()) return null;
   const work = (async () => {
-    const dates = await ensureCompletes();
-    if (!dates) return null;
-    return dates.filter((d): d is string => d != null && d >= start && d <= end).length;
+    const completes = await ensureCompletes();
+    if (!completes) return null;
+    return completes.filter((c) => c.date != null && c.date >= start && c.date <= end)
+      .length;
   })();
   const deadline = new Promise<null>((resolve) =>
     setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
@@ -400,8 +425,8 @@ export async function getPropolyBusinessStats(
         label: STATUS_INFO[key].label,
         count: active.filter((d) => d.statusKey === key).length,
       })),
-      moveInsThisMonth: (completesCache?.moveInDates ?? []).filter((d) =>
-        d?.startsWith(month)
+      moveInsThisMonth: (completesCache?.completes ?? []).filter((c) =>
+        c.date?.startsWith(month)
       ).length,
       generatedAt: new Date().toISOString(),
     };
@@ -442,8 +467,8 @@ export async function getPropolyMoveInForecast(): Promise<PropolyMoveInForecast 
   if (!propolyConfigured()) return null;
 
   const work = (async (): Promise<PropolyMoveInForecast | null> => {
-    const [dates, deals] = await Promise.all([ensureCompletes(), fetchAllDeals()]);
-    if (!dates && !deals) return null;
+    const [completes, deals] = await Promise.all([ensureCompletes(), fetchAllDeals()]);
+    if (!completes && !deals) return null;
 
     const today = new Date().toISOString().slice(0, 10);
     const year = today.slice(0, 4);
@@ -453,7 +478,9 @@ export async function getPropolyMoveInForecast(): Promise<PropolyMoveInForecast 
     prevMonthDate.setUTCMonth(prevMonthDate.getUTCMonth() - 1);
     const prevMonth = prevMonthDate.toISOString().slice(0, 7);
 
-    const completed = (dates ?? []).filter((d): d is string => d != null);
+    const completed = (completes ?? [])
+      .map((c) => c.date)
+      .filter((d): d is string => d != null);
     const completedByMonth: Record<string, number> = {};
     for (const d of completed) {
       if (d.startsWith(year)) {

@@ -267,8 +267,11 @@ export interface BusinessMonthCounts {
   applications: number | null;
   newListings: number | null;
   viewings: number | null;
-  /** Recorded appraisals in month (Susan's "combined MAs" also adds listing-only). */
+  /** Recorded appraisals in month. */
   marketAppraisals: number | null;
+  /** Susan's "combined MAs": recorded + listings created in month whose
+   *  property has no same-month recorded appraisal (June check: 41 vs her 40). */
+  combinedMas: number | null;
 }
 
 const TLE_VIEWING_TYPE_IDS = ["953", "956"];
@@ -340,15 +343,44 @@ export async function getBusinessMonthCounts(
       ]),
     ]);
 
-    const newListings = listingRows
+    const keptListings = listingRows
       ? listingRows.filter((r) => {
           const cat = r.listing_category as { id?: string; text?: string } | string | null;
           const catText = typeof cat === "object" && cat ? (cat.text ?? cat.id) : cat;
           const pub = r.system_publication_status as { id?: string } | string | null;
           const pubId = typeof pub === "object" && pub ? pub.id : pub;
           return String(catText ?? "").toLowerCase().includes("rental") && pubId !== "draft";
-        }).length
+        })
       : null;
+    const newListings = keptListings ? keptListings.length : null;
+
+    // Combined MAs (Susan's definition): recorded appraisals + this month's
+    // listings whose property has NO same-month recorded appraisal. Validated
+    // June: 7 recorded + 34 listing-only = 41 vs her 40.
+    let combinedMas: number | null = null;
+    if (marketAppraisals != null && keptListings) {
+      // Per-listing property ids (dupes kept — two listings on one property
+      // are two instructions); unique set only for the overlap query.
+      const perListing = keptListings
+        .map((r) => String(((r.property as { id?: unknown }) ?? {}).id ?? ""))
+        .filter(Boolean);
+      const unique = [...new Set(perListing)];
+      let listingOnly: number | null = unique.length ? null : 0;
+      if (unique.length) {
+        const overlapRows = await pagedSearch("Appraisals", [
+          { name: "property_id", type: "in", value: unique },
+          { name: "appraisal_date", type: ">=", value: range.start },
+          { name: "appraisal_date", type: "<=", value: range.end },
+        ]);
+        if (overlapRows) {
+          const withMa = new Set(
+            overlapRows.map((r) => String(((r.property as { id?: unknown }) ?? {}).id ?? ""))
+          );
+          listingOnly = perListing.filter((p) => !withMa.has(p)).length;
+        }
+      }
+      if (listingOnly != null) combinedMas = marketAppraisals + listingOnly;
+    }
 
     const viewings = viewingRows
       ? viewingRows.filter((r) => !(r.is_cancelled === true || r.is_cancelled === 1)).length
@@ -357,7 +389,7 @@ export async function getBusinessMonthCounts(
     if (applications == null && newListings == null && viewings == null && marketAppraisals == null) {
       return null;
     }
-    const data = { applications, newListings, viewings, marketAppraisals };
+    const data = { applications, newListings, viewings, marketAppraisals, combinedMas };
     monthCountsCache.set(month, { at: Date.now(), data });
     return data;
   })();

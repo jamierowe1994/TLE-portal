@@ -34,8 +34,10 @@ interface LiveBusiness {
     newListings: number | null;
     viewings: number | null;
     marketAppraisals: number | null;
+    combinedMas: number | null;
   } | null;
   masByType?: { total: number; tle: number; tleDual: number; unmatched: number } | null;
+  rlpMtd?: { total: number; fullyManaged: number } | null;
   teg?: {
     activeAgents: number;
     tlePrimary: number;
@@ -84,6 +86,7 @@ const PERIOD_MONTHS: Record<string, string[]> = {
 interface HistoryFunnel {
   month: string;
   marketAppraisals: number | null;
+  combinedMas?: number | null;
   listings: number | null;
   viewings: number | null;
   applications: number | null;
@@ -323,9 +326,14 @@ export default function Overview({ month }: { month: string }) {
     asOf: new Date().toISOString().slice(0, 10),
   });
   const funnelMas =
-    isCurrent && live?.totals
-      ? asLive(live.totals.marketAppraisals, "Live from REX — summed across every lettings agent.")
-      : kpiPeriod.funnel.marketAppraisals;
+    isCurrent && live?.monthCounts?.combinedMas != null
+      ? asLive(
+          live.monthCounts.combinedMas,
+          `Live from REX — Susan's combined-MA definition: ${live.monthCounts.marketAppraisals ?? "?"} recorded appraisals + listings with no same-month MA (June check: 41 vs her 40).`
+        )
+      : isCurrent && live?.totals
+        ? asLive(live.totals.marketAppraisals, "Live from REX — recorded appraisals summed across every lettings agent.")
+        : kpiPeriod.funnel.marketAppraisals;
   const funnelLiveListings =
     isCurrent && live?.totals
       ? asLive(live.totals.onMarketListings, "Live from REX — on-market listings right now.")
@@ -372,7 +380,9 @@ export default function Overview({ month }: { month: string }) {
   // single red dot wherever they differ from Susan's report — James checks
   // each dot to work out why, so the dot NEVER hides the live number.
   const histMonths = !isCurrent ? (PERIOD_MONTHS[kpiKey] ?? null) : null;
-  const histSum = (metric: "marketAppraisals" | "listings" | "viewings" | "applications" | "moveIns"): number | null => {
+  const histSum = (
+    metric: "marketAppraisals" | "combinedMas" | "listings" | "viewings" | "applications" | "moveIns"
+  ): number | null => {
     if (!histMonths || !hist) return null;
     let total = 0;
     for (const m of histMonths) {
@@ -387,11 +397,13 @@ export default function Overview({ month }: { month: string }) {
           ? live?.propoly?.moveInsThisMonth
           : metric === "marketAppraisals"
             ? live?.monthCounts?.marketAppraisals
-            : metric === "listings"
-              ? live?.monthCounts?.newListings
-              : metric === "viewings"
-                ? live?.monthCounts?.viewings
-                : live?.monthCounts?.applications;
+            : metric === "combinedMas"
+              ? live?.monthCounts?.combinedMas
+              : metric === "listings"
+                ? live?.monthCounts?.newListings
+                : metric === "viewings"
+                  ? live?.monthCounts?.viewings
+                  : live?.monthCounts?.applications;
       if (liveNow == null) return null;
       total += liveNow;
     }
@@ -402,7 +414,7 @@ export default function Overview({ month }: { month: string }) {
       ? `Differs from Susan's report — her figure: ${susan.display ?? formatNum(susan.value)}. Hover the tile for our definition, then reconcile.`
       : null;
   const histUpgrade = (
-    metric: "marketAppraisals" | "listings" | "viewings" | "applications" | "moveIns",
+    metric: "marketAppraisals" | "combinedMas" | "listings" | "viewings" | "applications" | "moveIns",
     susan: StatValue,
     note: string,
     source: StatValue["source"]
@@ -416,9 +428,9 @@ export default function Overview({ month }: { month: string }) {
   };
   const periodLabelBit = kpiKey === "ytd" ? "Jan 1 to today" : kpiPeriod.label;
   const hMas = histUpgrade(
-    "marketAppraisals",
+    "combinedMas",
     kpiPeriod.funnel.marketAppraisals,
-    `Live from REX — recorded appraisals, ${periodLabelBit}. Susan's "combined MAs" also adds listing-only instructions, so hers can run higher.`,
+    `Live from REX — combined MAs (recorded + listing-only, Susan's definition), ${periodLabelBit}.`,
     "live-rex"
   );
   const hListings = histUpgrade(
@@ -450,11 +462,32 @@ export default function Overview({ month }: { month: string }) {
   // hybrid ratio would be a made-up number.
   const pct = (num: number, den: number): number | null =>
     den > 0 ? Math.round((num / den) * 100) : null;
-  // MA → Listing deliberately NOT derived live: our live MA figure counts
-  // recorded appraisals only, while Susan's ratio divides by "combined MAs"
-  // (recorded + listing-only) — dividing live listings by recorded MAs gives
-  // absurd ratios (1200%). Goes live once the combined-MA formula is built.
-  const convMaToListing: StatValue = kpiPeriod.conversions.maToListing;
+  // MA → Listing — live now the combined-MA denominator exists (recorded MAs
+  // alone gave 1200%-style nonsense; combined matches Susan's formula).
+  const liveMaToListing =
+    isCurrent && live?.monthCounts?.combinedMas != null && live?.monthCounts?.newListings != null
+      ? pct(live.monthCounts.newListings, live.monthCounts.combinedMas)
+      : null;
+  const convMaToListing: StatValue =
+    liveMaToListing != null
+      ? asLive(
+          liveMaToListing,
+          "Derived from live funnel — listings ÷ combined MAs (Susan's formula), this month.",
+          `${liveMaToListing}%`
+        )
+      : kpiPeriod.conversions.maToListing;
+  // RLP conversion — fully-managed share of this month's Propoly move-ins.
+  const rlp = isCurrent ? (live?.rlpMtd ?? null) : null;
+  const liveRlp = rlp && rlp.total > 0 ? pct(rlp.fullyManaged, rlp.total) : null;
+  const convRlp: StatValue =
+    liveRlp != null && rlp
+      ? asLive(
+          liveRlp,
+          `Live from Propoly — ${rlp.fullyManaged} of ${rlp.total} move-ins this month are fully managed. Susan's "EFM managed" rule may scope this differently — flag if it looks off.`,
+          `${liveRlp}%`
+        )
+      : kpiPeriod.conversions.rlpConversion;
+
   const liveListingToMoveIn =
     isCurrent && funnelListings.source === "live-rex" && funnelMoveIns.source === "live-propoly"
       ? pct(funnelMoveIns.value ?? 0, funnelListings.value ?? 0)
@@ -616,7 +649,7 @@ export default function Overview({ month }: { month: string }) {
         <div className={TILE_GRID}>
           <Tile label="MA → Listing" stat={convMaToListing} sub={subNote(convMaToListing)} />
           <Tile label="Listing → Move-in" stat={convListingToMoveIn} sub={subNote(convListingToMoveIn)} />
-          <Tile label="RLP Conversion" stat={kpiPeriod.conversions.rlpConversion} sub={subNote(kpiPeriod.conversions.rlpConversion)} />
+          <Tile label="RLP Conversion" stat={convRlp} sub={subNote(convRlp)} />
           <Tile label="GCI per Move-in" stat={kpiPeriod.conversions.gciPerMoveIn} sub={subNote(kpiPeriod.conversions.gciPerMoveIn)} />
           <Tile label="GCI per Agent" stat={kpiPeriod.conversions.gciPerAgent} sub={subNote(kpiPeriod.conversions.gciPerAgent)} />
         </div>
