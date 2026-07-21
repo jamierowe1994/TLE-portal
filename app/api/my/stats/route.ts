@@ -258,6 +258,8 @@ export async function GET(req: NextRequest) {
     funnel,
     conversions,
     portfolio,
+    // Full snapshot mix (managed / let-only / RLP / avg rent) for the donut.
+    portfolioDetail: snapPortfolio,
     moveIns: agentKey ? agentMoveIns(agentKey) : [],
     pipeline: agentKey ? agentPipeline(agentKey) : [],
     compliance: agentKey ? agentCompliance(agentKey) : null,

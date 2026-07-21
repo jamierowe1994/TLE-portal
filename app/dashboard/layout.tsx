@@ -23,7 +23,7 @@ const NAV = [
   { href: "/dashboard/forecast", label: "Forecast", icon: "M3 17l6-6 4 4 8-8M21 7v6M21 7h-6" },
 ];
 
-const SIDEBAR_W = 268;
+const SIDEBAR_W = 240;
 const TOPBAR_H = 68;
 const SWOOP = 22;
 
@@ -135,8 +135,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Nav items lean out a touch on hover so the rail feels alive under the cursor.
   const navItem =
-    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium " +
+    "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium " +
     "transition-all duration-150 ease-out hover:translate-x-1";
+
+  // Each icon sits in its own little rounded tile — reads smaller and tidier
+  // than the bare 18px strokes, and the active one fills with brand colour.
+  const IconTile = ({ active, path }: { active: boolean; path: string }) => (
+    <span
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors ${
+        active ? "" : "bg-black/[0.04]"
+      }`}
+      style={active ? { background: `${BRAND.accent}1a` } : undefined}
+    >
+      <svg
+        className="h-3.5 w-3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        viewBox="0 0 24 24"
+        style={active ? { color: BRAND.accent } : undefined}
+      >
+        <path d={path} />
+      </svg>
+    </span>
+  );
 
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
@@ -151,18 +175,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               active ? "accent-soft-bg text-ink" : "text-muted hover:bg-black/[0.03] hover:text-ink"
             }`}
           >
-            <svg
-              className="h-[18px] w-[18px]"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.7}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              viewBox="0 0 24 24"
-              style={active ? { color: BRAND.accent } : undefined}
-            >
-              <path d={item.icon} />
-            </svg>
+            <IconTile active={active} path={item.icon} />
             {item.label}
           </Link>
         );
@@ -183,7 +196,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {items.map((p) => {
         const chip = (
           <span
-            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md text-[8px] font-bold text-white"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] font-bold text-white"
             style={{ background: p.accent }}
             aria-hidden
           >
@@ -250,29 +263,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {vp.w > 0 ? <ChromeSurface vw={vp.w} vh={vp.h} /> : null}
 
       {/* ── Desktop sidebar ── */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[268px] flex-col lg:flex">
-        <div className="flex items-center gap-2.5 px-5 pt-8">
-          <BrandMark size={34} />
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col lg:flex">
+        <div className="flex items-center gap-2.5 px-5 pt-7">
+          <BrandMark size={30} />
           <div className="leading-tight">
-            <div className="text-[15px] font-semibold tracking-tight">The Lettings Expert</div>
-            <div className="text-[10px] uppercase tracking-wide text-muted">Partner Portal</div>
+            <div className="text-[14px] font-semibold tracking-tight">The Lettings Expert</div>
+            <div className="text-[9.5px] uppercase tracking-wide text-muted">Partner Portal</div>
           </div>
         </div>
 
         {/* divider under the brand */}
-        <div className="mx-5 mt-6 border-t border-line" />
+        <div className="mx-5 mt-5 border-t border-line" />
 
-        <nav className="mt-7 flex-1 space-y-0.5 px-3">
+        <nav className="mt-5 flex-1 space-y-0.5 px-3">
           <NavLinks />
           {user.isAdmin ? (
             <Link
               href="/admin"
-              className="mt-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted transition hover:bg-black/[0.03] hover:text-ink"
+              className={`${navItem} mt-2 text-muted hover:bg-black/[0.03] hover:text-ink`}
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
-                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.58.78.98 1.42 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-black/[0.04]">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                  <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.58.78.98 1.42 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
               Admin
             </Link>
           ) : null}
@@ -287,18 +302,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 : "text-muted hover:bg-black/[0.03] hover:text-ink"
             }`}
           >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              viewBox="0 0 24 24"
-              style={pathname.startsWith("/dashboard/tools") ? { color: BRAND.accent } : undefined}
-            >
-              <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
-            </svg>
+            <IconTile
+              active={pathname.startsWith("/dashboard/tools")}
+              path="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
+            />
             TLE OS
           </Link>
           <div className="mt-1 space-y-0.5">
@@ -317,7 +324,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* The account lives at the bottom of the rail, where you'd look for it —
             click through to Settings rather than giving Profile a nav slot. */}
-        <div className="relative p-4" ref={menuRef}>
+        <div className="relative p-3" ref={menuRef}>
           {menuOpen ? (
             <div className="menu-pop absolute bottom-[calc(100%-0.25rem)] left-4 right-4 z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl">
               <Link
@@ -354,15 +361,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           >
             {user.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={user.photo} alt={user.name} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+              <img src={user.photo} alt={user.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
             ) : (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full accent-soft-bg text-[12px] font-semibold accent-text">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full accent-soft-bg text-[11px] font-semibold accent-text">
                 {initials(user.name) || "?"}
               </span>
             )}
             <div className="min-w-0 flex-1 leading-tight">
-              <p className="truncate text-sm font-medium">{user.name}</p>
-              <p className="truncate text-xs text-muted">{user.email}</p>
+              <p className="truncate text-[13px] font-medium">{user.name}</p>
+              <p className="truncate text-[11px] text-muted">{user.email}</p>
             </div>
             <svg
               className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-150 ${menuOpen ? "rotate-180" : ""}`}
@@ -432,7 +439,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* ── Main ── */}
-      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[268px] lg:px-8 lg:pt-[96px]">
+      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-8 lg:pt-[96px]">
         <div className="mx-auto max-w-[1600px]">
           {/* Welcome — lives in the dashboard content, big and roomy */}
           {pathname === "/dashboard" ? (

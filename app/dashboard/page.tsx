@@ -7,8 +7,11 @@ import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Collapsible from "@/components/Collapsible";
 import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
+import Donut from "@/components/charts/Donut";
+import AssistantChat from "@/components/AssistantChat";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
+import { getUser } from "@/lib/session";
 import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
   ConversionStats,
@@ -20,6 +23,7 @@ import type {
   MoveInRow,
   PartnerNetIncomeRow,
   PipelineRow,
+  PortfolioRow,
 } from "@/lib/seed-types";
 
 // My Dashboard — the signed-in agent's year at a glance. Decluttered around
@@ -34,6 +38,7 @@ interface StatsResponse {
   funnel: FunnelStats;
   conversions: ConversionStats;
   portfolio: { managed: StatValue; rentRoll: StatValue };
+  portfolioDetail: PortfolioRow | null;
   moveIns: MoveInRow[];
   pipeline: PipelineRow[];
   compliance: ComplianceAgentRow | null;
@@ -80,6 +85,13 @@ export default function MyDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [firstName, setFirstName] = useState<string | undefined>(undefined);
+
+  // Read the cached profile after mount (localStorage isn't there during SSR).
+  useEffect(() => {
+    const name = getUser()?.name;
+    if (name) setFirstName(name.split(" ")[0]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,6 +179,11 @@ export default function MyDashboardPage() {
 
   return (
     <div className="space-y-5">
+      {/* ---- ASSISTANT ---- the all-in-one agent, front and centre */}
+      <div className="enter enter-up" style={enterAt(700)}>
+        <AssistantChat firstName={firstName} />
+      </div>
+
       {/* Period selector — drives the earnings view below.
           Slides in from behind the nav rail. */}
       <div
@@ -219,29 +236,29 @@ export default function MyDashboardPage() {
 
       {!loading && stats ? (
         <>
-          {/* ---- HERO: earnings YTD + this month ---- */}
-          <section className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+          {/* ---- HERO: compact earnings + the portfolio mix donut ---- */}
+          <section className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
             <div className="enter enter-up" style={enterAt(900)}>
-            <div className="card card-lift h-full p-6">
+            <div className="card card-lift flex h-full flex-col p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
                   Earnings · {period.label}
                 </div>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
               </div>
-              <div className="mt-1 flex flex-wrap items-end gap-x-6 gap-y-2">
-                <div className="stat-value stat-value--big">{periodEarnings != null ? formatGBP(periodEarnings) : "—"}</div>
+              <div className="mt-1 flex flex-wrap items-end gap-x-4 gap-y-1">
+                <div className="stat-value text-[30px]">{periodEarnings != null ? formatGBP(periodEarnings) : "—"}</div>
                 <div className="pb-1">
                   <Sparkline values={periodValues} />
                 </div>
               </div>
               {periodEarnings == null && period.key === "this-month" ? (
-                <p className="mt-2 text-[13px] text-muted">
+                <p className="mt-1.5 text-[12px] text-muted">
                   {monthLabel(ANCHOR).split(" ")[0]} is still in progress — your earned figure lands at
-                  month-end. Your target and pipeline are below.
+                  month-end.
                 </p>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
+              <div className="mt-auto flex flex-wrap gap-2 pt-3 text-[12px]">
                 {avgPerMonth != null ? (
                   <span className="rounded-full bg-page px-2.5 py-1 text-muted">
                     Avg <span className="font-semibold text-ink tnum">{formatGBP(avgPerMonth)}</span>/mo
@@ -261,23 +278,26 @@ export default function MyDashboardPage() {
             </div>
 
             {(() => {
-              const managed = stats.portfolio.managed.value ?? 0;
+              const detail = stats.portfolioDetail;
+              const fullyManaged = detail?.managed ?? stats.portfolio.managed.value ?? 0;
+              const letOnly = detail?.letOnly ?? 0;
               const onMarket = stats.funnel.listings?.value ?? 0;
               const letAgreed = stats.funnel.pipeline?.value ?? 0;
-              const total = managed + onMarket + letAgreed || 1;
+              const totalProps = (detail?.total ?? fullyManaged + letOnly) + onMarket + letAgreed;
               const rentRoll = stats.portfolio.rentRoll.value;
               const estFees = rentRoll != null ? rentRoll * MGMT_FEE_RATE : null;
-              const seg = [
-                { label: "Managed", value: managed, color: "#e31f36" },
-                { label: "On market", value: onMarket, color: "#111827" },
-                { label: "Let agreed", value: letAgreed, color: "#9ca3af" },
-              ];
+              const segments = [
+                { label: "Fully managed", value: fullyManaged, color: "#e31f36" },
+                { label: "Let only", value: letOnly, color: "#111827" },
+                { label: "Let agreed", value: letAgreed, color: "#f59e0b" },
+                { label: "On market", value: onMarket, color: "#9ca3af" },
+              ].filter((s) => s.value > 0);
               return (
                 <div className="enter enter-right h-full" style={enterAt(1000)}>
-                <div className="card card-lift flex h-full flex-col p-6">
+                <div className="card card-lift flex h-full flex-col p-5">
                   <div className="flex items-start justify-between gap-2">
                     <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                      Your portfolio
+                      Your portfolio mix
                     </div>
                     <SourceBadge
                       source={stats.portfolio.managed.source}
@@ -285,51 +305,41 @@ export default function MyDashboardPage() {
                       asOf={stats.portfolio.managed.asOf}
                     />
                   </div>
-                  <div className="mt-1 flex items-end gap-3">
-                    <div className="stat-value stat-value--big">
-                      {stats.portfolio.managed.value != null ? formatNum(stats.portfolio.managed.value) : "—"}
-                    </div>
-                    <div className="pb-2 text-[12px] leading-tight text-muted">
-                      managed
-                      <br />
-                      properties
-                    </div>
+
+                  <div className="mt-3">
+                    <Donut
+                      segments={segments}
+                      centerLabel={`${formatNum(totalProps)} props`}
+                    />
                   </div>
 
-                  {/* composition bar */}
-                  <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-page">
-                    {seg.map((s) =>
-                      s.value > 0 ? (
-                        <div
-                          key={s.label}
-                          style={{ width: `${(s.value / total) * 100}%`, background: s.color }}
-                          title={`${s.label}: ${s.value}`}
-                        />
-                      ) : null
-                    )}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                    {seg.map((s) => (
-                      <span key={s.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted">
-                        <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
-                        {s.label} <span className="font-semibold text-ink tnum">{s.value}</span>
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* rent roll + estimated fees */}
-                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4">
+                  {/* rent roll underneath, with the supporting stats */}
+                  <div className="mt-auto grid grid-cols-2 gap-x-6 gap-y-3 border-t border-line pt-4">
                     <div>
-                      <div className="stat-value text-[20px]">{stats.portfolio.rentRoll.display ?? "—"}</div>
+                      <div className="stat-value text-[19px]">{stats.portfolio.rentRoll.display ?? "—"}</div>
                       <div className="mt-0.5 text-[11px] text-muted">Rent roll / month</div>
                     </div>
                     <div>
-                      <div className="stat-value text-[20px]">{estFees != null ? formatGBP(estFees) : "—"}</div>
+                      <div className="stat-value text-[19px]">{estFees != null ? formatGBP(estFees) : "—"}</div>
                       <div
                         className="mt-0.5 text-[11px] text-muted"
                         title="Estimated at ~9% of rent roll — the actual management fee and your share are confirmed with head office."
                       >
-                        Est. fees / month · ~9%
+                        Est. fees · ~9%
+                      </div>
+                    </div>
+                    <div>
+                      <div className="stat-value text-[19px]">
+                        {detail?.avgRent != null ? formatGBP(detail.avgRent) : "—"}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-muted">Avg rent</div>
+                    </div>
+                    <div>
+                      <div className="stat-value text-[19px]">
+                        {detail ? `${formatNum(detail.rlpLec)}/${formatNum(detail.managed)}` : "—"}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-muted" title="Managed properties covered by Rent & Legal Protection (incl. LEC).">
+                        RLP cover
                       </div>
                     </div>
                   </div>
