@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS todos (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS todos_user_idx ON todos (user_id);
+
+-- Finalised live funnel figures for CLOSED months. Once a month has passed
+-- its numbers can't change, so we pull them from REX/Propoly once, store
+-- them, and never re-query (James: "once they're pulled, they're pulled").
+CREATE TABLE IF NOT EXISTS history_funnels (
+  month            TEXT PRIMARY KEY,          -- "YYYY-MM"
+  data             TEXT NOT NULL,             -- JSON HistoryFunnel
+  computed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
 
 // Schema is created lazily on first query; the promise is cached and reset on

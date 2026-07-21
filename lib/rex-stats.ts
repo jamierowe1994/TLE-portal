@@ -267,6 +267,8 @@ export interface BusinessMonthCounts {
   applications: number | null;
   newListings: number | null;
   viewings: number | null;
+  /** Recorded appraisals in month (Susan's "combined MAs" also adds listing-only). */
+  marketAppraisals: number | null;
 }
 
 const TLE_VIEWING_TYPE_IDS = ["953", "956"];
@@ -315,11 +317,16 @@ export async function getBusinessMonthCounts(
   if (!force && cached && Date.now() - cached.at < MONTH_COUNTS_TTL_MS) return cached.data;
 
   const work = (async (): Promise<BusinessMonthCounts | null> => {
-    const [applications, listingRows, viewingRows] = await Promise.all([
+    const [applications, marketAppraisals, listingRows, viewingRows] = await Promise.all([
       countSearch("TenancyApplications", [
         { name: "application.agent_id", type: "in", value: agentIds },
         { name: "application.date_accepted", type: ">=", value: range.start },
         { name: "application.date_accepted", type: "<=", value: range.end },
+      ]),
+      countSearch("Appraisals", [
+        { name: "agent_1_id", type: "in", value: agentIds },
+        { name: "appraisal_date", type: ">=", value: range.start },
+        { name: "appraisal_date", type: "<=", value: range.end },
       ]),
       pagedSearch("Listings", [
         { name: "listing_agent_1_id", type: "in", value: agentIds },
@@ -347,8 +354,10 @@ export async function getBusinessMonthCounts(
       ? viewingRows.filter((r) => !(r.is_cancelled === true || r.is_cancelled === 1)).length
       : null;
 
-    if (applications == null && newListings == null && viewings == null) return null;
-    const data = { applications, newListings, viewings };
+    if (applications == null && newListings == null && viewings == null && marketAppraisals == null) {
+      return null;
+    }
+    const data = { applications, newListings, viewings, marketAppraisals };
     monthCountsCache.set(month, { at: Date.now(), data });
     return data;
   })();

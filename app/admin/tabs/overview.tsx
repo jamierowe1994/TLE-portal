@@ -29,7 +29,12 @@ interface LiveBusiness {
     moveInsThisMonth: number;
     generatedAt: string;
   } | null;
-  monthCounts?: { applications: number | null; newListings: number | null; viewings: number | null } | null;
+  monthCounts?: {
+    applications: number | null;
+    newListings: number | null;
+    viewings: number | null;
+    marketAppraisals: number | null;
+  } | null;
   masByType?: { total: number; tle: number; tleDual: number; unmatched: number } | null;
   teg?: {
     activeAgents: number;
@@ -63,6 +68,37 @@ interface OverviewPayload {
 // Period order exactly as on Susan's dashboard.
 const PERIOD_ORDER = ["jul", "jun", "may", "apr", "q2", "mar", "feb", "jan", "q1", "ytd"] as const;
 
+// Which stored months make up each period pill (ytd adds live July on top).
+const PERIOD_MONTHS: Record<string, string[]> = {
+  jun: ["2026-06"],
+  may: ["2026-05"],
+  apr: ["2026-04"],
+  mar: ["2026-03"],
+  feb: ["2026-02"],
+  jan: ["2026-01"],
+  q2: ["2026-04", "2026-05", "2026-06"],
+  q1: ["2026-01", "2026-02", "2026-03"],
+  ytd: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
+};
+
+interface HistoryFunnel {
+  month: string;
+  marketAppraisals: number | null;
+  listings: number | null;
+  viewings: number | null;
+  applications: number | null;
+  moveIns: number | null;
+  computedAt: string;
+}
+
+interface HistoryPayload {
+  months: Record<string, HistoryFunnel>;
+  yoy: {
+    moveIns: { prevYtd: number; currYtd: number; from: string; to: string } | null;
+    generatedAt: string;
+  };
+}
+
 /* --------------------------------- tiles --------------------------------- */
 
 // The mirror's building block. Live figures pop (white card, green dot);
@@ -72,10 +108,13 @@ function Tile({
   label,
   stat,
   sub,
+  flag,
 }: {
   label: string;
   stat: StatValue;
   sub?: string | null;
+  /** Set → single red dot under the figure; the text is the hover reason. */
+  flag?: string | null;
 }) {
   const isLive =
     stat.source === "live-rex" ||
@@ -110,6 +149,13 @@ function Tile({
       >
         {value}
       </div>
+      {flag ? (
+        <span
+          title={flag}
+          className="mx-auto mt-1 block h-1.5 w-1.5 cursor-help rounded-full bg-red-500"
+          aria-label={flag}
+        />
+      ) : null}
       <div className={`mt-1 text-[10px] font-semibold uppercase tracking-wide ${isLive ? "text-ink" : "text-muted"}`}>
         {label}
       </div>
@@ -192,6 +238,7 @@ export default function Overview({ month }: { month: string }) {
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<LiveBusiness | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
+  const [hist, setHist] = useState<HistoryPayload | null>(null);
   // Working period pills — one per pill-driven section, exactly like hers.
   const [rampKey, setRampKey] = useState<string>("jul");
   const [kpiKey, setKpiKey] = useState<string>("jul");
@@ -233,6 +280,25 @@ export default function Overview({ month }: { month: string }) {
   useEffect(() => {
     void loadLive();
   }, [loadLive]);
+
+  // Closed-month history + like-for-like YoY. First-ever call computes and
+  // stores the backfill (slow); afterwards it's served from the store.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/history-funnel", { cache: "no-store" });
+        if (!res.ok) return;
+        const j = (await res.json()) as HistoryPayload;
+        if (!cancelled) setHist(j);
+      } catch {
+        /* history is an upgrade — period pills still show the snapshot */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (error) {
     return <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">{error}</p>;
@@ -301,18 +367,94 @@ export default function Overview({ month }: { month: string }) {
         )
       : kpiPeriod.funnel.viewings;
 
+  // ---- History upgrade for past-period pills ----
+  // Stored live figures (validated definitions) replace the snapshot, with a
+  // single red dot wherever they differ from Susan's report — James checks
+  // each dot to work out why, so the dot NEVER hides the live number.
+  const histMonths = !isCurrent ? (PERIOD_MONTHS[kpiKey] ?? null) : null;
+  const histSum = (metric: "marketAppraisals" | "listings" | "viewings" | "applications" | "moveIns"): number | null => {
+    if (!histMonths || !hist) return null;
+    let total = 0;
+    for (const m of histMonths) {
+      const v = hist.months[m]?.[metric];
+      if (v == null) return null;
+      total += v;
+    }
+    if (kpiKey === "ytd") {
+      // Susan's YTD includes the current month-to-date — add live July.
+      const liveNow =
+        metric === "moveIns"
+          ? live?.propoly?.moveInsThisMonth
+          : metric === "marketAppraisals"
+            ? live?.monthCounts?.marketAppraisals
+            : metric === "listings"
+              ? live?.monthCounts?.newListings
+              : metric === "viewings"
+                ? live?.monthCounts?.viewings
+                : live?.monthCounts?.applications;
+      if (liveNow == null) return null;
+      total += liveNow;
+    }
+    return total;
+  };
+  const flagIf = (liveVal: number, susan: StatValue): string | null =>
+    susan.value != null && susan.value !== liveVal
+      ? `Differs from Susan's report — her figure: ${susan.display ?? formatNum(susan.value)}. Hover the tile for our definition, then reconcile.`
+      : null;
+  const histUpgrade = (
+    metric: "marketAppraisals" | "listings" | "viewings" | "applications" | "moveIns",
+    susan: StatValue,
+    note: string,
+    source: StatValue["source"]
+  ): { stat: StatValue; flag: string | null } | null => {
+    const v = histSum(metric);
+    if (v == null) return null;
+    return {
+      stat: { value: v, source, note, asOf: hist?.months[histMonths?.[0] ?? ""]?.computedAt?.slice(0, 10) },
+      flag: flagIf(v, susan),
+    };
+  };
+  const periodLabelBit = kpiKey === "ytd" ? "Jan 1 to today" : kpiPeriod.label;
+  const hMas = histUpgrade(
+    "marketAppraisals",
+    kpiPeriod.funnel.marketAppraisals,
+    `Live from REX — recorded appraisals, ${periodLabelBit}. Susan's "combined MAs" also adds listing-only instructions, so hers can run higher.`,
+    "live-rex"
+  );
+  const hListings = histUpgrade(
+    "listings",
+    kpiPeriod.funnel.listings,
+    `Live from REX — rental listings created, drafts excluded, ${periodLabelBit}.`,
+    "live-rex"
+  );
+  const hViewings = histUpgrade(
+    "viewings",
+    kpiPeriod.funnel.viewings,
+    `Live from REX — TLE viewing appointments, cancellations excluded, ${periodLabelBit}.`,
+    "live-rex"
+  );
+  const hApplications = histUpgrade(
+    "applications",
+    kpiPeriod.funnel.applications,
+    `Live from REX — applications accepted, ${periodLabelBit}.`,
+    "live-rex"
+  );
+  const hMoveIns = histUpgrade(
+    "moveIns",
+    kpiPeriod.funnel.moveIns,
+    `Live from Propoly — completed deals with a move-in date, ${periodLabelBit}. Susan's Move-In Report also counts managed transfers + marketing-only, so hers can run higher.`,
+    "live-propoly"
+  );
+
   // Conversion rates go live only when BOTH inputs are live — a live/snapshot
   // hybrid ratio would be a made-up number.
   const pct = (num: number, den: number): number | null =>
     den > 0 ? Math.round((num / den) * 100) : null;
-  const liveMaToListing =
-    isCurrent && funnelMas.source === "live-rex" && funnelListings.source === "live-rex"
-      ? pct(funnelListings.value ?? 0, funnelMas.value ?? 0)
-      : null;
-  const convMaToListing: StatValue =
-    liveMaToListing != null
-      ? asLive(liveMaToListing, "Derived from live funnel — listings ÷ market appraisals, this month.", `${liveMaToListing}%`)
-      : kpiPeriod.conversions.maToListing;
+  // MA → Listing deliberately NOT derived live: our live MA figure counts
+  // recorded appraisals only, while Susan's ratio divides by "combined MAs"
+  // (recorded + listing-only) — dividing live listings by recorded MAs gives
+  // absurd ratios (1200%). Goes live once the combined-MA formula is built.
+  const convMaToListing: StatValue = kpiPeriod.conversions.maToListing;
   const liveListingToMoveIn =
     isCurrent && funnelListings.source === "live-rex" && funnelMoveIns.source === "live-propoly"
       ? pct(funnelMoveIns.value ?? 0, funnelListings.value ?? 0)
@@ -458,11 +600,11 @@ export default function Overview({ month }: { month: string }) {
         <PeriodPills options={pillOptions} active={kpiKey} onChange={setKpiKey} />
         <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Sales Funnel</h3>
         <div className={TILE_GRID}>
-          <Tile label="Market Appraisals" stat={funnelMas} />
-          <Tile label="Listings" stat={funnelListings} />
-          <Tile label="Viewings" stat={funnelViewings} />
-          <Tile label="Applications" stat={funnelApplications} />
-          <Tile label="Move-ins" stat={funnelMoveIns} />
+          <Tile label="Market Appraisals" stat={hMas?.stat ?? funnelMas} flag={hMas?.flag} />
+          <Tile label="Listings" stat={hListings?.stat ?? funnelListings} flag={hListings?.flag} />
+          <Tile label="Viewings" stat={hViewings?.stat ?? funnelViewings} flag={hViewings?.flag} />
+          <Tile label="Applications" stat={hApplications?.stat ?? funnelApplications} flag={hApplications?.flag} />
+          <Tile label="Move-ins" stat={hMoveIns?.stat ?? funnelMoveIns} flag={hMoveIns?.flag} />
           <Tile label="Live Listings" stat={funnelLiveListings} />
           <Tile label="Forward Pipeline" stat={funnelPipeline} />
         </div>
@@ -502,11 +644,50 @@ export default function Overview({ month }: { month: string }) {
       </Section>
 
       {/* ---- 7. Year on Year Growth ---- */}
+      {/* Like-for-like: 1 Jan → today vs the same window last year. */}
       <Section title="Year on Year Growth" source={d.sources.yoyGrowth}>
         <div className={TILE_GRID}>
-          {d.yoyGrowth.map((g) => (
-            <Tile key={g.label} label={g.label} stat={g.stat} sub={subNote(g.stat)} />
-          ))}
+          {d.yoyGrowth.map((g) => {
+            if (g.label === "YTD move-ins" && hist?.yoy.moveIns) {
+              const { prevYtd, currYtd, to } = hist.yoy.moveIns;
+              const pctUp = prevYtd > 0 ? Math.round(((currYtd - prevYtd) / prevYtd) * 100) : null;
+              const stat: StatValue = {
+                value: currYtd,
+                display: `${prevYtd} → ${currYtd}`,
+                source: "live-propoly",
+                note: `Live from Propoly — completed move-ins 1 Jan–${to.slice(5)} vs the same window last year${pctUp != null ? ` (${pctUp >= 0 ? "+" : ""}${pctUp}%)` : ""}. Susan's figures also count managed transfers + marketing-only.`,
+                asOf: to,
+              };
+              return (
+                <Tile
+                  key={g.label}
+                  label={g.label}
+                  stat={stat}
+                  sub={pctUp != null ? `${pctUp >= 0 ? "+" : ""}${pctUp}% vs this time last year` : null}
+                  flag={g.stat.value != null && g.stat.value !== currYtd ? `Differs from Susan's report — hers: ${g.stat.display ?? g.stat.value}` : null}
+                />
+              );
+            }
+            if (g.label === "Partner count" && teg) {
+              const stat: StatValue = {
+                value: teg.activeAgents,
+                display: `${g.from} → ${teg.activeAgents}`,
+                source: "live-teg",
+                note: `Current side live from the TEG Team Hub (${teg.activeAgents} active TLE partners today); the ${g.from} baseline is from Susan's records.`,
+                asOf: teg.generatedAt.slice(0, 10),
+              };
+              return (
+                <Tile
+                  key={g.label}
+                  label={g.label}
+                  stat={stat}
+                  sub={`from ${g.from} · live now`}
+                  flag={g.to !== teg.activeAgents ? `Differs from Susan's report — hers: ${g.stat.display ?? g.to}` : null}
+                />
+              );
+            }
+            return <Tile key={g.label} label={g.label} stat={g.stat} sub={subNote(g.stat)} />;
+          })}
         </div>
       </Section>
 

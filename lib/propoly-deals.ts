@@ -323,6 +323,51 @@ export interface PropolyBusinessStats {
 let completesCache: { at: number; moveInDates: (string | null)[] } | null = null;
 const COMPLETES_TTL_MS = 10 * 60_000;
 
+async function ensureCompletes(): Promise<(string | null)[] | null> {
+  if (completesCache && Date.now() - completesCache.at < COMPLETES_TTL_MS) {
+    return completesCache.moveInDates;
+  }
+  const rows = await listAll("/api/v1/deals?tenancy_status=complete", 40);
+  if (!rows) return completesCache?.moveInDates ?? null;
+  completesCache = {
+    at: Date.now(),
+    moveInDates: rows.map((r) =>
+      typeof r.move_in_date === "string" ? r.move_in_date : null
+    ),
+  };
+  return completesCache.moveInDates;
+}
+
+/**
+ * Completed move-ins with a move-in date inside [start, end] (ISO dates,
+ * inclusive). Powers historic months and the like-for-like YoY comparison —
+ * Propoly's history reaches back to 2023. null when unreachable.
+ *
+ * Definition note: counts deals that ran through Propoly. Susan's Move-In
+ * Report also counts managed transfers + marketing-only move-ins, so her
+ * months run higher (June 2026: Propoly 21 vs her 30, of which ~10 were
+ * transfers/marketing-only per her own notes).
+ */
+export async function getPropolyMoveInsInRange(
+  start: string,
+  end: string
+): Promise<number | null> {
+  if (!propolyConfigured()) return null;
+  const work = (async () => {
+    const dates = await ensureCompletes();
+    if (!dates) return null;
+    return dates.filter((d): d is string => d != null && d >= start && d <= end).length;
+  })();
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Whole-business Propoly aggregates for Susan's dashboard: the live
  * progression pipeline broken down by stage, and completed move-ins for a
@@ -337,17 +382,7 @@ export async function getPropolyBusinessStats(
     const deals = await fetchAllDeals();
     if (!deals) return null;
 
-    if (!completesCache || Date.now() - completesCache.at > COMPLETES_TTL_MS) {
-      const rows = await listAll("/api/v1/deals?tenancy_status=complete", 40);
-      if (rows) {
-        completesCache = {
-          at: Date.now(),
-          moveInDates: rows.map((r) =>
-            typeof r.move_in_date === "string" ? r.move_in_date : null
-          ),
-        };
-      }
-    }
+    await ensureCompletes();
 
     const active = deals.filter((d) => d.statusKey !== "cancelled");
     return {
