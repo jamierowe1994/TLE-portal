@@ -4,7 +4,6 @@ import { findById } from "@/lib/users-store";
 import {
   propolyConfigured,
   propolyClientName,
-  propolyGet,
   getPropolyAgents,
   getPropolyBranches,
   getPropolyDeals,
@@ -85,14 +84,6 @@ export async function GET(req: NextRequest) {
       getPropolyProperties(),
     ]);
 
-    // Self-diagnose a bearer-only 401: some APIs want the key headers on
-    // every call, not just the token mint. Try deals again that way and
-    // report whether the alternate style gets through.
-    const dealsWithKeyHeaders =
-      deals.status === 401
-        ? await propolyGet("/api/v1/deals", { includeKeyHeaders: true })
-        : null;
-
     return NextResponse.json({
       configured: true,
       clientName: propolyClientName(),
@@ -101,9 +92,6 @@ export async function GET(req: NextRequest) {
         branches: summarise(branches),
         deals: summarise(deals),
         properties: summarise(properties),
-        ...(dealsWithKeyHeaders
-          ? { dealsWithKeyHeaders: summarise(dealsWithKeyHeaders) }
-          : {}),
       },
     });
   } catch (e) {
