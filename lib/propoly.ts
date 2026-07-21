@@ -88,18 +88,25 @@ export interface PropolyResult {
  * GET an API path ("/api/v1/deals") with a bearer token, refreshing the
  * token once on a 401 (expired mid-flight). Returns status + parsed body
  * rather than throwing on non-2xx, so the probe can show exactly what the
- * API said.
+ * API said. `includeKeyHeaders` also sends x-api-key + agent-name on the
+ * data call itself — a fallback auth style the probe can test.
  */
-export async function propolyGet(path: string): Promise<PropolyResult> {
+export async function propolyGet(
+  path: string,
+  opts?: { includeKeyHeaders?: boolean }
+): Promise<PropolyResult> {
+  const keyHeaders: Record<string, string> = opts?.includeKeyHeaders
+    ? { "x-api-key": API_KEY, "agent-name": AGENT_NAME }
+    : {};
   let token = await getToken();
   let res = await fetch(`${BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...keyHeaders },
     cache: "no-store",
   });
   if (res.status === 401) {
     token = await getToken(true);
     res = await fetch(`${BASE}${path}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...keyHeaders },
       cache: "no-store",
     });
   }

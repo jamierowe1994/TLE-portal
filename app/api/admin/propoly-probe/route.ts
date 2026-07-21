@@ -4,6 +4,7 @@ import { findById } from "@/lib/users-store";
 import {
   propolyConfigured,
   propolyClientName,
+  propolyGet,
   getPropolyAgents,
   getPropolyBranches,
   getPropolyDeals,
@@ -32,8 +33,17 @@ function summarise(res: PropolyResult) {
     if (arrayProp) rows = arrayProp[1] as unknown[];
   }
   const first = rows?.[0];
+  // On errors, the message VALUE is the diagnosis (e.g. "Token expired",
+  // "Insufficient permissions") — safe to expose, no tenant data in it.
+  let errorMessage: string | null = null;
+  if (res.status >= 400 && body && typeof body === "object") {
+    const obj = body as Record<string, unknown>;
+    const msg = obj.message ?? obj.error ?? obj.errors;
+    if (msg != null) errorMessage = JSON.stringify(msg);
+  }
   return {
     status: res.status,
+    errorMessage,
     envelopeKeys:
       body && typeof body === "object" && !Array.isArray(body)
         ? Object.keys(body as Record<string, unknown>)
@@ -75,6 +85,14 @@ export async function GET(req: NextRequest) {
       getPropolyProperties(),
     ]);
 
+    // Self-diagnose a bearer-only 401: some APIs want the key headers on
+    // every call, not just the token mint. Try deals again that way and
+    // report whether the alternate style gets through.
+    const dealsWithKeyHeaders =
+      deals.status === 401
+        ? await propolyGet("/api/v1/deals", { includeKeyHeaders: true })
+        : null;
+
     return NextResponse.json({
       configured: true,
       clientName: propolyClientName(),
@@ -83,6 +101,9 @@ export async function GET(req: NextRequest) {
         branches: summarise(branches),
         deals: summarise(deals),
         properties: summarise(properties),
+        ...(dealsWithKeyHeaders
+          ? { dealsWithKeyHeaders: summarise(dealsWithKeyHeaders) }
+          : {}),
       },
     });
   } catch (e) {
