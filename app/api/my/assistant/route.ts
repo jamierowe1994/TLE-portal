@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { listUserForecasts } from "@/lib/forecast-store";
+import { getPropolyAgentDeals } from "@/lib/propoly-deals";
 import { nameMatchesAgent, ROSTER } from "@/lib/roster";
 import {
   agentSeedStats,
@@ -52,11 +53,41 @@ function lite(s: StatValue | undefined | null) {
 }
 
 /** Everything the portal knows about this agent, as one JSON block. */
-async function buildAgentContext(userId: string, userName: string, agentKey: string | null) {
+async function buildAgentContext(
+  userId: string,
+  userName: string,
+  userEmail: string,
+  agentKey: string | null
+) {
+  // Live tenancy progression works off the login email, so it's available
+  // even before the snapshot profile is linked.
+  const progression = await getPropolyAgentDeals({
+    email: userEmail,
+    agentKey,
+  }).catch(() => null);
+  const tenancyProgression = progression
+    ? {
+        note: "LIVE from Propoly (tenancy progression) — the agent's deals moving toward move-in, nearest completion first.",
+        deals: progression
+          .filter((a) => a.stage !== "unsuccessful")
+          .slice(0, 40)
+          .map((a) => ({
+            status: a.status,
+            property: a.propertyName,
+            locality: a.locality,
+            rentPcm: a.offer,
+            expectedMoveIn: a.startDate,
+            tenants: a.tenants.map((t) => t.name),
+            serviceNote: a.notes,
+          })),
+      }
+    : null;
+
   if (!agentKey) {
     return {
       linked: false,
-      note: "This account isn't linked to an agent profile yet — no figures are available. Tell them to ask the admin to link their profile.",
+      note: "This account isn't linked to an agent profile yet — snapshot figures are unavailable. Tell them to ask the admin to link their profile.",
+      tenancyProgression,
     };
   }
 
@@ -114,6 +145,7 @@ async function buildAgentContext(userId: string, userName: string, agentKey: str
       maTarget: f.maTarget,
       notes: f.notes ?? null,
     })),
+    tenancyProgression,
   };
 }
 
@@ -126,7 +158,7 @@ How to answer:
 - Answer only from the provided data. If something isn't in it, say so plainly and point them to the right tab (My Properties, Applications, Compliance, My Ads, Forecast) or to head office — never invent figures.
 - Money is GBP: format as £1,234. Percentages as whole numbers.
 - Be warm, direct and brief — a couple of short sentences or a short list is usually right. This is a busy letting agent, not a report reader.
-- When asked "what do I need to do today/next", lead with overdue compliance items (worst first), then pipeline properties awaiting action, then this month's targets vs progress.
+- When asked "what do I need to do today/next", lead with overdue compliance items (worst first), then tenancyProgression deals (LIVE from Propoly — chase the ones closest to move-in: signing & move-in monies, then tenancy generation, then references), then this month's targets vs progress.
 - When comparing months, use earningsByMonth2026. July's earned figure isn't in yet — say so if they ask about July earnings, and offer the forecast target instead.
 - Plain text only — no markdown headings, no bold, no tables. Simple hyphen lists are fine.
 - You can't take actions (no emails, no edits, no bookings) — you only inform. If asked to do something, explain what to do and where.`;
@@ -170,7 +202,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const context = await buildAgentContext(user.id, user.name, user.agentKey);
+  const context = await buildAgentContext(user.id, user.name, user.email, user.agentKey);
   const today = new Date().toISOString().slice(0, 10);
 
   const client = new Anthropic();

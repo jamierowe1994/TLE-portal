@@ -17,6 +17,10 @@ const STYLES: Record<
     label: "LIVE",
     className: "bg-green-50 text-green-700 border-green-200",
   },
+  "live-propoly": {
+    label: "LIVE",
+    className: "bg-green-50 text-green-700 border-green-200",
+  },
   manual: {
     label: "MANUAL",
     className: "bg-amber-50 text-amber-700 border-amber-200",
@@ -34,6 +38,7 @@ const STYLES: Record<
 const DOT: Record<StatSource, string> = {
   "live-rex": "#22c55e",
   "live-meta": "#22c55e",
+  "live-propoly": "#22c55e",
   manual: "#f59e0b",
   snapshot: "#9ca3af",
   derived: "#94a3b8",

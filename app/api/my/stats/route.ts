@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { getAgentFunnel, getAgentPortfolio } from "@/lib/rex-stats";
+import { getPropolyPipelineCount } from "@/lib/propoly-deals";
 import { resolveRexUserId } from "@/lib/agent-link";
 import { getAgentMetaStats } from "@/lib/meta";
 import { getOverrides } from "@/lib/actuals-store";
@@ -126,7 +127,7 @@ export async function GET(req: NextRequest) {
   const rexUserId = await resolveRexUserId(user);
 
   // Gather the layers in parallel — each one degrades to null/[] alone.
-  const [live, livePortfolio, meta, overrides] = await Promise.all([
+  const [live, livePortfolio, meta, overrides, propolyPipeline] = await Promise.all([
     rexUserId
       ? getAgentFunnel(rexUserId, month).catch(() => null)
       : Promise.resolve(null),
@@ -135,6 +136,9 @@ export async function GET(req: NextRequest) {
       : Promise.resolve(null),
     getAgentMetaStats(user).catch(() => ({ configured: false as const })),
     getOverrides(month).catch(() => [] as ActualOverride[]),
+    getPropolyPipelineCount({ email: user.email, agentKey: user.agentKey ?? null }).catch(
+      () => null
+    ),
   ]);
 
   const snapshot = agentKey ? agentSeedStats(agentKey) : nullFunnel();
@@ -156,6 +160,17 @@ export async function GET(req: NextRequest) {
   // GCI is money — make sure it renders as £ even when live/manual (no display).
   if (funnel.gci && !funnel.gci.display && funnel.gci.value != null) {
     funnel.gci = { ...funnel.gci, display: formatGBP(funnel.gci.value) };
+  }
+
+  // Pipeline: Propoly outranks everything — it's the system actually running
+  // the progression, counted per agent via their property-manager email.
+  if (propolyPipeline != null) {
+    funnel.pipeline = {
+      value: propolyPipeline,
+      source: "live-propoly",
+      note: "Live count of your deals in progression on Propoly — deal started through signing & move-in monies.",
+      asOf: new Date().toISOString().slice(0, 10),
+    };
   }
 
   // ---- Conversions (derived; badge inherits the weakest input source) ----

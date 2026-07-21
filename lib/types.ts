@@ -1,7 +1,7 @@
 // Core data model — CONTRACT (all build lanes import from here).
 // Do not change shapes without updating the build spec.
 
-export type StatSource = "live-rex" | "live-meta" | "manual" | "snapshot" | "derived";
+export type StatSource = "live-rex" | "live-meta" | "live-propoly" | "manual" | "snapshot" | "derived";
 
 export interface StatValue {
   value: number | null;            // null = genuinely unknown → render "—"
