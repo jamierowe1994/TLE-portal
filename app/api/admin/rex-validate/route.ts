@@ -3,27 +3,26 @@ import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { rexConfigured, rexCall, rexRows, rexLettingsAgents } from "@/lib/rex";
 
-// Date-semantics validation for the funnel figures we want live. For a given
-// month (?month=YYYY-MM) it counts each candidate interpretation so the
-// numbers can be compared against Susan's dashboard side by side, and probes
-// candidate services for VIEWINGS (the one funnel stat with no known home).
-// Compare e.g. June: Susan says 22 listings, 98 viewings, 22 applications
-// (January) etc. — whichever candidate matches her column is the right field.
-//
-// Heavier than the 8s page budget on purpose — it's a diagnostic you wait for.
+// Round 2 of funnel validation (?month=YYYY-MM, default June — a month with
+// known final figures: 40 MAs / 35 listings / 202 viewings / 25 applications).
+// Round 1 established: Listings.system_ctime=21 vs Susan's 35 (undercounts),
+// TenancyApplications.date_received isn't searchable, system_ctime returned 0
+// (format issue?), and CalendarEvents EXISTS with appointment_type/starts_at.
+// This round: ask REX itself for each model's fields (describeModel), count
+// June CalendarEvents by appointment type (paged), and retry applications
+// with proper datetime formats + a client-side date_received count.
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 function monthRange(month: string): { start: string; end: string } {
   const [y, m] = month.split("-").map(Number);
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return {
-    start: `${month}-01`,
-    end: `${month}-${String(lastDay).padStart(2, "0")}`,
-  };
+  return { start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, "0")}` };
 }
+
+type Crit = Array<{ name: string; type: string; value: string | string[] }>;
 
 export async function GET(req: NextRequest) {
   const userId = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
@@ -31,9 +30,7 @@ export async function GET(req: NextRequest) {
   if (!admin || !isAdminEmail(admin.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!rexConfigured()) {
-    return NextResponse.json({ configured: false });
-  }
+  if (!rexConfigured()) return NextResponse.json({ configured: false });
 
   const monthParam = req.nextUrl.searchParams.get("month");
   const month = monthParam && MONTH_RE.test(monthParam) ? monthParam : "2026-06";
@@ -41,11 +38,7 @@ export async function GET(req: NextRequest) {
   const agents = await rexLettingsAgents();
   const agentIds = agents.map((a) => a.id);
 
-  // Count rows for a service + criteria; returns count or the error string.
-  async function tryCount(
-    service: string,
-    criteria: Array<{ name: string; type: string; value: string | string[] }>
-  ): Promise<number | string> {
+  async function tryCount(service: string, criteria: Crit): Promise<number | string> {
     try {
       const res = await rexCall(service, "search", { criteria, limit: 100 });
       if (!res.ok) return `ERR ${res.status}: ${res.error ?? "?"}`;
@@ -55,69 +48,147 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // --- Listings: which date field means "listed this month"? ---
-  const listingDateFields = [
-    "system_ctime",
-    "system_publication_time",
-    "inbound_date",
-    "date_listed",
-    "available_from_date",
-  ];
-  const listings: Record<string, number | string> = {};
-  for (const f of listingDateFields) {
-    listings[f] = await tryCount("Listings", [
-      { name: "listing_agent_1_id", type: "in", value: agentIds },
-      { name: f, type: ">=", value: start },
-      { name: f, type: "<=", value: `${end} 23:59:59` },
-    ]);
-  }
-
-  // --- Applications: date_received vs system_ctime ---
-  const applications: Record<string, number | string> = {};
-  for (const f of ["date_received", "system_ctime"]) {
-    applications[f] = await tryCount("TenancyApplications", [
-      { name: "application.agent_id", type: "in", value: agentIds },
-      { name: f, type: ">=", value: start },
-      { name: f, type: "<=", value: `${end} 23:59:59` },
-    ]);
-  }
-
-  // --- Viewings: which service even holds them? ---
-  // Bare search first (does the service exist / is it readable), then a sample
-  // row's keys so we can spot the date + agent fields to filter on.
-  const viewingServices = [
-    "CalendarEvents",
-    "Appointments",
-    "Events",
-    "Viewings",
-    "ListingViewings",
-    "Feedback",
-  ];
-  const viewings: Record<string, { probe: number | string; sampleKeys?: string[] }> = {};
-  for (const svc of viewingServices) {
-    try {
-      const res = await rexCall(svc, "search", { limit: 1 });
-      if (!res.ok) {
-        viewings[svc] = { probe: `ERR ${res.status}: ${res.error ?? "?"}` };
-        continue;
+  // Fetch up to `max` rows via offset paging (REX caps a page at 100).
+  async function pagedRows(
+    service: string,
+    criteria: Crit,
+    max = 600
+  ): Promise<{ rows: Array<Record<string, unknown>>; capped: boolean } | string> {
+    const rows: Array<Record<string, unknown>> = [];
+    for (let offset = 0; offset < max; offset += 100) {
+      try {
+        const res = await rexCall(service, "search", { criteria, limit: 100, offset });
+        if (!res.ok) return `ERR ${res.status}: ${res.error ?? "?"}`;
+        const page = rexRows(res.result);
+        rows.push(...page);
+        if (page.length < 100) return { rows, capped: false };
+      } catch (e) {
+        return `ERR: ${e instanceof Error ? e.message : String(e)}`;
       }
-      const rows = rexRows(res.result);
-      viewings[svc] = {
-        probe: rows.length,
-        sampleKeys: rows[0] ? Object.keys(rows[0]).slice(0, 40) : [],
-      };
+    }
+    return { rows, capped: true };
+  }
+
+  // --- REX's own field lists — the end of guessing date-field names. ---
+  // describeModel payloads are big; keep just the field names.
+  async function fieldNames(model: string): Promise<string[] | string> {
+    try {
+      const res = await rexCall(model, "describeModel", {});
+      if (!res.ok) return `ERR ${res.status}: ${res.error ?? "?"}`;
+      const r = res.result as Record<string, unknown>;
+      // Known shapes: { fields: {name: …} } or { fields: [{name}] } — fall back
+      // to top-level keys so we at least see the shape to dig into next round.
+      const f = r?.fields;
+      if (Array.isArray(f)) {
+        return f.map((x) => String((x as { name?: string })?.name ?? x)).sort();
+      }
+      if (f && typeof f === "object") return Object.keys(f).sort();
+      return Object.keys(r ?? {});
     } catch (e) {
-      viewings[svc] = { probe: `ERR: ${e instanceof Error ? e.message : String(e)}` };
+      return `ERR: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
+  const [listingFields, applicationFields, calendarFields] = await Promise.all([
+    fieldNames("Listings"),
+    fieldNames("TenancyApplications"),
+    fieldNames("CalendarEvents"),
+  ]);
+
+  // --- Viewings: June CalendarEvents grouped by appointment type. ---
+  // No agent filter yet — first see what types exist and the monthly volume
+  // (Susan's June viewings: 202).
+  const calendar: Record<string, unknown> = {};
+  const calRes = await pagedRows("CalendarEvents", [
+    { name: "starts_at", type: ">=", value: `${start} 00:00:00` },
+    { name: "starts_at", type: "<=", value: `${end} 23:59:59` },
+  ]);
+  if (typeof calRes === "string") {
+    calendar.error = calRes;
+  } else {
+    const byType: Record<string, number> = {};
+    const organiserDomains: Record<string, number> = {};
+    for (const r of calRes.rows) {
+      const t = r.appointment_type;
+      const label =
+        t && typeof t === "object"
+          ? String((t as { text?: string; id?: string }).text ?? (t as { id?: string }).id)
+          : String(t ?? "none");
+      byType[label] = (byType[label] ?? 0) + 1;
+      const email = String(r.remote_organiser_email ?? "");
+      const dom = email.includes("@") ? email.split("@")[1].toLowerCase() : "none";
+      organiserDomains[dom] = (organiserDomains[dom] ?? 0) + 1;
+    }
+    calendar.total = calRes.rows.length;
+    calendar.capped = calRes.capped;
+    calendar.byAppointmentType = byType;
+    calendar.organiserDomains = organiserDomains;
+    const sample = calRes.rows[0];
+    calendar.sampleRow = sample
+      ? {
+          title: sample.title,
+          appointment_type: sample.appointment_type,
+          starts_at: sample.starts_at,
+          organiser: sample.remote_organiser_email,
+          calendar: sample.calendar,
+        }
+      : null;
+  }
+
+  // --- Applications: datetime-format variants + client-side count. ---
+  const applications: Record<string, number | string> = {};
+  applications["system_ctime datetime"] = await tryCount("TenancyApplications", [
+    { name: "application.agent_id", type: "in", value: agentIds },
+    { name: "system_ctime", type: ">=", value: `${start} 00:00:00` },
+    { name: "system_ctime", type: "<=", value: `${end} 23:59:59` },
+  ]);
+  applications["system_ctime epoch"] = await tryCount("TenancyApplications", [
+    { name: "application.agent_id", type: "in", value: agentIds },
+    { name: "system_ctime", type: ">=", value: String(Date.parse(`${start}T00:00:00Z`) / 1000) },
+    { name: "system_ctime", type: "<=", value: String(Date.parse(`${end}T23:59:59Z`) / 1000) },
+  ]);
+  // Client-side: latest applications for our agents, count date_received in month.
+  const appRes = await pagedRows(
+    "TenancyApplications",
+    [{ name: "application.agent_id", type: "in", value: agentIds }],
+    600
+  );
+  if (typeof appRes === "string") {
+    applications["client-side date_received"] = appRes;
+  } else {
+    const inMonth = appRes.rows.filter((r) => {
+      const d = String(r.date_received ?? "");
+      return d >= start && d <= `${end}~`;
+    }).length;
+    applications["client-side date_received"] = inMonth;
+    applications["client-side rows fetched"] = `${appRes.rows.length}${appRes.capped ? " (CAPPED — real count may be higher)" : ""}`;
+  }
+
+  // --- Listings: round-1 counts again for reference. ---
+  const listings: Record<string, number | string> = {
+    system_ctime: await tryCount("Listings", [
+      { name: "listing_agent_1_id", type: "in", value: agentIds },
+      { name: "system_ctime", type: ">=", value: `${start} 00:00:00` },
+      { name: "system_ctime", type: "<=", value: `${end} 23:59:59` },
+    ]),
+    available_from_date: await tryCount("Listings", [
+      { name: "listing_agent_1_id", type: "in", value: agentIds },
+      { name: "available_from_date", type: ">=", value: start },
+      { name: "available_from_date", type: "<=", value: end },
+    ]),
+  };
 
   return NextResponse.json({
     configured: true,
     month,
     agentsMatched: agents.length,
-    counts: { listings, applications },
-    viewingServiceProbe: viewings,
-    readMe:
-      "Compare counts against Susan's dashboard for the same month — the matching field is the one to wire. Viewing services with a number (not ERR) exist; sampleKeys shows what to filter on.",
+    susansFinals: { note: "June finals from her dashboard", mas: 40, listings: 35, viewings: 202, applications: 25, moveIns: 30 },
+    calendar,
+    applications,
+    listings,
+    modelFields: {
+      Listings: listingFields,
+      TenancyApplications: applicationFields,
+      CalendarEvents: calendarFields,
+    },
   });
 }
