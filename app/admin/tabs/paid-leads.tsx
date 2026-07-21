@@ -187,6 +187,49 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
   const pl = seed.paidLeads;
   const isSnapshotMonth = month === "2026-07";
 
+  // Live leads-generated MTD from Meta — the one figure it can answer today.
+  const [liveLeads, setLiveLeads] = useState<{
+    leads: number | null;
+    spend?: number;
+    cpl?: number | null;
+    source?: string;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/paid-leads-live", { cache: "no-store" });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (!cancelled && j.leads != null) setLiveLeads(j);
+      } catch {
+        /* snapshot stays */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const leadsStat =
+    liveLeads?.leads != null
+      ? {
+          value: liveLeads.leads,
+          source: "live-meta" as const,
+          note:
+            liveLeads.source === "account"
+              ? "Live from Meta — TLE ad account, this month."
+              : "Live from Meta — summed across every agent's tagged campaigns, this month.",
+          asOf: new Date().toISOString().slice(0, 10),
+        }
+      : pl.leadsGenerated;
+  const leadsSub =
+    liveLeads?.leads != null && liveLeads.spend != null
+      ? `£${Math.round(liveLeads.spend).toLocaleString("en-GB")} spend${
+          liveLeads.cpl != null ? ` · £${liveLeads.cpl.toFixed(2)} per lead` : ""
+        }`
+      : undefined;
+
   return (
     <div className="space-y-6">
       {/* Live socials snapshot (Facebook + Instagram) */}
@@ -194,8 +237,9 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
 
       {/* Source banner */}
       <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-        <span className="font-semibold">Source: Go High Level</span> — API
-        access pending, snapshot figures (captured 11 Jul 2026).
+        <span className="font-semibold">Sources:</span> Leads generated is live
+        from Meta; referrals &amp; MAs booked are Go High Level snapshot figures
+        (11 Jul 2026) until the TEG system provides them.
       </div>
 
       {!isSnapshotMonth ? (
@@ -207,7 +251,7 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
 
       {/* July MTD cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard label="Leads generated (MTD)" stat={pl.leadsGenerated} big />
+        <StatCard label="Leads generated (MTD)" stat={leadsStat} sub={leadsSub} big />
         <StatCard label="Referred to agents" stat={pl.referredToAgents} />
         <StatCard label="MAs booked" stat={pl.masBooked} />
         <StatCard

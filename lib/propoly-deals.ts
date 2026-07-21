@@ -90,6 +90,11 @@ async function listAll(
       if (more) rows.push(...more);
     }
   }
+  // A silently-dropped page must fail the whole fetch — callers CACHE these
+  // lists, and a partial one reads as "fewer move-ins/deals than reality"
+  // for the next 10 minutes (we watched YTD show 112 instead of 146).
+  const expected = Math.min(total, pages * perPage);
+  if (rows.length < expected) return null;
   return rows;
 }
 
@@ -219,7 +224,9 @@ async function fetchAllDeals(): Promise<CachedDeal[] | null> {
     listAll("/api/v1/deals?tenancy_status=cancelled", 1),
   ]);
   const keys = [...ACTIVE_STATUSES, "cancelled"];
-  if (statusLists.every((l) => l == null)) return null;
+  // Any missing status list would under-count that stage for the cache TTL —
+  // serve the previous complete snapshot instead (stale beats silently wrong).
+  if (statusLists.some((l) => l == null)) return dealsCache?.deals ?? null;
 
   const deals: CachedDeal[] = [];
   statusLists.forEach((rows, i) => {
@@ -395,6 +402,106 @@ export async function getPropolyBusinessStats(
       })),
       moveInsThisMonth: (completesCache?.moveInDates ?? []).filter((d) =>
         d?.startsWith(month)
+      ).length,
+      generatedAt: new Date().toISOString(),
+    };
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------- move-in tracker (admin) ------------------------ */
+
+export interface PropolyMoveInForecast {
+  /** Completed move-ins, 1st of this month → today. */
+  completedMtd: number;
+  /** Completed move-ins, same day-window last month (for the trend arrow). */
+  completedPrevMtd: number;
+  /** ACTIVE deals (not complete/cancelled) by move-in month, this month +3. */
+  forecastByMonth: Record<string, number>;
+  /** Active deals with a move-in date already passed — slipping, need a chase. */
+  forecastOverdue: number;
+  /** Active deals with no move-in date set yet. */
+  forecastUndated: number;
+  pipelineTotal: number;
+  /** Completed per calendar month, current year (fuels quarter sums). */
+  completedByMonth: Record<string, number>;
+  ytd: number;
+  prevYtd: number; // same window last year
+  generatedAt: string;
+}
+
+export async function getPropolyMoveInForecast(): Promise<PropolyMoveInForecast | null> {
+  if (!propolyConfigured()) return null;
+
+  const work = (async (): Promise<PropolyMoveInForecast | null> => {
+    const [dates, deals] = await Promise.all([ensureCompletes(), fetchAllDeals()]);
+    if (!dates && !deals) return null;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const year = today.slice(0, 4);
+    const month = today.slice(0, 7);
+    const day = today.slice(8, 10);
+    const prevMonthDate = new Date();
+    prevMonthDate.setUTCMonth(prevMonthDate.getUTCMonth() - 1);
+    const prevMonth = prevMonthDate.toISOString().slice(0, 7);
+
+    const completed = (dates ?? []).filter((d): d is string => d != null);
+    const completedByMonth: Record<string, number> = {};
+    for (const d of completed) {
+      if (d.startsWith(year)) {
+        const m = d.slice(0, 7);
+        completedByMonth[m] = (completedByMonth[m] ?? 0) + 1;
+      }
+    }
+
+    // Forecast: active deals by move-in month, this month → +3.
+    const horizon: string[] = [];
+    const cursor = new Date(`${month}-01T00:00:00Z`);
+    for (let i = 0; i < 4; i++) {
+      horizon.push(cursor.toISOString().slice(0, 7));
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    const forecastByMonth: Record<string, number> = Object.fromEntries(
+      horizon.map((m) => [m, 0])
+    );
+    let forecastOverdue = 0;
+    let forecastUndated = 0;
+    const active = (deals ?? []).filter(
+      (d) => d.statusKey !== "cancelled" && d.statusKey !== "complete"
+    );
+    for (const d of active) {
+      const mi = d.app.startDate;
+      if (!mi) {
+        forecastUndated += 1;
+      } else if (mi < today) {
+        forecastOverdue += 1;
+      } else {
+        const m = mi.slice(0, 7);
+        if (m in forecastByMonth) forecastByMonth[m] += 1;
+      }
+    }
+
+    return {
+      completedMtd: completed.filter((d) => d >= `${month}-01` && d <= today).length,
+      completedPrevMtd: completed.filter(
+        (d) => d >= `${prevMonth}-01` && d <= `${prevMonth}-${day}`
+      ).length,
+      forecastByMonth,
+      forecastOverdue,
+      forecastUndated,
+      pipelineTotal: active.length,
+      completedByMonth,
+      ytd: completed.filter((d) => d >= `${year}-01-01` && d <= today).length,
+      prevYtd: completed.filter(
+        (d) => d >= `${Number(year) - 1}-01-01` && d <= `${Number(year) - 1}${today.slice(4)}`
       ).length,
       generatedAt: new Date().toISOString(),
     };

@@ -549,3 +549,55 @@ export async function metaPing(): Promise<{
 export function metaPageConfigured(): boolean {
   return !!pageId();
 }
+
+/* ----------------------- business-wide leads (MTD) ----------------------- */
+
+export interface BusinessLeadsMTD {
+  leads: number;
+  spend: number;
+  cpl: number | null;
+  /** "account" = the TLE ad account's own insights; "campaigns" = summed
+   *  across every agent's tagged campaigns (fallback when no account id). */
+  source: "account" | "campaigns";
+}
+
+/**
+ * Leads generated this month across the whole TLE paid operation — the one
+ * Paid Leads figure Meta can answer directly (referrals/MAs live in
+ * GoHighLevel until the TEG system lands). Uses the lettings ad account when
+ * configured, else sums the agents' tagged campaigns. null → keep snapshot.
+ */
+export async function getBusinessLeadsMTD(
+  fallbackCampaignIds: string[]
+): Promise<BusinessLeadsMTD | null> {
+  if (!metaTokenSet()) return null;
+
+  const acc = accountId();
+  if (acc) {
+    try {
+      const insights = (await graph(`${acc}/insights`, {
+        level: "account",
+        fields: "spend,actions",
+        date_preset: "this_month",
+      })) as { data?: Array<Record<string, unknown>> };
+      let leads = 0;
+      let spend = 0;
+      for (const row of insights.data ?? []) {
+        spend += Number(row.spend ?? 0);
+        leads += countLeads(
+          (row.actions as Array<{ action_type: string; value: string }>) ?? []
+        );
+      }
+      return { leads, spend, cpl: leads > 0 ? spend / leads : null, source: "account" };
+    } catch {
+      /* fall through to the campaign sum */
+    }
+  }
+
+  if (fallbackCampaignIds.length === 0) return null;
+  const snap = await getCampaignSnapshot(fallbackCampaignIds, "this_month").catch(
+    () => null
+  );
+  if (!snap) return null;
+  return { leads: snap.leads, spend: snap.spend, cpl: snap.cpl, source: "campaigns" };
+}

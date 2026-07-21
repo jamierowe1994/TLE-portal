@@ -12,7 +12,8 @@ import {
   getPropolyBusinessStats,
   type PropolyBusinessStats,
 } from "@/lib/propoly-deals";
-import { getTegHeadcount, type TegHeadcount } from "@/lib/teg-hub";
+import { getTegHeadcount, tegHubConfigured, type TegHeadcount } from "@/lib/teg-hub";
+import { propolyConfigured } from "@/lib/propoly";
 import { currentMonth } from "@/lib/format";
 
 // Business-wide LIVE figures from two sources:
@@ -165,7 +166,11 @@ export async function GET(req: NextRequest) {
     masByType,
     generatedAt: new Date().toISOString(),
   };
-  cache.set(month, { at: Date.now(), data });
+  // Only cache a COMPLETE payload — a Propoly/TEG timeout on a cold run must
+  // not freeze `null` into everyone's dashboard for the next five minutes.
+  const propolyOk = !propolyConfigured() || propoly != null;
+  const tegOk = !tegHubConfigured() || teg != null;
+  if (propolyOk && tegOk) cache.set(month, { at: Date.now(), data });
   const debug = req.nextUrl.searchParams.get("debug") === "1";
   return NextResponse.json({ ...data, cached: false, ...(debug ? { perAgent: counted } : {}) });
 }

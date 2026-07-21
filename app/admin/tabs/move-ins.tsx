@@ -115,6 +115,46 @@ interface PropolyBiz {
   generatedAt: string;
 }
 
+interface MoveInTracker {
+  completedMtd: number;
+  completedPrevMtd: number;
+  forecastByMonth: Record<string, number>;
+  forecastOverdue: number;
+  forecastUndated: number;
+  pipelineTotal: number;
+  completedByMonth: Record<string, number>;
+  ytd: number;
+  prevYtd: number;
+  generatedAt: string;
+}
+
+/** Green up / red down arrow with the % change vs a comparison figure. */
+function Trend({ curr, prev, vs }: { curr: number; prev: number; vs: string }) {
+  if (prev <= 0) return null;
+  const pct = Math.round(((curr - prev) / prev) * 100);
+  const up = pct >= 0;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${up ? "text-green-600" : "text-red-600"}`}
+      title={`${vs}: ${prev}`}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        {up ? (
+          <path d="M5 1l4 6H1z" fill="currentColor" />
+        ) : (
+          <path d="M5 9L1 3h8z" fill="currentColor" />
+        )}
+      </svg>
+      {up ? "+" : ""}
+      {pct}%
+      <span className="font-normal text-muted">&nbsp;vs {vs.toLowerCase()}</span>
+    </span>
+  );
+}
+
+const MONTH_NAME = (m: string) =>
+  new Date(`${m}-01T00:00:00Z`).toLocaleString("en-GB", { month: "long", timeZone: "UTC" });
+
 export default function MoveInsTab({ month, seed }: { month: string; seed: SeedData }) {
   const h = seed.moveInHeader;
   const isSnapshotMonth = month === "2026-07";
@@ -125,6 +165,21 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Move-in tracker — completed MTD, forward forecast + rollups with trends.
+  const [tracker, setTracker] = useState<MoveInTracker | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/move-in-tracker", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!cancelled) setTracker((j as { tracker?: MoveInTracker | null }).tracker ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Live Propoly strip — the true progression pipeline + completed move-ins.
   const [livePropoly, setLivePropoly] = useState<PropolyBiz | null>(null);
@@ -323,6 +378,101 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
           </div>
         </section>
       ) : null}
+
+      {/* ---- Move-in tracker: MTD + forecast + rollups, with trend arrows ---- */}
+      {tracker
+        ? (() => {
+            const horizon = Object.keys(tracker.forecastByMonth).sort();
+            const [m0, m1, m2] = horizon;
+            const year = (m0 ?? "2026-07").slice(0, 4);
+            const sumMonths = (ms: string[], from: Record<string, number>) =>
+              ms.reduce((t, m) => t + (from[m] ?? 0), 0);
+            const q3Months = [`${year}-07`, `${year}-08`, `${year}-09`];
+            const q2Actual = sumMonths(
+              [`${year}-04`, `${year}-05`, `${year}-06`],
+              tracker.completedByMonth
+            );
+            const q3Projected =
+              sumMonths(q3Months, tracker.completedByMonth) +
+              sumMonths(q3Months, tracker.forecastByMonth);
+            const asOf = tracker.generatedAt.slice(0, 10);
+            const tiles: Array<{
+              label: string;
+              value: number;
+              sub?: string;
+              trend?: { prev: number; vs: string };
+            }> = [
+              {
+                label: "Completed MTD",
+                value: tracker.completedMtd,
+                sub: "Moved in this month",
+                trend: { prev: tracker.completedPrevMtd, vs: "Same point last month" },
+              },
+              {
+                label: `Remaining ${MONTH_NAME(m0)} forecast`,
+                value: tracker.forecastByMonth[m0] ?? 0,
+                sub: "In progression, move-in date this month",
+              },
+              {
+                label: MONTH_NAME(m1),
+                value: tracker.forecastByMonth[m1] ?? 0,
+                sub: "Forecast from progression",
+              },
+              {
+                label: MONTH_NAME(m2),
+                value: tracker.forecastByMonth[m2] ?? 0,
+                sub: "Forecast from progression",
+              },
+              {
+                label: "Pipeline",
+                value: tracker.pipelineTotal,
+                sub: `${tracker.forecastOverdue} past move-in date · ${tracker.forecastUndated} undated`,
+              },
+              {
+                label: "Q3 projected",
+                value: q3Projected,
+                sub: "Completed + progression forecast",
+                trend: { prev: q2Actual, vs: "Q2 actual" },
+              },
+              {
+                label: "YTD move-ins",
+                value: tracker.ytd,
+                sub: "1 Jan → today",
+                trend: { prev: tracker.prevYtd, vs: "Same window last year" },
+              },
+            ];
+            return (
+              <section className="card p-5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-[13px] font-semibold uppercase tracking-wide">
+                    Move-in tracker
+                  </h2>
+                  <SourceBadge
+                    source="live-propoly"
+                    note="Live from Propoly — completed deals and the forward progression forecast. Susan's Move-In Report also counts managed transfers + marketing-only move-ins."
+                    asOf={asOf}
+                  />
+                </div>
+                <div className="mt-3 grid gap-3 grid-cols-[repeat(auto-fit,minmax(160px,1fr))]">
+                  {tiles.map((t) => (
+                    <div key={t.label} className="rounded-xl border border-green-200 bg-white p-3 shadow-sm">
+                      <div className="stat-value text-[24px] leading-tight">{t.value}</div>
+                      {t.trend ? (
+                        <div className="mt-0.5">
+                          <Trend curr={t.value} prev={t.trend.prev} vs={t.trend.vs} />
+                        </div>
+                      ) : null}
+                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide">
+                        {t.label}
+                      </div>
+                      {t.sub ? <div className="mt-0.5 text-[10px] text-muted">{t.sub}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })()
+        : null}
 
       {!isSnapshotMonth ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">

@@ -4,6 +4,7 @@
 // table, licence fee table, YoY growth chips, GCI vs total income bars.
 // GCI actuals come from PayProp reports (no API access yet) — snapshot badges.
 
+import { useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Donut from "@/components/charts/Donut";
@@ -102,9 +103,42 @@ function YoyChips({ label, data }: { label: string; data: Record<string, number>
 
 /* --------------------------------- the tab --------------------------------- */
 
+// £1,200 average GCI per move-in — Susan's own July-estimate formula
+// (her £12,000 est = 10 move-ins × £1,200). PayProp will replace this
+// with actuals when connected.
+const AVG_GCI_PER_MOVE_IN = 1200;
+
 export default function IncomeTab({ month, seed }: { month: string; seed: SeedData }) {
   const inc = seed.income;
   const isSnapshotMonth = month === "2026-07";
+
+  // Live estimate input: this month's completed move-ins from Propoly.
+  const [liveMoveIns, setLiveMoveIns] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/admin/live-business?month=${encodeURIComponent(month)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        const mi = (j as { propoly?: { moveInsThisMonth?: number } | null }).propoly
+          ?.moveInsThisMonth;
+        if (!cancelled && typeof mi === "number") setLiveMoveIns(mi);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  const liveGciEst =
+    liveMoveIns != null
+      ? {
+          value: liveMoveIns * AVG_GCI_PER_MOVE_IN,
+          display: formatGBP(liveMoveIns * AVG_GCI_PER_MOVE_IN),
+          source: "live-propoly" as const,
+          note: `Estimate from live data — ${liveMoveIns} completed move-ins this month (live from Propoly) × £1,200 avg GCI, Susan's own estimating formula. PayProp actuals replace this when connected.`,
+          asOf: new Date().toISOString().slice(0, 10),
+        }
+      : null;
 
   // GCI vs total income bars, Jan–Jun (from the monthly income table rows)
   const gciRow = inc.monthlyTable.find((r) => r.metric === "Combined GCI (exc VAT)");
@@ -144,7 +178,12 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">July MTD — estimates</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <StatCard label="Combined GCI (est)" stat={inc.julyMtd.combinedGci} big />
+          <StatCard
+            label="Combined GCI (est)"
+            stat={liveGciEst ?? inc.julyMtd.combinedGci}
+            sub={liveGciEst && liveMoveIns != null ? `${liveMoveIns} live move-ins × £1,200 avg` : undefined}
+            big
+          />
           <StatCard label="E&W GCI (est)" stat={inc.julyMtd.eAndWGci} />
           <StatCard label="Glasgow GCI (est)" stat={inc.julyMtd.glasgowGci} />
           <StatCard label="TLE net income (est)" stat={inc.julyMtd.tleNetIncome} />
