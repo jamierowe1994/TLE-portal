@@ -81,6 +81,20 @@ CREATE TABLE IF NOT EXISTS assistant_knowledge (
   content          TEXT NOT NULL,
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS todos (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL,
+  note             TEXT NOT NULL,
+  due_at           TEXT,
+  platform         TEXT,
+  property         TEXT,
+  tenant           TEXT,
+  done             BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS todos_user_idx ON todos (user_id);
 `;
 
 // Schema is created lazily on first query; the promise is cached and reset on

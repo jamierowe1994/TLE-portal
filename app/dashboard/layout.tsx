@@ -16,6 +16,7 @@ import type { UserProfile } from "@/lib/types";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "M4 4h7v9H4zM13 4h7v5h-7zM13 13h7v7h-7zM4 17h7v3H4z" },
+  { href: "/dashboard/todos", label: "To-dos", icon: "M9 6h11M9 12h11M9 18h11M4 5.5l1 1 2-2M4 11.5l1 1 2-2M4 17.5l1 1 2-2" },
   { href: "/dashboard/listings", label: "My Properties", icon: "M3 11l9-8 9 8M5 9.5V20a1 1 0 001 1h12a1 1 0 001-1V9.5M9.5 21v-6h5v6" },
   { href: "/dashboard/applications", label: "Applications", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
   { href: "/dashboard/compliance", label: "Compliance", icon: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 8.3-7 9-4-0.7-7-4.5-7-9V6l7-3z" },
