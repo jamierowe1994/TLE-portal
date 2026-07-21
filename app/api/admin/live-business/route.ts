@@ -7,6 +7,7 @@ import {
   getPropolyBusinessStats,
   type PropolyBusinessStats,
 } from "@/lib/propoly-deals";
+import { getTegHeadcount, type TegHeadcount } from "@/lib/teg-hub";
 import { currentMonth } from "@/lib/format";
 
 // Business-wide LIVE figures from two sources:
@@ -34,6 +35,7 @@ interface Payload {
   agentsTotal: number; // lettings agents found in REX
   totals: Totals;
   propoly: PropolyBusinessStats | null;
+  teg: TegHeadcount | null;
   generatedAt: string;
 }
 
@@ -63,9 +65,12 @@ export async function GET(req: NextRequest) {
   const force = req.nextUrl.searchParams.get("refresh") === "1";
 
   if (!rexConfigured()) {
-    // No REX here — Propoly still answers (its own cache handles load).
-    const propoly = await getPropolyBusinessStats(month).catch(() => null);
-    return NextResponse.json({ configured: false, month, propoly }, { status: 200 });
+    // No REX here — Propoly and the Team Hub still answer (own caches).
+    const [propoly, teg] = await Promise.all([
+      getPropolyBusinessStats(month).catch(() => null),
+      getTegHeadcount().catch(() => null),
+    ]);
+    return NextResponse.json({ configured: false, month, propoly, teg }, { status: 200 });
   }
 
   const cached = cache.get(month);
@@ -73,9 +78,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ...cached.data, cached: true });
   }
 
-  const [agents, propoly] = await Promise.all([
+  const [agents, propoly, teg] = await Promise.all([
     rexLettingsAgents(),
     getPropolyBusinessStats(month).catch(() => null),
+    getTegHeadcount(force).catch(() => null),
   ]);
 
   const rows = await mapLimit(agents, CONCURRENCY, async (a) => {
@@ -109,6 +115,7 @@ export async function GET(req: NextRequest) {
     agentsTotal: agents.length,
     totals,
     propoly,
+    teg,
     generatedAt: new Date().toISOString(),
   };
   cache.set(month, { at: Date.now(), data });

@@ -29,6 +29,16 @@ interface LiveBusiness {
     moveInsThisMonth: number;
     generatedAt: string;
   } | null;
+  teg?: {
+    activeAgents: number;
+    byStatus: Record<string, number>;
+    byPackage: Record<string, number>;
+    startingSoon: number;
+    startersYtd: number;
+    leaversYtd: number;
+    varianceYtd: number;
+    generatedAt: string;
+  } | null;
   generatedAt?: string;
 }
 
@@ -63,7 +73,11 @@ function Tile({
   stat: StatValue;
   sub?: string | null;
 }) {
-  const isLive = stat.source === "live-rex" || stat.source === "live-meta" || stat.source === "live-propoly";
+  const isLive =
+    stat.source === "live-rex" ||
+    stat.source === "live-meta" ||
+    stat.source === "live-propoly" ||
+    stat.source === "live-teg";
   const isManual = stat.source === "manual";
   const value = stat.display ?? (stat.value != null ? formatNum(stat.value) : "—");
   return (
@@ -260,6 +274,48 @@ export default function Overview({ month }: { month: string }) {
         }
       : kpiPeriod.funnel.moveIns;
 
+  // Agent Headcount — upgraded live from the TEG Team Hub (the group's people
+  // database) when the secret is configured. Package splits (TLE / TLE Dual /
+  // Lettings Lite) upgrade only when the hub's package labels actually match —
+  // otherwise those tiles stay on the snapshot until we calibrate via
+  // /api/admin/teg-hub-probe.
+  const teg = live?.teg ?? null;
+  const asTeg = (value: number, note: string, display?: string): StatValue => ({
+    value,
+    display,
+    source: "live-teg",
+    note,
+    asOf: teg?.generatedAt.slice(0, 10),
+  });
+  const pkgCount = (match: (k: string) => boolean): number | null => {
+    if (!teg) return null;
+    const keys = Object.keys(teg.byPackage).filter(match);
+    return keys.length ? keys.reduce((t, k) => t + teg.byPackage[k], 0) : null;
+  };
+  const pkgTleDual = pkgCount((k) => /dual/i.test(k));
+  const pkgLite = pkgCount((k) => /lite/i.test(k));
+  const pkgTle = pkgCount((k) => /tle|letting/i.test(k) && !/dual|lite/i.test(k));
+  const hc = {
+    activeAgents: teg
+      ? asTeg(teg.activeAgents, "Live from TEG Team Hub — active TLE partners with a trading status.")
+      : d.headcount.activeAgents,
+    tle: pkgTle != null ? asTeg(pkgTle, "Live from TEG Team Hub — partner package.") : d.headcount.tle,
+    tleDual: pkgTleDual != null ? asTeg(pkgTleDual, "Live from TEG Team Hub — partner package.") : d.headcount.tleDual,
+    lettingsLite: pkgLite != null ? asTeg(pkgLite, "Live from TEG Team Hub — partner package.") : d.headcount.lettingsLite,
+    startingSoon: teg
+      ? asTeg(teg.startingSoon, "Live from TEG Team Hub — signed partners still onboarding.")
+      : d.headcount.startingSoon,
+    startersYtd: teg
+      ? asTeg(teg.startersYtd, "Live from TEG Team Hub — launched since 1 Jan.")
+      : d.headcount.startersYtd,
+    leaversYtd: teg
+      ? asTeg(teg.leaversYtd, "Live from TEG Team Hub — leave date since 1 Jan.")
+      : d.headcount.leaversYtd,
+    varianceYtd: teg
+      ? asTeg(teg.varianceYtd, "Live from TEG Team Hub — starters minus leavers.", `${teg.varianceYtd >= 0 ? "+" : ""}${teg.varianceYtd}`)
+      : d.headcount.varianceYtd,
+  };
+
   const pillOptions = PERIOD_ORDER.filter((k) => d.periods[k]).map((k) => ({
     key: k,
     label: d.periods[k].label,
@@ -307,14 +363,14 @@ export default function Overview({ month }: { month: string }) {
       {/* ---- 1. Agent Headcount ---- */}
       <Section title="Agent Headcount — July 2026" source={d.sources.headcount}>
         <div className={TILE_GRID}>
-          <Tile label="Active Agents" stat={d.headcount.activeAgents} sub="Managing portfolio" />
-          <Tile label="TLE" stat={d.headcount.tle} sub="Full partner" />
-          <Tile label="TLE Dual" stat={d.headcount.tleDual} sub="Dual brand" />
-          <Tile label="Lettings Lite" stat={d.headcount.lettingsLite} sub="Lite service" />
-          <Tile label="Starting Soon" stat={d.headcount.startingSoon} sub="Signed, building pipeline" />
-          <Tile label="Starters YTD" stat={d.headcount.startersYtd} sub="TLE / TLE Dual · excl Lettings Lite" />
-          <Tile label="Leavers YTD" stat={d.headcount.leaversYtd} sub="TLE / TLE Dual · excl Lettings Lite" />
-          <Tile label="Variance YTD" stat={d.headcount.varianceYtd} sub="Net change TLE / TLE Dual" />
+          <Tile label="Active Agents" stat={hc.activeAgents} sub="Managing portfolio" />
+          <Tile label="TLE" stat={hc.tle} sub="Full partner" />
+          <Tile label="TLE Dual" stat={hc.tleDual} sub="Dual brand" />
+          <Tile label="Lettings Lite" stat={hc.lettingsLite} sub="Lite service" />
+          <Tile label="Starting Soon" stat={hc.startingSoon} sub="Signed, building pipeline" />
+          <Tile label="Starters YTD" stat={hc.startersYtd} sub="TLE / TLE Dual · excl Lettings Lite" />
+          <Tile label="Leavers YTD" stat={hc.leaversYtd} sub="TLE / TLE Dual · excl Lettings Lite" />
+          <Tile label="Variance YTD" stat={hc.varianceYtd} sub="Net change TLE / TLE Dual" />
         </div>
       </Section>
 
