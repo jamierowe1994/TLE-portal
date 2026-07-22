@@ -10,7 +10,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatGBP } from "@/lib/format";
 import { BRAND } from "@/lib/brand";
+import { DealNotesPanel } from "@/components/DealNotes";
+import { CHECKLIST_ITEMS, PROPOLY_APP_URL, PROPOLY_STAGES } from "@/lib/propoly-stages";
 import type { AgentApplication, ApplicationStage } from "@/lib/rex-stats";
+import type { DealMeta } from "@/lib/types";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
@@ -67,9 +70,19 @@ function ApplicationTile({
       style={enterAt(delay)}
     >
       <div className="flex min-w-0 flex-1 flex-col p-6">
-        <span className={`w-fit rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
-          {a.status.toUpperCase()}
-        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={`w-fit rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
+            {a.status.toUpperCase()}
+          </span>
+          {a.portal && a.portal.notesCount > 0 ? (
+            <span className="flex items-center gap-1 rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted">
+              <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              {a.portal.notesCount}
+            </span>
+          ) : null}
+        </div>
 
         <h3 className="mt-3.5 truncate text-[14px] font-semibold leading-snug">
           {a.propertyName}
@@ -102,41 +115,14 @@ function ApplicationTile({
 }
 
 /* --------------------------- progression board --------------------------- */
-
-// The five Propoly stages a deal walks through on its way to keys-in-hand.
-// Blurbs explain what's actually happening at the live stage.
-const PROPOLY_STAGES: { key: string; label: string; blurb: string }[] = [
-  {
-    key: "start_deal",
-    label: "Deal started",
-    blurb: "Terms agreed — the deal is being set up with rent, dates and tenant details.",
-  },
-  {
-    key: "holding_fee",
-    label: "Holding fee",
-    blurb: "Collecting the holding fee that takes the property off the market.",
-  },
-  {
-    key: "references",
-    label: "Referencing",
-    blurb: "Credit, employer and previous-landlord checks, plus Right to Rent.",
-  },
-  {
-    key: "tenancy_generation",
-    label: "Tenancy agreement",
-    blurb: "The agreement is being drawn up with all the agreed clauses.",
-  },
-  {
-    key: "signing_and_move_in_monies",
-    label: "Signing & move-in monies",
-    blurb: "Signatures, plus the first month's rent and deposit being collected.",
-  },
-];
-
-const PROPOLY_APP_URL = "https://prod.propoly.com";
+// Stage definitions live in lib/propoly-stages.ts, shared with the
+// pre-tenancy dashboard so both sides always show the same board.
 
 /** Click-into-a-deal dashboard: where the tenancy is, stage by stage. */
 function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
+  // Pre-tenancy meta (checklist ticks) arrives with the notes fetch.
+  const [meta, setMeta] = useState<DealMeta | null>(null);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -187,6 +173,14 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
             <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
               This deal was cancelled before completion — the stages below show the
               journey it would have taken.
+            </p>
+          ) : null}
+
+          {a.portal?.override ? (
+            <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+              {a.portal.override.by || "The pre-tenancy team"} moved this deal to{" "}
+              <span className="font-semibold">{a.status}</span>
+              {a.portal.override.at ? ` on ${fmtDate(a.portal.override.at)}` : ""}.
             </p>
           ) : null}
 
@@ -304,6 +298,52 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
               ) : (
                 <p className="text-[13px] text-muted">No tenant details recorded yet.</p>
               )}
+            </div>
+          </div>
+
+          {/* ---- pre-tenancy checklist (Kirstie ticks, you watch) ---- */}
+          {meta && Object.keys(meta.checklist).length > 0 ? (
+            <div className="mt-6">
+              <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                Pre-tenancy checklist
+                <span className="ml-2 font-normal normal-case">
+                  {CHECKLIST_ITEMS.filter((i) => meta.checklist[i.key]?.done).length}/
+                  {CHECKLIST_ITEMS.length} done
+                </span>
+              </h3>
+              <div className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                {CHECKLIST_ITEMS.map((item) => {
+                  const done = meta.checklist[item.key]?.done ?? false;
+                  return (
+                    <div key={item.key} className="flex items-center gap-2 text-[12px]">
+                      {done ? (
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-green-600" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-line" />
+                      )}
+                      <span className={done ? "text-muted line-through" : "text-ink"}>
+                        {item.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {/* ---- notes with the pre-tenancy team ---- */}
+          <div className="mt-6">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+              Notes with pre-tenancy
+            </h3>
+            <div className="mt-1">
+              <DealNotesPanel
+                dealId={a.id}
+                placeholder="Reply to pre-tenancy — they see it instantly…"
+                onMeta={setMeta}
+              />
             </div>
           </div>
 

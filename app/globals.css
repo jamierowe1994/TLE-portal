@@ -206,6 +206,13 @@ h5 {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Pre-tenancy deal workspace: slides out from the left edge (app/pretenancy). */
+.panel-slide { animation: panel-slide 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes panel-slide {
+  from { transform: translateX(-40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 /* Scroll-reveal (components/Reveal.tsx) */
 .reveal,
 .reveal-left,

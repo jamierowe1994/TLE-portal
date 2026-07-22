@@ -808,6 +808,8 @@ export interface AgentApplication {
     deposit: number | null; // £
     service: string | null; // "Fully managed" | "Tenant find" | "Rent collect"
   };
+  /** Portal overlay: pre-tenancy notes/stage-moves/checklist (lib/deal-store). */
+  portal?: import("@/lib/types").DealPortalOverlay;
 }
 
 function stageOfStatus(id: string): ApplicationStage {

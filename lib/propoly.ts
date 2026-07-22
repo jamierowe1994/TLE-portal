@@ -33,6 +33,9 @@ interface TokenResponse {
 }
 
 let cached: { token: string; clientName: string | null; expiresAt: number } | null = null;
+// After a 429 from the token endpoint, don't ask again for a minute —
+// re-requesting immediately just extends the rate-limit window.
+let tokenBackoffUntil = 0;
 
 /** Best-effort JWT expiry (ms epoch); falls back to a 50-minute lifetime. */
 function jwtExpiry(token: string): number {
@@ -53,6 +56,9 @@ function jwtExpiry(token: string): number {
 async function getToken(force = false): Promise<string> {
   if (!propolyConfigured()) throw new Error("Propoly is not configured");
   if (!force && cached && Date.now() < cached.expiresAt) return cached.token;
+  if (Date.now() < tokenBackoffUntil) {
+    throw new Error("Propoly token requests are rate-limited — backing off");
+  }
 
   const res = await fetch(`${BASE}/api/v1/token`, {
     headers: {
@@ -62,6 +68,10 @@ async function getToken(force = false): Promise<string> {
     },
     cache: "no-store",
   });
+  if (res.status === 429) {
+    tokenBackoffUntil = Date.now() + 60_000;
+    throw new Error("Propoly token request failed: 429 (rate limited)");
+  }
   if (!res.ok) {
     throw new Error(`Propoly token request failed: ${res.status}`);
   }

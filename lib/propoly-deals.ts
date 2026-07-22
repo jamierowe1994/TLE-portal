@@ -255,6 +255,42 @@ export interface PropolyUserRef {
   agentKey: string | null;
 }
 
+/** One deal as the pre-tenancy dashboard sees it: app shape + who runs it. */
+export interface BusinessDeal {
+  app: AgentApplication;
+  statusKey: string;
+  managerEmail: string | null;
+  managerName: string | null;
+}
+
+/**
+ * Every deal in the book (active + one page of cancelled), all agents —
+ * powers Kirstie's /pretenancy dashboard. null = unconfigured/unreachable.
+ */
+export async function getAllPropolyDeals(): Promise<BusinessDeal[] | null> {
+  if (!propolyConfigured()) return null;
+  const work = fetchAllDeals();
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
+/** Find one deal by Propoly uuid (from the same cache as the lists). */
+export async function findPropolyDeal(id: string): Promise<BusinessDeal | null> {
+  const deals = await getAllPropolyDeals();
+  return deals?.find((d) => d.app.id === id) ?? null;
+}
+
+/** Note/read authorization: does this deal belong to this portal user? */
+export function dealBelongsToUser(deal: BusinessDeal, user: PropolyUserRef): boolean {
+  return belongsTo(deal, user);
+}
+
 function belongsTo(deal: CachedDeal, user: PropolyUserRef): boolean {
   if (deal.managerEmail && deal.managerEmail === user.email.trim().toLowerCase()) {
     return true;

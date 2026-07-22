@@ -32,8 +32,10 @@ function LoginForm() {
     setBusy(true);
     setError("");
     try {
-      await logIn(trimmed, password, remember);
-      router.push("/dashboard");
+      // Duo admin login: Susan (admin) → /admin, Kirstie (pre-tenancy) →
+      // /pretenancy, agents → their dashboard.
+      const user = await logIn(trimmed, password, remember);
+      router.push(user.isAdmin ? "/admin" : user.isPreTenancy ? "/pretenancy" : "/dashboard");
     } catch (e) {
       setBusy(false);
       setError(e instanceof Error ? e.message : "Could not sign you in.");

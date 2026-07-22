@@ -96,6 +96,58 @@ CREATE TABLE IF NOT EXISTS todos (
 );
 CREATE INDEX IF NOT EXISTS todos_user_idx ON todos (user_id);
 
+-- Pre-tenancy overlay on Propoly deals (lib/deal-store.ts): two-way notes
+-- between Kirstie and the agents, manual stage moves, checklist ticks.
+CREATE TABLE IF NOT EXISTS deal_notes (
+  id               TEXT PRIMARY KEY,
+  deal_id          TEXT NOT NULL,
+  author_id        TEXT NOT NULL,
+  author_name      TEXT NOT NULL DEFAULT '',
+  author_role      TEXT NOT NULL DEFAULT 'agent',
+  text             TEXT NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS deal_notes_deal_idx ON deal_notes (deal_id);
+-- kind: 'note' (shared activity) · 'system' (auto-logged event) · 'private'
+-- (author-only — filtered to the author on read)
+ALTER TABLE deal_notes ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'note';
+
+-- Follow-ups Kirstie sets herself against a deal ("Tasks" tab + Tasks today).
+CREATE TABLE IF NOT EXISTS deal_tasks (
+  id               TEXT PRIMARY KEY,
+  deal_id          TEXT NOT NULL,
+  deal_label       TEXT NOT NULL DEFAULT '',
+  user_id          TEXT NOT NULL,
+  title            TEXT NOT NULL,
+  due_date         TEXT,
+  done             BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS deal_tasks_user_idx ON deal_tasks (user_id, due_date);
+CREATE INDEX IF NOT EXISTS deal_tasks_deal_idx ON deal_tasks (deal_id);
+
+-- Per-user IMAP mailbox for the Emails tab. secret = AES-256-GCM encrypted
+-- app password (key derived from AUTH_SECRET) — never stored in the clear.
+CREATE TABLE IF NOT EXISTS user_mailboxes (
+  user_id          TEXT PRIMARY KEY,
+  email            TEXT NOT NULL,
+  imap_host        TEXT NOT NULL,
+  imap_port        INTEGER NOT NULL DEFAULT 993,
+  secret           TEXT NOT NULL,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS deal_meta (
+  deal_id          TEXT PRIMARY KEY,
+  stage_override   TEXT,
+  stage_based_on   TEXT,
+  stage_by         TEXT,
+  stage_at         TIMESTAMPTZ,
+  checklist        JSONB NOT NULL DEFAULT '{}',
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Finalised live funnel figures for CLOSED months. Once a month has passed
 -- its numbers can't change, so we pull them from REX/Propoly once, store
 -- them, and never re-query (James: "once they're pulled, they're pulled").

@@ -92,6 +92,7 @@ npm run build && npm start   # production build check
 | --- | --- | --- |
 | `AUTH_SECRET` | ✅ | Any long random string (session-token signing key). Generate fresh — do not reuse TEG's. |
 | `ADMIN_EMAILS` | ✅ | **Susan's real email address** (comma-separate to add more, e.g. James's for rollout testing). Admin is locked to these addresses only. |
+| `PRETENANCY_EMAILS` | ✅ | **Kirstie Mulholland's email address** — the second half of the duo admin login. These accounts land on `/pretenancy` (the move-in board across all agents) instead of `/admin`. Admins can view `/pretenancy` too. |
 | `DATABASE_URL` | one of | Railway Postgres connection string (step 3). |
 | `DATA_DIR` | one of | `/data` if using a Volume instead of Postgres. |
 | `REX_API_BASE` | for REX | `https://api.uk.rexsoftware.com` |
@@ -120,6 +121,15 @@ fall back to SNAPSHOT and the Diagnostics tab shows what's unconfigured.
 3. The small **Admin** link in the page footer now opens the business
    dashboard for her; everyone else sees "This area is locked to the business
    owner."
+
+## Pre-tenancy setup (Kirstie)
+
+1. Set `PRETENANCY_EMAILS` to Kirstie's email address.
+2. She creates a normal account with that exact address; signing in takes her
+   straight to `/pretenancy` — every live Propoly deal across all TLE agents,
+   with the pre-tenancy checklist and a shared notes thread per deal.
+3. Everything is two-way: her notes, stage moves and checklist ticks show in
+   the agent's **Applications** drawer, and agents' replies appear on her board.
 
 ## Linking an agent to their data
 

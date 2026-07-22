@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { DATA_DIR } from "@/lib/data-dir";
 import { hasDb, q } from "@/lib/db";
-import { isAdminEmail } from "@/lib/brand";
+import { isAdminEmail, isPreTenancyEmail } from "@/lib/brand";
 import type { AdminNote, UserProfile } from "@/lib/types";
 
 // User store — dual backend like TEG: Postgres when DATABASE_URL is set,
@@ -21,13 +21,21 @@ export interface StoredUser extends UserProfile {
 /** Agent-facing: strip the secret AND internal admin notes. */
 export function toPublic(user: StoredUser): UserProfile {
   const { passwordHash: _pw, adminNotes: _notes, ...pub } = user;
-  return { ...pub, isAdmin: isAdminEmail(user.email) };
+  return {
+    ...pub,
+    isAdmin: isAdminEmail(user.email),
+    isPreTenancy: isPreTenancyEmail(user.email),
+  };
 }
 
 /** Admin-facing: strip only the secret (keeps adminNotes, location, links). */
 export function toAdmin(user: StoredUser): UserProfile & { adminNotes?: AdminNote[] } {
   const { passwordHash: _pw, ...adm } = user;
-  return { ...adm, isAdmin: isAdminEmail(user.email) };
+  return {
+    ...adm,
+    isAdmin: isAdminEmail(user.email),
+    isPreTenancy: isPreTenancyEmail(user.email),
+  };
 }
 
 /* ------------------------------------------------------------------------ */

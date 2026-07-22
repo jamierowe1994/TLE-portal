@@ -52,7 +52,87 @@ export interface UserProfile {     // port of TEG shape, trimmed to TLE needs
   location: string | null;
   adsConnected?: boolean;          // agent linked their ads to the Ads app (My Ads)
   isAdmin?: boolean;               // derived server-side from ADMIN_EMAILS; never stored
+  isPreTenancy?: boolean;          // derived server-side from PRETENANCY_EMAILS; never stored
   createdAt: string;
+}
+
+/* ------------------------- pre-tenancy deal overlay ------------------------- */
+// Portal-side data layered on top of Propoly deals (lib/deal-store.ts):
+// two-way notes between Kirstie (pre-tenancy) and the agent, her stage moves,
+// and the pre-tenancy checklist. Keyed by the Propoly deal uuid.
+
+export type DealNoteRole = "pretenancy" | "admin" | "agent";
+
+/** note = shared activity · system = auto-logged event · private = author-only */
+export type DealNoteKind = "note" | "system" | "private";
+
+export interface DealNote {
+  id: string;
+  dealId: string;                  // Propoly deal uuid
+  authorId: string;                // portal user id
+  authorName: string;
+  authorRole: DealNoteRole;
+  kind?: DealNoteKind;             // absent = "note" (pre-existing rows)
+  text: string;
+  createdAt: string;               // ISO
+}
+
+/** A follow-up set against a deal (pre-tenancy Tasks tab / Tasks today). */
+export interface DealTask {
+  id: string;
+  dealId: string;
+  dealLabel: string;               // property name — shown in Tasks today
+  userId: string;                  // owner (whoever set the follow-up)
+  title: string;
+  dueDate: string | null;          // "YYYY-MM-DD"
+  done: boolean;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+/** What the client may know about a connected mailbox (never the password). */
+export interface MailboxStatus {
+  connected: boolean;
+  email?: string;
+  imapHost?: string;
+}
+
+/** One email involving the deal's tenants, from the viewer's own mailbox. */
+export interface DealEmail {
+  id: string;
+  subject: string;
+  from: string;
+  to: string;
+  date: string | null;             // ISO
+  direction: "in" | "out";         // relative to the connected mailbox
+  body: string;                    // plain-text body (truncated)
+}
+
+export interface ChecklistTick {
+  done: boolean;
+  by: string;                      // display name
+  at: string;                      // ISO
+}
+
+export interface DealMeta {
+  dealId: string;
+  /** Propoly statusKey the deal was manually moved to (null = live status). */
+  stageOverride: string | null;
+  /** Live statusKey when the move was made — a later live change wins. */
+  stageBasedOn: string | null;
+  stageBy: string | null;
+  stageAt: string | null;
+  checklist: Record<string, ChecklistTick>; // key = CHECKLIST_ITEMS key
+  updatedAt: string;
+}
+
+/** What both dashboards render per deal: notes + effective stage + checklist. */
+export interface DealPortalOverlay {
+  notesCount: number;
+  lastNote: { text: string; authorName: string; authorRole: DealNoteRole; at: string } | null;
+  override: { stageKey: string; by: string; at: string } | null;
+  checklistDone: number;
+  checklistTotal: number;
 }
 
 export interface AdminNote {

@@ -33,11 +33,26 @@ export function isAllowedEmailDomain(email: string): boolean {
  * Unset → nobody is admin (no baked-in defaults).
  */
 export function isAdminEmail(email: string | null | undefined): boolean {
+  return emailInEnvList(email, process.env.ADMIN_EMAILS);
+}
+
+/**
+ * Pre-tenancy gate — PRETENANCY_EMAILS env var, same format as ADMIN_EMAILS.
+ * e.g. PRETENANCY_EMAILS=kirstie.mulholland@thelettingexperts.co.uk
+ * Grants /pretenancy (Kirstie's move-in dashboard), not /admin.
+ */
+export function isPreTenancyEmail(email: string | null | undefined): boolean {
+  return emailInEnvList(email, process.env.PRETENANCY_EMAILS);
+}
+
+function emailInEnvList(
+  email: string | null | undefined,
+  raw: string | undefined
+): boolean {
   if (!email) return false;
-  const raw = process.env.ADMIN_EMAILS ?? "";
-  const admins = raw
+  const list = (raw ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  return admins.includes(email.trim().toLowerCase());
+  return list.includes(email.trim().toLowerCase());
 }
