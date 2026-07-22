@@ -4,6 +4,7 @@ import { findById } from "@/lib/users-store";
 import { getRexStatus } from "@/lib/rex-stats";
 import { metaConfigPresence } from "@/lib/meta";
 import { propolyConfigured } from "@/lib/propoly";
+import { ghlConfigured } from "@/lib/ghl";
 
 // Integration diagnostics for the admin panel: what REX actually answers
 // (capability discovery), whether Meta is wired, and which env vars are
@@ -27,6 +28,8 @@ const ENV_CHECKLIST = [
   "META_PAGE_LETTINGS",
   "PROPOLY_API_KEY",
   "PROPOLY_AGENT_NAME",
+  "GHL_API_TOKEN",
+  "GHL_LOCATION_ID",
 ] as const;
 
 // Propoly accepts either naming scheme (the Railway vars may predate the real
@@ -59,7 +62,10 @@ export async function GET(req: NextRequest) {
     meta: { configured: metaConfigPresence() },
     propoly: { configured: propolyConfigured() },
     payprop: { status: "no-access-yet" },
-    ghl: { status: "no-access-yet" },
+    ghl: {
+      status: ghlConfigured() ? "attempting-live" : "no-access-yet",
+      configured: ghlConfigured(),
+    },
     env: {
       present: ENV_CHECKLIST.filter((name) =>
         (ENV_ALIASES[name] ?? [name]).some((alias) => !!process.env[alias])

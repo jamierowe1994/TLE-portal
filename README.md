@@ -103,6 +103,8 @@ npm run build && npm start   # production build check
 | `META_APP_SECRET` | for Meta | **Copy from the TEG Railway project** — every Graph call is signed with `appsecret_proof`. |
 | `META_AD_ACCOUNT_LETTINGS` | for Meta | TLE ad account id (`act_…`). Not yet set in TEG either — wire when known. |
 | `META_PAGE_LETTINGS` | later | TLE Facebook page id — needed for leadgen retrieval later. |
+| `GHL_API_TOKEN` | for GHL | Go High Level **Private Integration token** — TLE sub-account → Settings → Private Integrations → create with read scopes (contacts, opportunities, locations). |
+| `GHL_LOCATION_ID` | for GHL | The GHL sub-account (location) id — Settings → Business Profile, or the `/location/<id>/` part of the GHL URL. Verify with `/api/admin/ghl-probe` on the Diagnostics tab. |
 
 Missing integration variables never break the app — the affected stats simply
 fall back to SNAPSHOT and the Diagnostics tab shows what's unconfigured.

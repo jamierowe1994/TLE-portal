@@ -23,7 +23,7 @@ interface StatusPayload {
   };
   propoly: { configured: boolean };
   payprop: { status: string };
-  ghl: { status: string };
+  ghl: { status: string; configured?: boolean };
   env: { present: string[] };
 }
 
@@ -43,6 +43,8 @@ const ENV_CHECKLIST = [
   "META_PAGE_LETTINGS",
   "PROPOLY_API_KEY",
   "PROPOLY_AGENT_NAME",
+  "GHL_API_TOKEN",
+  "GHL_LOCATION_ID",
 ];
 
 const REX_CAPABILITY_LABELS: Record<string, string> = {
@@ -257,12 +259,22 @@ export default function DiagnosticsTab({ month }: { month: string }) {
         <section className="card p-5">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Go High Level</h2>
-            <StatusPill tone="off" label="NO ACCESS YET" />
+            <StatusPill
+              tone={status?.ghl?.configured ? "ok" : "off"}
+              label={status?.ghl?.configured ? "CONFIGURED" : "NOT CONFIGURED"}
+            />
           </div>
           <p className="mt-1 text-xs text-muted">{SOURCES.ghl.note}</p>
           <p className="mt-3 text-[13px]">
             Feeds the <span className="font-semibold">Paid Leads</span> tab —
-            leads generated, referrals to agents and MAs booked.
+            leads generated, referrals to agents and MAs booked. Connect with a{" "}
+            <span className="font-semibold">Private Integration token</span>{" "}
+            (sub-account Settings → Private Integrations, read scopes for
+            contacts + opportunities + locations) as{" "}
+            <code className="text-xs">GHL_API_TOKEN</code> plus{" "}
+            <code className="text-xs">GHL_LOCATION_ID</code>. Once set, open{" "}
+            <code className="text-xs">/api/admin/ghl-probe</code> to see the
+            real response shapes and wire the funnel.
           </p>
         </section>
       </div>
