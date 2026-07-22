@@ -1,5 +1,6 @@
 import "server-only";
 import { propolyConfigured, propolyGet } from "@/lib/propoly";
+import { loadSnapshot, saveSnapshot } from "@/lib/propoly-snapshot";
 import { agentKeysForName } from "@/lib/roster";
 import type {
   AgentApplication,
@@ -62,8 +63,24 @@ function rowsOf(body: unknown): Array<Record<string, unknown>> | null {
   return arr ? (arr as Array<Record<string, unknown>>) : null;
 }
 
-/** Fetch every page of a list endpoint (page 1 first, the rest in parallel). */
+/**
+ * Fetch every page of a list endpoint (page 1 first, the rest in parallel).
+ * NEVER throws — a token failure (e.g. Propoly's 429 backoff) must surface
+ * as null so callers fall back to their last-good snapshot, not as an
+ * exception that skips the fallback entirely.
+ */
 async function listAll(
+  basePath: string,
+  maxPages: number
+): Promise<Array<Record<string, unknown>> | null> {
+  try {
+    return await listAllInner(basePath, maxPages);
+  } catch {
+    return null;
+  }
+}
+
+async function listAllInner(
   basePath: string,
   maxPages: number
 ): Promise<Array<Record<string, unknown>> | null> {
@@ -111,6 +128,15 @@ let propCache: { at: number; map: Map<string, Manager> } | null = null;
 
 async function propertyManagers(): Promise<Map<string, Manager> | null> {
   if (propCache && Date.now() - propCache.at < PROPS_TTL_MS) return propCache.map;
+  // Cold start (fresh deploy): seed from the persisted last-good pull so we
+  // only ask Propoly for the refresh, not the whole 23-page book.
+  if (!propCache) {
+    const snap = await loadSnapshot<[string, Manager][]>("managers");
+    if (snap) {
+      propCache = { at: snap.savedAt, map: new Map(snap.data) };
+      if (Date.now() - snap.savedAt < PROPS_TTL_MS) return propCache.map;
+    }
+  }
   const rows = await listAll("/api/v1/properties", 40); // 574 props ≈ 23 pages
   if (!rows) return propCache?.map ?? null; // stale beats nothing
   const map = new Map<string, Manager>();
@@ -126,6 +152,7 @@ async function propertyManagers(): Promise<Map<string, Manager> | null> {
     map.set(uuid, { email, name });
   }
   propCache = { at: Date.now(), map };
+  void saveSnapshot("managers", [...map.entries()]);
   return map;
 }
 
@@ -216,6 +243,13 @@ function toApplication(d: Record<string, unknown>, statusKey: string): AgentAppl
 
 async function fetchAllDeals(): Promise<CachedDeal[] | null> {
   if (dealsCache && Date.now() - dealsCache.at < DEALS_TTL_MS) return dealsCache.deals;
+  if (!dealsCache) {
+    const snap = await loadSnapshot<CachedDeal[]>("deals");
+    if (snap) {
+      dealsCache = { at: snap.savedAt, deals: snap.data };
+      if (Date.now() - snap.savedAt < DEALS_TTL_MS) return dealsCache.deals;
+    }
+  }
 
   const [managerMap, ...statusLists] = await Promise.all([
     propertyManagers(),
@@ -243,6 +277,7 @@ async function fetchAllDeals(): Promise<CachedDeal[] | null> {
   });
 
   dealsCache = { at: Date.now(), deals };
+  void saveSnapshot("deals", deals);
   return deals;
 }
 
@@ -375,6 +410,13 @@ async function ensureCompletes(): Promise<CompletedDeal[] | null> {
   if (completesCache && Date.now() - completesCache.at < COMPLETES_TTL_MS) {
     return completesCache.completes;
   }
+  if (!completesCache) {
+    const snap = await loadSnapshot<CompletedDeal[]>("completes");
+    if (snap) {
+      completesCache = { at: snap.savedAt, completes: snap.data };
+      if (Date.now() - snap.savedAt < COMPLETES_TTL_MS) return completesCache.completes;
+    }
+  }
   const rows = await listAll("/api/v1/deals?tenancy_status=complete", 40);
   if (!rows) return completesCache?.completes ?? null;
   completesCache = {
@@ -385,6 +427,7 @@ async function ensureCompletes(): Promise<CompletedDeal[] | null> {
         typeof r.tenancy_service_level === "string" ? r.tenancy_service_level : null,
     })),
   };
+  void saveSnapshot("completes", completesCache.completes);
   return completesCache.completes;
 }
 

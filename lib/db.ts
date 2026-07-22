@@ -148,6 +148,15 @@ CREATE TABLE IF NOT EXISTS deal_meta (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Last-good Propoly pulls (lib/propoly-snapshot.ts). Survives deploys so a
+-- restart serves data instantly instead of re-pulling the whole book — the
+-- re-pull habit is what tripped Propoly's rate limit on 22 Jul 2026.
+CREATE TABLE IF NOT EXISTS propoly_cache (
+  key              TEXT PRIMARY KEY,
+  data             TEXT NOT NULL,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Finalised live funnel figures for CLOSED months. Once a month has passed
 -- its numbers can't change, so we pull them from REX/Propoly once, store
 -- them, and never re-query (James: "once they're pulled, they're pulled").
