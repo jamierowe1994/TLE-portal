@@ -1,21 +1,25 @@
-// Client-safe Propoly stage + pre-tenancy checklist constants, shared by the
-// agent Applications page, Kirstie's /pretenancy dashboard and the server-side
-// deal mappers. No server-only imports — this ships in the client bundle.
+// Client-safe stage + pre-tenancy checklist constants, shared by the agent
+// Applications page, Kirstie's /pretenancy board and the server-side deal
+// mappers. No server-only imports — this ships in the client bundle.
+//
+// The PORTAL pipeline is 8 stages (Kirstie's process). Propoly only tracks 5
+// statuses, so each raw Propoly status maps to a default portal stage, and
+// the portal-only stages (PLC, Deposit, Rent payment, Move day) are reached
+// by Kirstie moving the deal herself (stage overrides in lib/deal-store.ts).
 
 import type { ApplicationStage } from "@/lib/rex-stats"; // type-only — erased
 
-export interface PropolyStageInfo {
+export interface PortalStageInfo {
   key: string;
   label: string;
-  stage: ApplicationStage; // portal pipeline bucket the status maps to
+  stage: ApplicationStage; // coarse bucket the agent tiles group by
   order: number; // progression order, asc = earliest
   blurb: string; // what's actually happening at this stage
 }
 
-// The five stages a deal walks through on its way to keys-in-hand.
-export const PROPOLY_STAGES: PropolyStageInfo[] = [
+export const PORTAL_STAGES: PortalStageInfo[] = [
   {
-    key: "start_deal",
+    key: "deal_started",
     label: "Deal started",
     stage: "received",
     order: 0,
@@ -29,30 +33,66 @@ export const PROPOLY_STAGES: PropolyStageInfo[] = [
     blurb: "Collecting the holding fee that takes the property off the market.",
   },
   {
-    key: "references",
+    key: "referencing",
     label: "Referencing",
     stage: "communicated",
     order: 2,
-    blurb: "Credit, employer and previous-landlord checks, plus Right to Rent.",
+    blurb: "Credit, employer and previous-landlord checks.",
   },
   {
-    key: "tenancy_generation",
-    label: "Tenancy agreement",
+    key: "plc",
+    label: "PLC",
     stage: "communicated",
     order: 3,
-    blurb: "The agreement is being drawn up with all the agreed clauses.",
+    blurb: "Pre-let compliance — Right to Rent, gas/EICR/EPC certificates and licensing.",
   },
   {
-    key: "signing_and_move_in_monies",
-    label: "Signing & move-in monies",
+    key: "deposit",
+    label: "Deposit",
     stage: "accepted",
     order: 4,
-    blurb: "Signatures, plus the first month's rent and deposit being collected.",
+    blurb: "Collecting the tenancy deposit and registering it with the scheme.",
+  },
+  {
+    key: "tenancy_agreement",
+    label: "Tenancy agreement",
+    stage: "accepted",
+    order: 5,
+    blurb: "The agreement is drawn up with the agreed clauses and signed by all parties.",
+  },
+  {
+    key: "rent_payment",
+    label: "Rent payment",
+    stage: "accepted",
+    order: 6,
+    blurb: "First month's rent collected and the standing order set up.",
+  },
+  {
+    key: "move_day",
+    label: "Move day",
+    stage: "accepted",
+    order: 7,
+    blurb: "Keys, inventory and check-in — moving day.",
   },
 ];
 
-export const PROPOLY_STAGE_BY_KEY: Record<string, PropolyStageInfo> =
-  Object.fromEntries(PROPOLY_STAGES.map((s) => [s.key, s]));
+export const PORTAL_STAGE_BY_KEY: Record<string, PortalStageInfo> =
+  Object.fromEntries(PORTAL_STAGES.map((s) => [s.key, s]));
+
+/** Where each raw Propoly status lands on the portal pipeline by default. */
+export const PROPOLY_TO_PORTAL: Record<string, string> = {
+  start_deal: "deal_started",
+  holding_fee: "holding_fee",
+  references: "referencing",
+  tenancy_generation: "tenancy_agreement",
+  signing_and_move_in_monies: "rent_payment",
+  complete: "move_day",
+};
+
+/** Raw Propoly status → default portal stage key ("cancelled" passes through). */
+export function portalStageOf(rawStatusKey: string): string {
+  return PROPOLY_TO_PORTAL[rawStatusKey] ?? rawStatusKey;
+}
 
 export const PROPOLY_APP_URL = "https://prod.propoly.com";
 

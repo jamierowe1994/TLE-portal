@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveDealAccess } from "@/lib/deal-access";
 import {
-  effectiveStatusKey,
+  effectivePortalStage,
   logSystemEvent,
   setChecklistItem,
   setStageOverride,
 } from "@/lib/deal-store";
-import { CHECKLIST_ITEMS, PROPOLY_STAGE_BY_KEY } from "@/lib/propoly-stages";
+import { CHECKLIST_ITEMS, PORTAL_STAGE_BY_KEY } from "@/lib/propoly-stages";
 
 // Pre-tenancy actions on one deal — Kirstie (or an admin) only:
 //   POST { stage: "references" }        move the deal's displayed stage
@@ -40,7 +40,7 @@ export async function POST(
 
   if ("stage" in body) {
     const stage = body.stage;
-    if (stage !== null && (typeof stage !== "string" || !PROPOLY_STAGE_BY_KEY[stage])) {
+    if (stage !== null && (typeof stage !== "string" || !PORTAL_STAGE_BY_KEY[stage])) {
       return NextResponse.json({ error: "Unknown stage." }, { status: 400 });
     }
     const meta = await setStageOverride(
@@ -53,13 +53,13 @@ export async function POST(
     if (stage === null) {
       await logSystemEvent(id, actor, "reset the stage to Propoly's live status");
     } else {
-      const label = PROPOLY_STAGE_BY_KEY[stage as string]?.label ?? stage;
+      const label = PORTAL_STAGE_BY_KEY[stage as string]?.label ?? stage;
       await logSystemEvent(id, actor, `moved the deal to ${label}`);
     }
     return NextResponse.json({
       meta,
       statusKey: access.deal.statusKey,
-      effectiveStatusKey: effectiveStatusKey(access.deal.statusKey, meta),
+      effectiveStatusKey: effectivePortalStage(access.deal.statusKey, meta),
     });
   }
 
@@ -78,7 +78,7 @@ export async function POST(
     return NextResponse.json({
       meta,
       statusKey: access.deal.statusKey,
-      effectiveStatusKey: effectiveStatusKey(access.deal.statusKey, meta),
+      effectiveStatusKey: effectivePortalStage(access.deal.statusKey, meta),
     });
   }
 

@@ -21,8 +21,9 @@ import { formatGBP } from "@/lib/format";
 import {
   CHECKLIST_ITEMS,
   PROPOLY_APP_URL,
-  PROPOLY_STAGES,
-  PROPOLY_STAGE_BY_KEY,
+  PORTAL_STAGES,
+  PORTAL_STAGE_BY_KEY,
+  portalStageOf,
 } from "@/lib/propoly-stages";
 import type {
   DealEmail,
@@ -59,21 +60,27 @@ const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
 
 const STAGE_PILL: Record<string, string> = {
-  start_deal: "border-line bg-page text-muted",
+  deal_started: "border-line bg-page text-muted",
   holding_fee: "border-amber-200 bg-amber-50 text-amber-700",
-  references: "border-sky-200 bg-sky-50 text-sky-700",
-  tenancy_generation: "border-indigo-200 bg-indigo-50 text-indigo-700",
-  signing_and_move_in_monies: "border-green-200 bg-green-50 text-green-700",
+  referencing: "border-sky-200 bg-sky-50 text-sky-700",
+  plc: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  deposit: "border-violet-200 bg-violet-50 text-violet-700",
+  tenancy_agreement: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  rent_payment: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  move_day: "border-green-300 bg-green-50 text-green-800",
   cancelled: "border-line bg-page text-muted",
 };
 
 // Thin accent along the top of each kanban column, matched to the pill hues.
 const STAGE_BAR: Record<string, string> = {
-  start_deal: "bg-gray-300",
+  deal_started: "bg-gray-300",
   holding_fee: "bg-amber-400",
-  references: "bg-sky-400",
-  tenancy_generation: "bg-indigo-400",
-  signing_and_move_in_monies: "bg-green-500",
+  referencing: "bg-sky-400",
+  plc: "bg-cyan-400",
+  deposit: "bg-violet-400",
+  tenancy_agreement: "bg-indigo-400",
+  rent_payment: "bg-emerald-400",
+  move_day: "bg-green-500",
   cancelled: "bg-gray-300",
 };
 
@@ -100,7 +107,7 @@ function stagePill(key: string): string {
 }
 
 function stageLabel(key: string): string {
-  return PROPOLY_STAGE_BY_KEY[key]?.label ?? key.replace(/_/g, " ");
+  return PORTAL_STAGE_BY_KEY[key]?.label ?? key.replace(/_/g, " ");
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -344,7 +351,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   // Column layout: one pile per stage; slipped move-ins float to the top of
   // their pile, then soonest move-in first.
   const columns = useMemo(() => {
-    const keys = PROPOLY_STAGES.map((s) => s.key);
+    const keys = PORTAL_STAGES.map((s) => s.key);
     if (showCancelled) keys.push("cancelled");
     return keys.map((key) => ({
       key,
@@ -509,7 +516,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
               {columns.map((col) => (
                 <div
                   key={col.key}
-                  className="flex w-60 shrink-0 flex-col rounded-2xl bg-black/[0.03] lg:w-auto lg:flex-1"
+                  className="flex w-56 shrink-0 flex-col rounded-2xl bg-black/[0.03] lg:w-auto lg:min-w-[170px] lg:flex-1"
                 >
                   <div className={`h-1 rounded-t-2xl ${STAGE_BAR[col.key] ?? "bg-gray-300"}`} />
                   <div className="flex items-baseline justify-between px-3 pb-2 pt-2.5">
@@ -691,7 +698,7 @@ function DealWorkspace({
       portal: {
         ...deal.portal,
         override:
-          m.stageOverride && eff !== deal.statusKey
+          m.stageOverride && eff !== portalStageOf(deal.statusKey)
             ? { stageKey: m.stageOverride, by: m.stageBy ?? "", at: m.stageAt ?? "" }
             : null,
         checklistDone: done,
@@ -768,8 +775,8 @@ function DealWorkspace({
 
   const cancelled = deal.statusKey === "cancelled";
   const p = deal.app.propoly;
-  const currentIdx = PROPOLY_STAGES.findIndex((s) => s.key === effective);
-  const moved = effective !== deal.statusKey;
+  const currentIdx = PORTAL_STAGES.findIndex((s) => s.key === effective);
+  const moved = effective !== portalStageOf(deal.statusKey);
   const checklistDone = meta
     ? CHECKLIST_ITEMS.filter((i) => meta.checklist[i.key]?.done).length
     : 0;
@@ -835,7 +842,7 @@ function DealWorkspace({
                 Moved to <span className="font-semibold">{stageLabel(effective)}</span> by{" "}
                 {meta.stageBy}
                 {meta.stageAt ? ` · ${fmtDateTime(meta.stageAt)}` : ""} — Propoly itself still
-                shows {stageLabel(deal.statusKey)}.
+                shows {stageLabel(portalStageOf(deal.statusKey))}.
                 <button
                   type="button"
                   disabled={busy}
@@ -937,7 +944,7 @@ function DealWorkspace({
                 Progression
               </h3>
               <ol className="mt-4">
-                {PROPOLY_STAGES.map((s, i) => {
+                {PORTAL_STAGES.map((s, i) => {
                   const state = cancelled
                     ? "off"
                     : i < currentIdx
@@ -945,7 +952,7 @@ function DealWorkspace({
                       : i === currentIdx
                         ? "current"
                         : "todo";
-                  const last = i === PROPOLY_STAGES.length - 1;
+                  const last = i === PORTAL_STAGES.length - 1;
                   return (
                     <li key={s.key} className="flex gap-3">
                       <div className="flex flex-col items-center">

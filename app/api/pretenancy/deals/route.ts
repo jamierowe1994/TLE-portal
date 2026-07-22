@@ -3,8 +3,8 @@ import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { isPreTenancyEmail } from "@/lib/brand";
 import { findById } from "@/lib/users-store";
 import { getAllPropolyDeals, getPropolyMoveInForecast } from "@/lib/propoly-deals";
-import { effectiveStatusKey, getOverlays } from "@/lib/deal-store";
-import { PROPOLY_STAGES } from "@/lib/propoly-stages";
+import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
+import { PORTAL_STAGES, portalStageOf } from "@/lib/propoly-stages";
 import type { DealPortalOverlay } from "@/lib/types";
 
 // GET /api/pretenancy/deals — every Propoly deal across all TLE agents with
@@ -15,9 +15,9 @@ import type { DealPortalOverlay } from "@/lib/types";
 export interface PreTenancyDeal {
   // AgentApplication fields the board renders, via the same shape the agent sees
   app: import("@/lib/rex-stats").AgentApplication;
-  /** Live Propoly status. */
+  /** Live RAW Propoly status (start_deal … cancelled). */
   statusKey: string;
-  /** Status after Kirstie's still-valid stage move (== statusKey if none). */
+  /** PORTAL stage (8-stage pipeline) after any still-valid stage move. */
   effectiveStatusKey: string;
   agentName: string | null;
   agentEmail: string | null;
@@ -52,12 +52,12 @@ export async function GET(req: NextRequest) {
   const out: PreTenancyDeal[] = deals.map((d) => {
     const entry = overlays.get(d.app.id);
     const meta = entry?.meta ?? null;
-    const effective = effectiveStatusKey(d.statusKey, meta);
+    const effective = effectivePortalStage(d.statusKey, meta);
     const overlay: DealPortalOverlay = entry
       ? {
           ...entry.overlay,
           // A stage move Propoly has since overtaken is stale — don't show it.
-          override: effective === d.statusKey ? null : entry.overlay.override,
+          override: effective === portalStageOf(d.statusKey) ? null : entry.overlay.override,
         }
       : { notesCount: 0, lastNote: null, override: null, checklistDone: 0, checklistTotal: 0 };
     return {
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   );
   const summary = {
     pipelineTotal: active.length,
-    byStage: PROPOLY_STAGES.map((s) => ({
+    byStage: PORTAL_STAGES.map((s) => ({
       key: s.key,
       label: s.label,
       count: active.filter((d) => d.effectiveStatusKey === s.key).length,

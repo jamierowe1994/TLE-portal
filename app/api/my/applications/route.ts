@@ -4,8 +4,8 @@ import { findById } from "@/lib/users-store";
 import { resolveRexUserId } from "@/lib/agent-link";
 import { getAgentApplications } from "@/lib/rex-stats";
 import { getPropolyAgentDeals } from "@/lib/propoly-deals";
-import { effectiveStatusKey, getOverlays } from "@/lib/deal-store";
-import { PROPOLY_STAGE_BY_KEY } from "@/lib/propoly-stages";
+import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
+import { PORTAL_STAGE_BY_KEY, portalStageOf } from "@/lib/propoly-stages";
 
 // The signed-in agent's let pipeline. Propoly (tenancy progression) is the
 // primary source — it's the system actually running referencing and
@@ -27,23 +27,31 @@ export async function GET(req: NextRequest) {
   }).catch(() => null);
   if (propoly != null) {
     // Layer on the pre-tenancy overlay: Kirstie's notes, checklist progress
-    // and any stage move — so her actions show up in the agent's file.
+    // and any stage move — so her actions show up in the agent's file. Raw
+    // Propoly statuses are translated onto the shared 8-stage portal
+    // pipeline so the agent's board matches Kirstie's exactly.
     const overlays = await getOverlays(propoly.map((a) => a.id)).catch(() => null);
     const applications = propoly.map((a) => {
+      if (!a.propoly) return a;
+      const raw = a.propoly.statusKey;
+      if (raw === "cancelled") return a;
       const entry = overlays?.get(a.id);
-      if (!entry || !a.propoly) return a;
-      const effective = effectiveStatusKey(a.propoly.statusKey, entry.meta);
-      const moved = effective !== a.propoly.statusKey;
-      const info = moved ? PROPOLY_STAGE_BY_KEY[effective] : null;
+      const effective = entry ? effectivePortalStage(raw, entry.meta) : portalStageOf(raw);
+      const moved = effective !== portalStageOf(raw);
+      const info = PORTAL_STAGE_BY_KEY[effective];
       return {
         ...a,
         // A still-valid stage move changes what the agent sees everywhere.
         ...(info ? { stage: info.stage, status: info.label } : {}),
         propoly: { ...a.propoly, statusKey: effective },
-        portal: {
-          ...entry.overlay,
-          override: moved ? entry.overlay.override : null,
-        },
+        ...(entry
+          ? {
+              portal: {
+                ...entry.overlay,
+                override: moved ? entry.overlay.override : null,
+              },
+            }
+          : {}),
       };
     });
     return NextResponse.json({

@@ -13,7 +13,7 @@ import type {
   DealPortalOverlay,
   DealTask,
 } from "@/lib/types";
-import { CHECKLIST_ITEMS } from "@/lib/propoly-stages";
+import { CHECKLIST_ITEMS, portalStageOf } from "@/lib/propoly-stages";
 
 // Pre-tenancy overlay store — the portal-owned data layered onto Propoly
 // deals: two-way notes (Kirstie ↔ agent), her manual stage moves and the
@@ -349,7 +349,11 @@ async function saveMeta(meta: DealMeta): Promise<void> {
   await writeJson(META_FILE, all);
 }
 
-/** Move the deal to a stage (or null to hand back to the live Propoly status). */
+/**
+ * Move the deal to a PORTAL stage (or null to hand back to Propoly's live
+ * status). Moving it to exactly where Propoly already puts it clears the
+ * override rather than storing a no-op.
+ */
 export async function setStageOverride(
   dealId: string,
   stageKey: string | null,
@@ -357,7 +361,7 @@ export async function setStageOverride(
   byName: string
 ): Promise<DealMeta> {
   const meta = await getMeta(dealId);
-  if (stageKey === null || stageKey === liveStatusKey) {
+  if (stageKey === null || stageKey === portalStageOf(liveStatusKey)) {
     meta.stageOverride = null;
     meta.stageBasedOn = null;
     meta.stageBy = null;
@@ -392,13 +396,17 @@ export async function setChecklistItem(
 /* ------------------------------------------------------------------------ */
 
 /**
- * The stage a deal should display at: Kirstie's move while it still applies.
- * Her override records the live status it was based on — if Propoly has
- * since moved the deal itself, the live system wins and the move is stale.
+ * The PORTAL stage a deal displays at: Kirstie's move while it still
+ * applies, otherwise the live Propoly status mapped onto the 8-stage portal
+ * pipeline. Her override records the raw status it was based on — if
+ * Propoly has since moved the deal itself, the live system wins and the
+ * move is stale.
  */
-export function effectiveStatusKey(liveStatusKey: string, meta: DealMeta | null): string {
-  if (!meta?.stageOverride) return liveStatusKey;
-  return meta.stageBasedOn === liveStatusKey ? meta.stageOverride : liveStatusKey;
+export function effectivePortalStage(liveStatusKey: string, meta: DealMeta | null): string {
+  if (meta?.stageOverride && meta.stageBasedOn === liveStatusKey) {
+    return meta.stageOverride;
+  }
+  return portalStageOf(liveStatusKey);
 }
 
 export function checklistDoneCount(meta: DealMeta | null): number {

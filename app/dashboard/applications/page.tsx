@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatGBP } from "@/lib/format";
 import { BRAND } from "@/lib/brand";
 import { DealNotesPanel } from "@/components/DealNotes";
-import { CHECKLIST_ITEMS, PROPOLY_APP_URL, PROPOLY_STAGES } from "@/lib/propoly-stages";
+import { CHECKLIST_ITEMS, PORTAL_STAGES, PROPOLY_APP_URL } from "@/lib/propoly-stages";
 import type { AgentApplication, ApplicationStage } from "@/lib/rex-stats";
 import type { DealMeta } from "@/lib/types";
 
@@ -131,7 +131,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
 
   const p = a.propoly!;
   const cancelled = p.statusKey === "cancelled";
-  const currentIdx = PROPOLY_STAGES.findIndex((s) => s.key === p.statusKey);
+  const currentIdx = PORTAL_STAGES.findIndex((s) => s.key === p.statusKey);
 
   return (
     <div
@@ -186,7 +186,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
 
           {/* ---- the stage board ---- */}
           <ol className="mt-6">
-            {PROPOLY_STAGES.map((s, i) => {
+            {PORTAL_STAGES.map((s, i) => {
               const state = cancelled
                 ? "off"
                 : i < currentIdx
@@ -194,7 +194,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   : i === currentIdx
                     ? "current"
                     : "todo";
-              const last = i === PROPOLY_STAGES.length - 1;
+              const last = i === PORTAL_STAGES.length - 1;
               return (
                 <li key={s.key} className="flex gap-3">
                   <div className="flex flex-col items-center">
@@ -568,8 +568,8 @@ export default function ApplicationsPage() {
                     ? s === "received"
                       ? "Getting started"
                       : s === "communicated"
-                        ? "References & agreement"
-                        : "Signing & move-in"
+                        ? "Referencing & compliance"
+                        : "Agreement & move-in"
                     : s === "received"
                       ? "Received"
                       : s === "communicated"
