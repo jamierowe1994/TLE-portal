@@ -16,6 +16,7 @@ import {
 import { getTegHeadcount, tegHubConfigured, type TegHeadcount } from "@/lib/teg-hub";
 import { propolyConfigured } from "@/lib/propoly";
 import { currentMonth } from "@/lib/format";
+import { loadSnapshot, saveSnapshot } from "@/lib/propoly-snapshot";
 
 // Business-wide LIVE figures from two sources:
 //   REX     — every lettings agent's funnel + portfolio, summed (heavy,
@@ -53,6 +54,9 @@ interface Payload {
 }
 
 const cache = new Map<string, { at: number; data: Payload }>();
+// One recompute at a time per month — a second admin loading during the
+// ~15s REX sweep must not double the load.
+const inflight = new Map<string, Promise<Payload | null>>();
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -86,11 +90,54 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ configured: false, month, propoly, teg }, { status: 200 });
   }
 
+  // Fresh in memory → answer instantly.
   const cached = cache.get(month);
   if (!force && cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return NextResponse.json({ ...cached.data, cached: true });
   }
 
+  // Stale-while-revalidate: the ~15s REX sweep must never sit between Susan
+  // and her numbers. If we have ANY last-good payload (memory or the
+  // persisted snapshot that survives deploys), serve it NOW flagged stale
+  // and recompute in the background; the tab re-polls to pick up the fresh
+  // figures. A forced refresh still waits for the real thing.
+  if (!force) {
+    const lastGood =
+      cached?.data ??
+      (await loadSnapshot<Payload>(`live-business:${month}`).catch(() => null))?.data ??
+      null;
+    if (lastGood) {
+      if (!inflight.has(month)) {
+        const job = compute(month, false)
+          .catch(() => null)
+          .finally(() => inflight.delete(month));
+        inflight.set(month, job);
+      }
+      return NextResponse.json({ ...lastGood, cached: true, stale: true });
+    }
+  }
+
+  // Nothing to serve (first ever run) or forced — do the full sweep, shared
+  // with any other request already doing it.
+  let job = inflight.get(month);
+  if (!job || force) {
+    job = compute(month, force)
+      .catch(() => null)
+      .finally(() => inflight.delete(month));
+    inflight.set(month, job);
+  }
+  const data = await job;
+  if (!data) {
+    return NextResponse.json(
+      { error: "Couldn't compute the live figures just now." },
+      { status: 502 }
+    );
+  }
+  return NextResponse.json({ ...data, cached: false });
+}
+
+/** The full live sweep: REX per-agent sums + Propoly + Team Hub. ~15s cold. */
+async function compute(month: string, force: boolean): Promise<Payload> {
   const [agents, propoly, teg, rlpMtd] = await Promise.all([
     rexLettingsAgents(),
     getPropolyBusinessStats(month).catch(() => null),
@@ -171,11 +218,13 @@ export async function GET(req: NextRequest) {
     rlpMtd,
     generatedAt: new Date().toISOString(),
   };
-  // Only cache a COMPLETE payload — a Propoly/TEG timeout on a cold run must
-  // not freeze `null` into everyone's dashboard for the next five minutes.
+  // Only cache/persist a COMPLETE payload — a Propoly/TEG timeout on a cold
+  // run must not freeze `null` into everyone's dashboard.
   const propolyOk = !propolyConfigured() || propoly != null;
   const tegOk = !tegHubConfigured() || teg != null;
-  if (propolyOk && tegOk) cache.set(month, { at: Date.now(), data });
-  const debug = req.nextUrl.searchParams.get("debug") === "1";
-  return NextResponse.json({ ...data, cached: false, ...(debug ? { perAgent: counted } : {}) });
+  if (propolyOk && tegOk) {
+    cache.set(month, { at: Date.now(), data });
+    void saveSnapshot(`live-business:${month}`, data);
+  }
+  return data;
 }

@@ -11,7 +11,7 @@
 // Productivity & Ramp → Business KPIs (Sales Funnel) → Conversion Rates →
 // MAs by Partner Type → Monthly GCI vs Budget → Year on Year Growth.
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Bars from "@/components/charts/Bars";
 import type { SeedData, PeriodKpis } from "@/lib/seed-data";
 import type { StatValue } from "@/lib/types";
@@ -265,17 +265,27 @@ export default function Overview({ month }: { month: string }) {
   }, []);
 
   // Live layer (REX business sums + Propoly) — upgrades matching tiles.
+  // The API answers instantly with the last-good figures (flagged `stale`)
+  // while it re-sweeps REX in the background — poll a few times to swap the
+  // fresh numbers in as soon as they land.
+  const staleRetries = useRef(0);
   const loadLive = useCallback(async (refresh = false) => {
     setLiveLoading(true);
     try {
       const res = await fetch(`/api/admin/live-business?month=2026-07${refresh ? "&refresh=1" : ""}`, {
         cache: "no-store",
       });
-      const j = (await res.json()) as LiveBusiness & { configured?: boolean };
+      const j = (await res.json()) as LiveBusiness & { configured?: boolean; stale?: boolean };
       setLive(j);
+      if (j.stale && staleRetries.current < 6) {
+        staleRetries.current += 1;
+        setTimeout(() => void loadLive(), 6000);
+        return; // keep the refreshing chip up while the sweep runs
+      }
+      staleRetries.current = 0;
+      setLiveLoading(false);
     } catch {
       /* live layer is an upgrade — the snapshot mirror still renders */
-    } finally {
       setLiveLoading(false);
     }
   }, []);
