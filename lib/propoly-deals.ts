@@ -398,9 +398,12 @@ export interface PropolyBusinessStats {
 }
 
 // Completed deals are the big list (500+) — cached separately and longer.
+// propertyUuid lets us resolve the managing agent (via propertyManagers)
+// for per-agent move-in reporting (ramp time).
 interface CompletedDeal {
   date: string | null; // move_in_date
   service: string | null; // full_managed | tenant_find | rent_collect
+  propertyUuid: string | null;
 }
 
 let completesCache: { at: number; completes: CompletedDeal[] } | null = null;
@@ -411,7 +414,8 @@ async function ensureCompletes(): Promise<CompletedDeal[] | null> {
     return completesCache.completes;
   }
   if (!completesCache) {
-    const snap = await loadSnapshot<CompletedDeal[]>("completes");
+    // v2 snapshot key — v1 lacked propertyUuid; a clean re-pull fills it.
+    const snap = await loadSnapshot<CompletedDeal[]>("completes-v2");
     if (snap) {
       completesCache = { at: snap.savedAt, completes: snap.data };
       if (Date.now() - snap.savedAt < COMPLETES_TTL_MS) return completesCache.completes;
@@ -425,10 +429,56 @@ async function ensureCompletes(): Promise<CompletedDeal[] | null> {
       date: typeof r.move_in_date === "string" ? r.move_in_date : null,
       service:
         typeof r.tenancy_service_level === "string" ? r.tenancy_service_level : null,
+      propertyUuid: typeof r.property_uuid === "string" ? r.property_uuid : null,
     })),
   };
-  void saveSnapshot("completes", completesCache.completes);
+  void saveSnapshot("completes-v2", completesCache.completes);
   return completesCache.completes;
+}
+
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Count of completed move-ins for one agent with a move-in date in
+ * [start, end] (inclusive ISO dates) — powers ramp-time reporting. Matches
+ * the deal's property manager by email, then by normalised name (new
+ * starters aren't in the static roster, so we compare names directly rather
+ * than via a roster slug). null = Propoly unconfigured/unreachable.
+ */
+export async function getAgentMoveInsInWindow(
+  ref: { email?: string | null; name?: string | null },
+  start: string,
+  end: string
+): Promise<number | null> {
+  if (!propolyConfigured()) return null;
+  const email = ref.email?.trim().toLowerCase() || null;
+  const name = ref.name ? normName(ref.name) : null;
+  if (!email && !name) return 0;
+  const work = (async () => {
+    const [completes, managerMap] = await Promise.all([
+      ensureCompletes(),
+      propertyManagers(),
+    ]);
+    if (!completes) return null;
+    let count = 0;
+    for (const c of completes) {
+      if (!c.date || c.date < start || c.date > end) continue;
+      const mgr = c.propertyUuid ? managerMap?.get(c.propertyUuid) : undefined;
+      if (!mgr) continue;
+      const byEmail = email != null && mgr.email === email;
+      const byName = !byEmail && name != null && mgr.name != null && normName(mgr.name) === name;
+      if (byEmail || byName) count += 1;
+    }
+    return count;
+  })();
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
 }
 
 /**

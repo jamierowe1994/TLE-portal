@@ -102,6 +102,23 @@ interface HistoryPayload {
   };
 }
 
+// Ramp cohort — one new starter cross-referenced across TEG/REX/Propoly.
+interface RampStarter {
+  name: string;
+  email: string | null;
+  dateLaunched: string;
+  rexId: string | null;
+  windowEnd: string;
+  marketAppraisals: number | null;
+  listings: number | null;
+  moveIns: number | null;
+}
+interface RampPayload {
+  configured: boolean;
+  starters: RampStarter[];
+  stale?: boolean;
+}
+
 /* --------------------------------- tiles --------------------------------- */
 
 // The mirror's building block. Live figures pop (white card, green dot);
@@ -112,12 +129,15 @@ function Tile({
   stat,
   sub,
   flag,
+  compact = false,
 }: {
   label: string;
   stat: StatValue;
   sub?: string | null;
   /** Set → single red dot under the figure; the text is the hover reason. */
   flag?: string | null;
+  /** Denser tile for the headline band — smaller number so £ figures fit. */
+  compact?: boolean;
 }) {
   const isLive =
     stat.source === "live-rex" ||
@@ -129,7 +149,7 @@ function Tile({
   const value = stat.display ?? (stat.value != null ? formatNum(stat.value) : "—");
   return (
     <div
-      className={`relative rounded-xl border p-3 text-center transition ${
+      className={`relative rounded-xl border text-center transition ${compact ? "p-2.5" : "p-3"} ${
         isLive
           ? "border-green-200 bg-white shadow-sm"
           : isManual
@@ -139,15 +159,15 @@ function Tile({
       title={stat.note ?? undefined}
     >
       {isLive ? (
-        <span className="absolute right-2 top-2 inline-flex items-center gap-1 text-[9px] font-semibold text-green-600">
+        <span className={`absolute inline-flex items-center gap-1 font-semibold text-green-600 ${compact ? "right-1.5 top-1.5 text-[8px]" : "right-2 top-2 text-[9px]"}`}>
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
           LIVE
         </span>
       ) : isManual ? (
-        <span className="absolute right-2 top-2 text-[9px] font-semibold text-amber-600">MANUAL</span>
+        <span className={`absolute font-semibold text-amber-600 ${compact ? "right-1.5 top-1.5 text-[8px]" : "right-2 top-2 text-[9px]"}`}>MANUAL</span>
       ) : null}
       <div
-        className={`stat-value text-[24px] leading-tight ${
+        className={`stat-value leading-tight ${compact ? "text-[19px]" : "text-[24px]"} ${
           isLive || isManual ? "text-ink" : "text-ink/60"
         }`}
       >
@@ -160,15 +180,100 @@ function Tile({
           aria-label={flag}
         />
       ) : null}
-      <div className={`mt-1 text-[10px] font-semibold uppercase tracking-wide ${isLive ? "text-ink" : "text-muted"}`}>
+      <div className={`mt-1 font-semibold uppercase tracking-wide ${compact ? "text-[9px]" : "text-[10px]"} ${isLive ? "text-ink" : "text-muted"}`}>
         {label}
       </div>
-      {sub ? <div className="mt-0.5 text-[10px] leading-snug text-muted">{sub}</div> : null}
+      {sub ? <div className={`mt-0.5 leading-snug text-muted ${compact ? "text-[9px]" : "text-[10px]"}`}>{sub}</div> : null}
     </div>
   );
 }
 
 const TILE_GRID = "grid gap-3 grid-cols-[repeat(auto-fit,minmax(140px,1fr))]";
+// Headline band: denser so seven tiles (two with £ figures) fit without
+// stretching the page or clipping the numbers.
+const HEADLINE_GRID = "grid gap-2.5 grid-cols-[repeat(auto-fit,minmax(122px,1fr))]";
+
+/* --------------------------- ramp breakdown --------------------------- */
+
+// Per-starter table under the ramp tiles: who ramped, from their launch date,
+// with MAs / listings / move-ins in their first 60 days. This is the working
+// detail behind the four aggregate tiles — collapsed by default.
+function RampBreakdown({
+  starters,
+}: {
+  starters: {
+    name: string;
+    dateLaunched: string;
+    windowEnd: string;
+    rexId: string | null;
+    marketAppraisals: number | null;
+    listings: number | null;
+    moveIns: number | null;
+  }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const fmtDay = (iso: string) => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    return Number.isNaN(d.getTime())
+      ? iso
+      : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  };
+  const cell = (n: number | null) =>
+    n == null ? <span className="text-muted/60" title="Couldn't match this starter in the system">—</span> : n;
+  const sorted = [...starters].sort((a, b) => b.dateLaunched.localeCompare(a.dateLaunched));
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="hide-when-presenting text-[12px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+      >
+        {open ? "Hide" : "Show"} the {starters.length} starter{starters.length === 1 ? "" : "s"} behind these numbers
+      </button>
+      {open ? (
+        <div className="mt-2 overflow-x-auto rounded-xl border border-line">
+          <table className="w-full min-w-[560px] text-left text-[12px]">
+            <thead>
+              <tr className="border-b border-line bg-page/60 text-[10px] uppercase tracking-wide text-muted">
+                <th className="px-3 py-2 font-semibold">Partner</th>
+                <th className="px-3 py-2 font-semibold">Launched</th>
+                <th className="px-3 py-2 text-right font-semibold">MAs</th>
+                <th className="px-3 py-2 text-right font-semibold">Listings</th>
+                <th className="px-3 py-2 text-right font-semibold">Move-ins</th>
+                <th className="px-3 py-2 font-semibold">First 60 days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((s, i) => (
+                <tr key={i} className="border-b border-line/60 last:border-0">
+                  <td className="px-3 py-2 font-medium">
+                    {s.name}
+                    {s.rexId == null ? (
+                      <span
+                        className="ml-1.5 cursor-help text-[10px] text-amber-600"
+                        title="No REX match by email — MAs/listings can't be counted for this starter"
+                      >
+                        ⚠
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 text-muted">{fmtDay(s.dateLaunched)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{cell(s.marketAppraisals)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{cell(s.listings)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{cell(s.moveIns)}</td>
+                  <td className="px-3 py-2 text-[11px] text-muted">
+                    to {fmtDay(s.windowEnd)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 // Seed notes read "<snapshot boilerplate> · Source: <the useful bit>" — tiles
 // show just the useful bit (the full note stays in the hover tooltip).
@@ -243,8 +348,9 @@ export default function Overview({ month }: { month: string }) {
   const [live, setLive] = useState<LiveBusiness | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
   const [hist, setHist] = useState<HistoryPayload | null>(null);
+  const [ramp, setRamp] = useState<RampPayload | null>(null);
   // Working period pills — one per pill-driven section, exactly like hers.
-  const [rampKey, setRampKey] = useState<string>("jul");
+  const [rampKey, setRampKey] = useState<string>("ytd");
   const [kpiKey, setKpiKey] = useState<string>("jul");
 
   useEffect(() => {
@@ -309,6 +415,32 @@ export default function Overview({ month }: { month: string }) {
         /* history is an upgrade — period pills still show the snapshot */
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Ramp cohort — new starters cross-referenced across TEG/REX/Propoly.
+  // Stale-while-revalidate: the sweep is a couple of REX calls per starter.
+  const rampRetries = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/admin/ramp", { cache: "no-store" });
+        if (!res.ok) return;
+        const j = (await res.json()) as RampPayload;
+        if (cancelled) return;
+        setRamp(j);
+        if (j.stale && rampRetries.current < 6) {
+          rampRetries.current += 1;
+          setTimeout(() => void tick(), 6000);
+        }
+      } catch {
+        /* ramp is an upgrade — the snapshot tiles still render */
+      }
+    };
+    void tick();
     return () => {
       cancelled = true;
     };
@@ -640,6 +772,44 @@ export default function Overview({ month }: { month: string }) {
     label: p.label.replace(" MTD", ""),
   }));
 
+  // ---- Live ramp cohort, filtered by the selected period pill ----
+  // A starter belongs to the period if their launch MONTH is in it (ytd =
+  // whole year; jul = this month). Each starter's MA/listing/move-in counts
+  // cover their first 60 days (to date). null figures don't drag a sum to 0 —
+  // they're skipped, and the tile carries a live badge off the real totals.
+  const rampMonths =
+    rampKey === "ytd"
+      ? [...(PERIOD_MONTHS.ytd ?? []), "2026-07"]
+      : rampKey === "jul"
+        ? ["2026-07"]
+        : (PERIOD_MONTHS[rampKey] ?? []);
+  const rampMonthSet = new Set(rampMonths);
+  const liveCohort =
+    ramp?.configured && ramp.starters
+      ? ramp.starters.filter((s) => rampMonthSet.has(s.dateLaunched.slice(0, 7)))
+      : null;
+  const cohortSum = (key: "marketAppraisals" | "listings" | "moveIns"): number =>
+    (liveCohort ?? []).reduce((t, s) => t + (s[key] ?? 0), 0);
+  const rampStat = (value: number, note: string): StatValue => ({
+    value,
+    source: "live-teg",
+    note,
+    asOf: new Date().toISOString().slice(0, 10),
+  });
+  const periodWord = rampKey === "ytd" ? "this year" : (d.periods[rampKey]?.label ?? "").replace(" MTD", "");
+  const rampNewStarters = liveCohort
+    ? rampStat(liveCohort.length, `Live from TEG Team Hub — partners launched ${periodWord} (by date_launched).`)
+    : rampPeriod.ramp.newStarters;
+  const rampMa = liveCohort
+    ? rampStat(cohortSum("marketAppraisals"), "Live from REX — market appraisals these starters recorded in their first 60 days.")
+    : rampPeriod.ramp.maInMonths1To2;
+  const rampListings = liveCohort
+    ? rampStat(cohortSum("listings"), "Live from REX — rental listings these starters created in their first 60 days.")
+    : rampPeriod.ramp.listingInMonths1To2;
+  const rampMoveIns = liveCohort
+    ? rampStat(cohortSum("moveIns"), "Live from Propoly — completed move-ins these starters achieved within 60 days of launch.")
+    : rampPeriod.ramp.moveInWithin60Days;
+
   return (
     <div className="space-y-5">
       {/* ---- headline band ---- */}
@@ -663,14 +833,14 @@ export default function Overview({ month }: { month: string }) {
             {liveLoading ? "Refreshing…" : "Refresh live"}
           </button>
         </div>
-        <div className={TILE_GRID}>
-          <Tile label="Jun YTD MAs" stat={hlMas.stat} flag={hlMas.flag} />
-          <Tile label="Jun YTD Listings" stat={hlListings.stat} flag={hlListings.flag} />
-          <Tile label="Jun YTD Applications" stat={hlApplications.stat} flag={hlApplications.flag} />
-          <Tile label="Jun YTD Move-ins" stat={hlMoveIns.stat} flag={hlMoveIns.flag} />
-          <Tile label="Jun YTD GCI exc VAT" stat={d.headline.gciExcVat} />
-          <Tile label="Jun YTD Total Income" stat={d.headline.totalIncome} />
-          <Tile label="Pipeline now" stat={hlPipeline} />
+        <div className={HEADLINE_GRID}>
+          <Tile label="Jun YTD MAs" stat={hlMas.stat} flag={hlMas.flag} compact />
+          <Tile label="Jun YTD Listings" stat={hlListings.stat} flag={hlListings.flag} compact />
+          <Tile label="Jun YTD Applications" stat={hlApplications.stat} flag={hlApplications.flag} compact />
+          <Tile label="Jun YTD Move-ins" stat={hlMoveIns.stat} flag={hlMoveIns.flag} compact />
+          <Tile label="Jun YTD GCI exc VAT" stat={d.headline.gciExcVat} compact />
+          <Tile label="Jun YTD Total Income" stat={d.headline.totalIncome} compact />
+          <Tile label="Pipeline now" stat={hlPipeline} compact />
         </div>
       </div>
 
@@ -691,15 +861,26 @@ export default function Overview({ month }: { month: string }) {
       {/* ---- 2. Partner Productivity & Ramp Time ---- */}
       <Section
         title="Partner Productivity & Ramp Time"
-        source={`${d.sources.headcount} · REX KPI reports · Target: MA months 1–2 · MI within 60 days`}
+        source={
+          liveCohort
+            ? "Live · TEG Team Hub start dates × REX MAs/listings × Propoly move-ins · first 60 days"
+            : `${d.sources.headcount} · REX KPI reports · Target: MA months 1–2 · MI within 60 days`
+        }
       >
         <PeriodPills options={rampPillOptions} active={rampKey} onChange={setRampKey} />
         <div className={TILE_GRID}>
-          <Tile label="New Starters" stat={rampPeriod.ramp.newStarters} sub={subNote(rampPeriod.ramp.newStarters)} />
-          <Tile label="MA in Months 1–2" stat={rampPeriod.ramp.maInMonths1To2} sub={subNote(rampPeriod.ramp.maInMonths1To2)} />
-          <Tile label="Listing in Months 1–2" stat={rampPeriod.ramp.listingInMonths1To2} sub={subNote(rampPeriod.ramp.listingInMonths1To2)} />
-          <Tile label="Move-in within 60 Days" stat={rampPeriod.ramp.moveInWithin60Days} sub={subNote(rampPeriod.ramp.moveInWithin60Days)} />
+          <Tile label="New Starters" stat={rampNewStarters} sub={liveCohort ? null : subNote(rampPeriod.ramp.newStarters)} />
+          <Tile label="MA in Months 1–2" stat={rampMa} sub={liveCohort ? null : subNote(rampPeriod.ramp.maInMonths1To2)} />
+          <Tile label="Listing in Months 1–2" stat={rampListings} sub={liveCohort ? null : subNote(rampPeriod.ramp.listingInMonths1To2)} />
+          <Tile label="Move-in within 60 Days" stat={rampMoveIns} sub={liveCohort ? null : subNote(rampPeriod.ramp.moveInWithin60Days)} />
         </div>
+        {liveCohort && liveCohort.length > 0 ? (
+          <RampBreakdown starters={liveCohort} />
+        ) : liveCohort && liveCohort.length === 0 ? (
+          <p className="mt-3 text-[12px] text-muted">
+            No partners launched in this period. Try the YTD pill for the full cohort.
+          </p>
+        ) : null}
       </Section>
 
       {/* ---- 3. Business KPIs — Sales Funnel ---- */}

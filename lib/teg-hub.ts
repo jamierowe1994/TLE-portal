@@ -124,6 +124,8 @@ export interface TegAgent {
   location?: string;
   dateLaunched?: string;
   leaveDate?: string;
+  /** REX user id — the join key for ramp-time cross-referencing. */
+  rexId?: number;
 }
 
 export interface TegHeadcount {
@@ -230,6 +232,7 @@ export async function getTegHeadcount(force = false): Promise<TegHeadcount | nul
         location: locationNames[p.location_id ?? ""],
         dateLaunched: p.date_launched,
         leaveDate: p.leave_date,
+        rexId: p.rex_id,
       });
     }
   }

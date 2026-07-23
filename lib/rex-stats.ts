@@ -404,6 +404,66 @@ export async function getBusinessMonthCounts(
   }
 }
 
+/* ------------------------------ ramp window ------------------------------ */
+
+// Was a listing row a real (non-draft) rental instruction? Shared with the
+// business month-counts logic above.
+function isRentalListing(r: Record<string, unknown>): boolean {
+  const cat = r.listing_category as { id?: string; text?: string } | string | null;
+  const catText = typeof cat === "object" && cat ? (cat.text ?? cat.id) : cat;
+  const pub = r.system_publication_status as { id?: string } | string | null;
+  const pubId = typeof pub === "object" && pub ? pub.id : pub;
+  return String(catText ?? "").toLowerCase().includes("rental") && pubId !== "draft";
+}
+
+export interface AgentRampCounts {
+  /** Recorded market appraisals in [start, end]. */
+  marketAppraisals: number | null;
+  /** Rental listings created (non-draft) in [start, end]. */
+  listings: number | null;
+}
+
+/**
+ * One agent's productivity in a date window [startISO, endISO] — the REX half
+ * of ramp-time reporting (MAs + listings a new starter generated in their
+ * first N days). Move-ins come from Propoly (getAgentMoveInsInWindow), which
+ * REX doesn't hold. null figures = couldn't ask; caller shows "—".
+ */
+export async function getAgentRampCounts(
+  rexUserId: string,
+  startISO: string,
+  endISO: string
+): Promise<AgentRampCounts | null> {
+  if (!rexConfigured() || !rexUserId) return null;
+
+  const work = (async (): Promise<AgentRampCounts | null> => {
+    const [maCount, listingRows] = await Promise.all([
+      countSearch("Appraisals", [
+        { name: "agent_1_id", type: "=", value: rexUserId },
+        { name: "appraisal_date", type: ">=", value: startISO },
+        { name: "appraisal_date", type: "<=", value: endISO },
+      ]),
+      pagedSearch("Listings", [
+        { name: "listing_agent_1_id", type: "=", value: rexUserId },
+        { name: "system_ctime", type: ">=", value: epoch(startISO) },
+        { name: "system_ctime", type: "<", value: String(Number(epoch(endISO)) + 86_400) },
+      ]),
+    ]);
+    const listings = listingRows ? listingRows.filter(isRentalListing).length : null;
+    if (maCount == null && listings == null) return null;
+    return { marketAppraisals: maCount, listings };
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
 // The agent's managed portfolio (count + monthly rent roll) from their leased
 // listings. Live, current-state. null on any failure → caller keeps snapshot.
 export async function getAgentPortfolio(rexUserId: string): Promise<AgentPortfolio | null> {
