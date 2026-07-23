@@ -72,18 +72,99 @@ const STAGE_PILL: Record<string, string> = {
   cancelled: "border-line bg-page text-muted",
 };
 
-// Thin accent along the top of each kanban column, matched to the pill hues.
-const STAGE_BAR: Record<string, string> = {
-  deal_started: "bg-gray-300",
-  holding_fee: "bg-amber-400",
-  referencing: "bg-sky-400",
-  plc: "bg-cyan-400",
-  deposit: "bg-violet-400",
-  tenancy_agreement: "bg-indigo-400",
-  rent_payment: "bg-emerald-400",
-  move_day: "bg-green-500",
-  cancelled: "bg-gray-300",
+// Per-stage visual identity for the category row, tabs and tiles: a coloured
+// icon chip (soft bg + icon colour) and a solid dot colour. Colour-coded so
+// the eye can track a deal's stage at a glance.
+interface StageVisual {
+  iconBg: string;
+  iconText: string;
+  dot: string;
+}
+const STAGE_VISUAL: Record<string, StageVisual> = {
+  deal_started: { iconBg: "bg-slate-100", iconText: "text-slate-600", dot: "bg-slate-400" },
+  holding_fee: { iconBg: "bg-amber-100", iconText: "text-amber-600", dot: "bg-amber-400" },
+  referencing: { iconBg: "bg-sky-100", iconText: "text-sky-600", dot: "bg-sky-400" },
+  plc: { iconBg: "bg-cyan-100", iconText: "text-cyan-600", dot: "bg-cyan-400" },
+  deposit: { iconBg: "bg-violet-100", iconText: "text-violet-600", dot: "bg-violet-400" },
+  tenancy_agreement: { iconBg: "bg-indigo-100", iconText: "text-indigo-600", dot: "bg-indigo-400" },
+  rent_payment: { iconBg: "bg-emerald-100", iconText: "text-emerald-600", dot: "bg-emerald-400" },
+  move_day: { iconBg: "bg-green-100", iconText: "text-green-700", dot: "bg-green-500" },
+  cancelled: { iconBg: "bg-gray-100", iconText: "text-gray-400", dot: "bg-gray-300" },
 };
+function stageVisual(key: string): StageVisual {
+  return STAGE_VISUAL[key] ?? STAGE_VISUAL.deal_started;
+}
+
+// One simple stroke icon per stage. `d` paths are drawn inside a 24-box.
+const STAGE_ICON_PATH: Record<string, string> = {
+  deal_started: "M9 12h6M9 16h6M9 8h2M7 3h7l5 5v11a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5",
+  holding_fee: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+  referencing: "M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3zM9 12l2 2 4-4",
+  plc: "M9 3h6a1 1 0 0 1 1 1v1h1a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1V4a1 1 0 0 1 1-1zM9 5h6M9.5 13l2 2 3.5-4",
+  deposit: "M12 3a4 4 0 0 0-4 4v3H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2V7a4 4 0 0 0-4-4zM10 10V7a2 2 0 0 1 4 0v3M12 14v3",
+  tenancy_agreement: "M16 3l5 5-11 11H5v-5L16 3zM13 6l5 5",
+  rent_payment: "M3 7h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM2 11h20M6 15h3",
+  move_day: "M14 3a4 4 0 0 1 0 8 4 4 0 0 1-3.9-3H8v2H6v2H3v-3l7.1-7.1A4 4 0 0 1 14 3zM15 6.5h.01",
+  cancelled: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 9l6 6M15 9l-6 6",
+  all: "M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z",
+  slipped: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8v5M12 16h.01",
+};
+
+function StageIcon({ stageKey, className = "h-4 w-4" }: { stageKey: string; className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <path d={STAGE_ICON_PATH[stageKey] ?? STAGE_ICON_PATH.deal_started} />
+    </svg>
+  );
+}
+
+/* --------------------------- movement detection --------------------------- */
+// Red = needs the pre-tenancy team's attention (an unanswered agent message,
+// or a slipped move-in). Green = recent movement that's ticking along fine.
+// Both are derived from data we already hold — no read-state to maintain.
+
+const RECENT_DAYS = 5;
+const AWAITING_DAYS = 14;
+
+function daysSince(iso?: string | null): number {
+  if (!iso) return Infinity;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? Infinity : (Date.now() - t) / 86_400_000;
+}
+
+function dealNeedsAttention(d: BoardDeal): boolean {
+  if (isOverdue(d)) return true;
+  const ln = d.portal.lastNote;
+  // The agent messaged and the ball is in pre-tenancy's court.
+  return !!ln && ln.authorRole === "agent" && daysSince(ln.at) <= AWAITING_DAYS;
+}
+
+function dealHasUpdate(d: BoardDeal): boolean {
+  if (dealNeedsAttention(d)) return false;
+  const noteRecent = d.portal.lastNote != null && daysSince(d.portal.lastNote.at) <= RECENT_DAYS;
+  const movedRecent = d.portal.override != null && daysSince(d.portal.override.at) <= RECENT_DAYS;
+  return noteRecent || movedRecent;
+}
+
+/** "red" | "green" | null for a set of deals (red wins). */
+function movementOf(deals: BoardDeal[]): "red" | "green" | null {
+  let green = false;
+  for (const d of deals) {
+    if (dealNeedsAttention(d)) return "red";
+    if (dealHasUpdate(d)) green = true;
+  }
+  return green ? "green" : null;
+}
+
+function MovementDot({ kind, className = "" }: { kind: "red" | "green" | null; className?: string }) {
+  if (!kind) return null;
+  return (
+    <span
+      className={`inline-block h-2 w-2 rounded-full ${kind === "red" ? "bg-red-500" : "bg-green-500"} ${className}`}
+      title={kind === "red" ? "Needs attention — unanswered message or slipped move-in" : "Recent movement"}
+    />
+  );
+}
 
 function fmtDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -254,9 +335,10 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [agent, setAgent] = useState("all");
-  const [overdueOnly, setOverdueOnly] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Which stage tab is active: "all", a stage key, or the "slipped" view.
+  const [tab, setTab] = useState<string>("all");
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [tasksTodayOpen, setTasksTodayOpen] = useState(false);
   const [todayCount, setTodayCount] = useState<number | null>(null);
@@ -330,11 +412,11 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [deals]);
 
-  const filtered = useMemo(() => {
+  // Base set: agent + search filters only. Stage is a TAB, not a filter.
+  const base = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (deals ?? [])
       .filter((d) => d.agentName === agent || agent === "all")
-      .filter((d) => !overdueOnly || isOverdue(d))
       .filter((d) => {
         if (!needle) return true;
         const hay = [
@@ -347,29 +429,52 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           .toLowerCase();
         return hay.includes(needle);
       });
-  }, [deals, q, agent, overdueOnly]);
+  }, [deals, q, agent]);
 
-  // Column layout: one pile per stage; slipped move-ins float to the top of
-  // their pile, then soonest move-in first.
-  const columns = useMemo(() => {
-    const keys = PORTAL_STAGES.map((s) => s.key);
-    if (showCancelled) keys.push("cancelled");
-    return keys.map((key) => ({
-      key,
-      label: key === "cancelled" ? "Cancelled" : stageLabel(key),
-      deals: filtered
-        .filter((d) =>
-          key === "cancelled" ? d.statusKey === "cancelled" : d.statusKey !== "cancelled" && d.effectiveStatusKey === key
-        )
-        .sort((a, b) => {
-          const oa = isOverdue(a) ? 0 : 1;
-          const ob = isOverdue(b) ? 0 : 1;
-          if (oa !== ob) return oa - ob;
-          return (a.app.startDate ?? "9999").localeCompare(b.app.startDate ?? "9999");
-        }),
-    }));
-  }, [filtered, showCancelled]);
+  // Deals grouped by their effective stage (cancelled kept aside).
+  const byStage = useMemo(() => {
+    const m = new Map<string, BoardDeal[]>();
+    for (const s of PORTAL_STAGES) m.set(s.key, []);
+    const cancelled: BoardDeal[] = [];
+    const slipped: BoardDeal[] = [];
+    for (const d of base) {
+      if (d.statusKey === "cancelled") {
+        cancelled.push(d);
+        continue;
+      }
+      if (isOverdue(d)) slipped.push(d);
+      m.get(d.effectiveStatusKey)?.push(d);
+    }
+    return { byKey: m, cancelled, slipped };
+  }, [base]);
 
+  const activeCount = base.filter((d) => d.statusKey !== "cancelled").length;
+
+  // Tabs: All + each stage + Slipped (+ Cancelled when toggled). Each carries
+  // a count and a movement dot so you can see where there's action.
+  const tabs = useMemo(() => {
+    const sortDeals = (arr: BoardDeal[]) =>
+      [...arr].sort((a, b) => {
+        const oa = isOverdue(a) ? 0 : 1;
+        const ob = isOverdue(b) ? 0 : 1;
+        if (oa !== ob) return oa - ob;
+        return (a.app.startDate ?? "9999").localeCompare(b.app.startDate ?? "9999");
+      });
+    const list: { key: string; label: string; deals: BoardDeal[]; movement: "red" | "green" | null }[] = [];
+    const allActive = base.filter((d) => d.statusKey !== "cancelled");
+    list.push({ key: "all", label: "All", deals: sortDeals(allActive), movement: movementOf(allActive) });
+    for (const s of PORTAL_STAGES) {
+      const dl = byStage.byKey.get(s.key) ?? [];
+      list.push({ key: s.key, label: s.label, deals: sortDeals(dl), movement: movementOf(dl) });
+    }
+    list.push({ key: "slipped", label: "Slipped", deals: sortDeals(byStage.slipped), movement: byStage.slipped.length ? "red" : null });
+    if (showCancelled) {
+      list.push({ key: "cancelled", label: "Cancelled", deals: byStage.cancelled, movement: null });
+    }
+    return list;
+  }, [base, byStage, showCancelled]);
+
+  const activeTab = tabs.find((t) => t.key === tab) ?? tabs[0];
   const open = openId ? (deals ?? []).find((d) => d.app.id === openId) ?? null : null;
 
   return (
@@ -386,11 +491,9 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
               <HeaderStat label="Moved in this month" value={summary.completedMtd ?? "—"} />
               <button
                 type="button"
-                onClick={() => setOverdueOnly((v) => !v)}
+                onClick={() => setTab("slipped")}
                 className={`btn-press rounded-lg border px-3 py-1.5 text-left transition ${
-                  overdueOnly
-                    ? "border-red-300 bg-red-50"
-                    : "border-transparent hover:border-line"
+                  tab === "slipped" ? "border-red-300 bg-red-50" : "border-transparent hover:border-line"
                 }`}
               >
                 <div className={`stat-value text-[17px] leading-5 ${summary.overdue > 0 ? "text-red-600" : ""}`}>
@@ -443,79 +546,125 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         ) : null}
         {error ? <div className="card p-6 text-sm text-muted">{error}</div> : null}
 
-        {/* ---- filters ---- */}
-        <section className="enter enter-up flex flex-wrap items-center gap-2" style={enterAt(40)}>
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search property, tenant or agent…"
-            className="w-full max-w-xs rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] outline-none transition focus:border-gray-400"
-          />
-          <select
-            value={agent}
-            onChange={(e) => setAgent(e.target.value)}
-            className="rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none"
-          >
-            <option value="all">All agents</option>
-            {agents.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-          <label className="flex cursor-pointer select-none items-center gap-2 text-[12px] text-muted">
+        {/* ---- title + search ---- */}
+        <section className="enter enter-up flex flex-wrap items-end justify-between gap-3" style={enterAt(30)}>
+          <div>
+            <h1 className="text-[22px] font-semibold tracking-tight">Pre-Tenancy pipeline</h1>
+            <p className="mt-0.5 text-[13px] text-muted">
+              {deals
+                ? `${activeCount} in progression${
+                    summary?.overdue ? ` · ${summary.overdue} slipped` : ""
+                  }${summary?.completedMtd != null ? ` · ${summary.completedMtd} moved in this month` : ""}`
+                : "Loading the pipeline…"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
             <input
-              type="checkbox"
-              checked={overdueOnly}
-              onChange={(e) => setOverdueOnly(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-line accent-[#E31F36]"
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search property, tenant or agent…"
+              className="w-full max-w-xs rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] outline-none transition focus:border-gray-400"
             />
-            Date slipped only
-          </label>
-          <label className="flex cursor-pointer select-none items-center gap-2 text-[12px] text-muted">
-            <input
-              type="checkbox"
-              checked={showCancelled}
-              onChange={(e) => setShowCancelled(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-line accent-[#E31F36]"
-            />
-            Show cancelled
-          </label>
-          <span className="ml-auto text-[12px] text-muted">
-            {deals ? `${filtered.length} deal${filtered.length === 1 ? "" : "s"}` : ""}
-          </span>
+            <select
+              value={agent}
+              onChange={(e) => setAgent(e.target.value)}
+              className="rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none"
+            >
+              <option value="all">All agents</option>
+              {agents.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </div>
         </section>
 
-        {/* ---- kanban ---- */}
-        <section className="enter enter-up mt-4 min-h-0 flex-1" style={enterAt(100)}>
+        {/* ---- browse by stage ---- */}
+        {deals ? (
+          <section className="enter enter-up card mt-4 p-4" style={enterAt(60)}>
+            <div className="mb-3">
+              <h2 className="text-[13px] font-semibold">Browse by stage</h2>
+              <p className="text-[11.5px] text-muted">Where every deal is up to — tap a stage to focus it</p>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 lg:grid-cols-8">
+              {PORTAL_STAGES.map((s) => {
+                const dl = byStage.byKey.get(s.key) ?? [];
+                const v = stageVisual(s.key);
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setTab(s.key)}
+                    className="group flex items-center gap-2.5 rounded-xl p-1.5 text-left transition hover:bg-page"
+                  >
+                    <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
+                      <StageIcon stageKey={s.key} />
+                      <MovementDot kind={movementOf(dl)} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12px] font-semibold leading-tight">{s.label}</span>
+                      <span className="block text-[11px] text-muted">{dl.length} deal{dl.length === 1 ? "" : "s"}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        {/* ---- tabs ---- */}
+        {deals ? (
+          <section className="enter enter-up mt-4 flex items-center gap-1 overflow-x-auto border-b border-line pb-px" style={enterAt(90)}>
+            {tabs.map((t) => {
+              const activeT = t.key === activeTab.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-[12.5px] font-semibold transition ${
+                    activeT ? "text-ink" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {t.label}
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${activeT ? "bg-ink/10 text-ink" : "bg-page text-muted"}`}>
+                    {t.deals.length}
+                  </span>
+                  <MovementDot kind={t.movement} />
+                  {activeT ? (
+                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full" style={{ background: BRAND.accent }} />
+                  ) : null}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setShowCancelled((v) => !v)}
+              className="ml-auto shrink-0 whitespace-nowrap px-2 text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+            >
+              {showCancelled ? "Hide cancelled" : `Show cancelled (${byStage.cancelled.length})`}
+            </button>
+          </section>
+        ) : null}
+
+        {/* ---- tile grid ---- */}
+        <section className="enter enter-up mt-4 min-h-0 flex-1 overflow-y-auto pb-6" style={enterAt(120)}>
           {deals == null && !error ? (
-            <div className="flex gap-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-[60vh] flex-1 animate-pulse rounded-2xl bg-white/70" />
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-[112px] animate-pulse rounded-2xl bg-white/70" />
               ))}
             </div>
+          ) : activeTab.deals.length === 0 ? (
+            <div className="card p-12 text-center text-[13px] text-muted">
+              Nothing in {activeTab.label.toLowerCase()} right now.
+            </div>
           ) : (
-            <div className="flex h-full gap-3 overflow-x-auto pb-6">
-              {columns.map((col) => (
-                <div
-                  key={col.key}
-                  className="flex w-56 shrink-0 flex-col rounded-2xl bg-black/[0.03] lg:w-auto lg:min-w-[170px] lg:flex-1"
-                >
-                  <div className={`h-1 rounded-t-2xl ${STAGE_BAR[col.key] ?? "bg-gray-300"}`} />
-                  <div className="flex items-baseline justify-between px-3 pb-2 pt-2.5">
-                    <h2 className="text-[12px] font-semibold text-ink">{col.label}</h2>
-                    <span className="text-[11px] font-medium text-muted">{col.deals.length}</span>
-                  </div>
-                  <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 pb-2">
-                    {col.deals.map((d) => (
-                      <DealCard key={d.app.id} d={d} onOpen={() => setOpenId(d.app.id)} />
-                    ))}
-                    {col.deals.length === 0 ? (
-                      <p className="px-2 py-6 text-center text-[11px] text-muted">Nothing here</p>
-                    ) : null}
-                  </div>
-                </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {activeTab.deals.map((d) => (
+                <DealTile key={d.app.id} d={d} onOpen={() => setOpenId(d.app.id)} />
               ))}
             </div>
           )}
@@ -562,42 +711,86 @@ function HeaderStat({ label, value }: { label: string; value: number | string })
   );
 }
 
-/* ------------------------------- deal card ------------------------------- */
-// Deliberately tiny — these pile up to hundreds a month. Address, tenant,
-// agent; the column already says the stage. Everything else is in the panel.
+/* ------------------------------- deal tile ------------------------------- */
+// A card per deal: colour-coded stage icon, property + stage badge, tenant &
+// agent, the rent/move-in line, and a footer with checklist + notes. A
+// movement dot flags anything new or updated at a glance.
 
-function DealCard({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
+function DealTile({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
   const lead = d.app.tenants.find((t) => t.isPrimary) ?? d.app.tenants[0];
   const overdue = isOverdue(d);
+  const cancelled = d.statusKey === "cancelled";
+  const key = cancelled ? "cancelled" : d.effectiveStatusKey;
+  const v = stageVisual(key);
+  const attn = dealNeedsAttention(d);
+  const upd = dealHasUpdate(d);
+  const done = d.portal.checklistDone;
+  const total = d.portal.checklistTotal || 9;
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="btn-press w-full rounded-xl border border-line bg-white p-2.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-black/20"
+      className="btn-press flex w-full flex-col rounded-2xl border border-line bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-black/20 hover:shadow-md"
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="truncate text-[12.5px] font-semibold leading-snug">
-          {d.app.propertyName}
-        </p>
+      {/* header: icon + name + stage badge */}
+      <div className="flex items-start gap-2.5">
+        <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
+          <StageIcon stageKey={key} />
+          <MovementDot kind={attn ? "red" : upd ? "green" : null} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold leading-tight">{d.app.propertyName}</p>
+          <p className="truncate text-[11px] text-muted">{d.app.locality}</p>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${stagePill(key)}`}>
+          {(cancelled ? "Cancelled" : stageLabel(key)).toUpperCase()}
+        </span>
+      </div>
+
+      {/* tenant + agent */}
+      <div className="mt-2.5 flex items-center justify-between gap-2 text-[11.5px] text-muted">
+        <span className="truncate">
+          {lead ? lead.name : "No tenant recorded"}
+          {d.app.tenants.length > 1 ? ` +${d.app.tenants.length - 1}` : ""}
+        </span>
+        <span className="shrink-0 truncate">{d.agentName ?? "—"}</span>
+      </div>
+
+      {/* rent + move-in */}
+      <div className="mt-1 flex items-center justify-between gap-2 text-[11.5px]">
+        <span className="font-medium text-ink">
+          {d.app.offer != null ? `${formatGBP(d.app.offer)}/mo` : "—"}
+        </span>
+        <span className={overdue ? "font-semibold text-red-600" : "text-muted"}>
+          {d.app.startDate ? `Move-in ${fmtDate(d.app.startDate)}${overdue ? " · slipped" : ""}` : "Move-in TBC"}
+        </span>
+      </div>
+
+      {/* footer: checklist + notes */}
+      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2 text-[10.5px] text-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="flex gap-0.5">
+            {Array.from({ length: total }).map((_, i) => (
+              <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < done ? "bg-green-500" : "bg-gray-200"}`} />
+            ))}
+          </span>
+          {done}/{total}
+        </span>
         {d.portal.notesCount > 0 ? (
-          <span className="flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-muted">
-            <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <span className="flex items-center gap-1">
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             {d.portal.notesCount}
+            {d.portal.lastNote?.authorRole === "agent" ? (
+              <span className="ml-0.5 rounded bg-red-50 px-1 py-px text-[9px] font-semibold text-red-600">reply</span>
+            ) : null}
           </span>
-        ) : null}
+        ) : (
+          <span className="opacity-0">·</span>
+        )}
       </div>
-      <p className="mt-0.5 truncate text-[11px] text-muted">
-        {lead ? lead.name : "No tenant recorded"}
-        {d.app.tenants.length > 1 ? ` +${d.app.tenants.length - 1}` : ""}
-      </p>
-      <p className="truncate text-[11px] text-muted">{d.agentName ?? "—"}</p>
-      {overdue ? (
-        <p className="mt-1 text-[10px] font-semibold text-red-600">
-          Move-in {fmtDate(d.app.startDate)} · slipped
-        </p>
-      ) : null}
     </button>
   );
 }
