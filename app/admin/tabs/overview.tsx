@@ -123,7 +123,8 @@ function Tile({
     stat.source === "live-rex" ||
     stat.source === "live-meta" ||
     stat.source === "live-propoly" ||
-    stat.source === "live-teg";
+    stat.source === "live-teg" ||
+    stat.source === "live-ghl";
   const isManual = stat.source === "manual";
   const value = stat.display ?? (stat.value != null ? formatNum(stat.value) : "—");
   return (
@@ -468,6 +469,69 @@ export default function Overview({ month }: { month: string }) {
     "live-propoly"
   );
 
+  // ---- Headline "Jun YTD" band → live sums of the closed months ----
+  // Same stored per-month figures the period pills use, summed Jan–Jun (the
+  // band's label really means "closed months so far"). GCI + Total Income
+  // stay snapshot — they're PayProp figures and PayProp has no API access.
+  // Pipeline is a right-now state metric, so it upgrades to the live REX
+  // let-agreed count rather than a June sum.
+  const JAN_JUN = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
+  const closedSum = (
+    metric: "combinedMas" | "listings" | "applications" | "moveIns"
+  ): number | null => {
+    if (!hist) return null;
+    let total = 0;
+    for (const m of JAN_JUN) {
+      const v = hist.months[m]?.[metric];
+      if (v == null) return null;
+      total += v;
+    }
+    return total;
+  };
+  const headlineUpgrade = (
+    metric: "combinedMas" | "listings" | "applications" | "moveIns",
+    susan: StatValue,
+    note: string,
+    source: StatValue["source"]
+  ): { stat: StatValue; flag: string | null } => {
+    const v = closedSum(metric);
+    if (v == null) return { stat: susan, flag: null };
+    return {
+      stat: { value: v, source, note, asOf: new Date().toISOString().slice(0, 10) },
+      flag: flagIf(v, susan),
+    };
+  };
+  const hlMas = headlineUpgrade(
+    "combinedMas",
+    d.headline.mas,
+    "Live from REX — combined MAs (recorded + listing-only, Susan's definition), Jan–Jun summed from the stored closed months.",
+    "live-rex"
+  );
+  const hlListings = headlineUpgrade(
+    "listings",
+    d.headline.listings,
+    "Live from REX — rental listings created Jan–Jun, drafts excluded, summed from the stored closed months.",
+    "live-rex"
+  );
+  const hlApplications = headlineUpgrade(
+    "applications",
+    d.headline.applications,
+    "Live from REX — applications accepted Jan–Jun, summed from the stored closed months.",
+    "live-rex"
+  );
+  const hlMoveIns = headlineUpgrade(
+    "moveIns",
+    d.headline.moveIns,
+    "Live from Propoly — completed move-ins Jan–Jun. Susan's Move-In Report also counts managed transfers + marketing-only, so hers can run higher.",
+    "live-propoly"
+  );
+  const hlPipeline: StatValue = live?.totals
+    ? asLive(
+        live.totals.pipeline,
+        "Live from REX — let-agreed forward pipeline RIGHT NOW (the snapshot's 51 was the same measure as of 11 Jul)."
+      )
+    : d.headline.pipeline;
+
   // Conversion rates go live only when BOTH inputs are live — a live/snapshot
   // hybrid ratio would be a made-up number.
   const pct = (num: number, den: number): number | null =>
@@ -600,13 +664,13 @@ export default function Overview({ month }: { month: string }) {
           </button>
         </div>
         <div className={TILE_GRID}>
-          <Tile label="Jun YTD MAs" stat={d.headline.mas} />
-          <Tile label="Jun YTD Listings" stat={d.headline.listings} />
-          <Tile label="Jun YTD Applications" stat={d.headline.applications} />
-          <Tile label="Jun YTD Move-ins" stat={d.headline.moveIns} />
+          <Tile label="Jun YTD MAs" stat={hlMas.stat} flag={hlMas.flag} />
+          <Tile label="Jun YTD Listings" stat={hlListings.stat} flag={hlListings.flag} />
+          <Tile label="Jun YTD Applications" stat={hlApplications.stat} flag={hlApplications.flag} />
+          <Tile label="Jun YTD Move-ins" stat={hlMoveIns.stat} flag={hlMoveIns.flag} />
           <Tile label="Jun YTD GCI exc VAT" stat={d.headline.gciExcVat} />
           <Tile label="Jun YTD Total Income" stat={d.headline.totalIncome} />
-          <Tile label="Jun YTD Pipeline" stat={d.headline.pipeline} />
+          <Tile label="Pipeline now" stat={hlPipeline} />
         </div>
       </div>
 
