@@ -187,12 +187,19 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
   const pl = seed.paidLeads;
   const isSnapshotMonth = month === "2026-07";
 
-  // Live leads-generated MTD from Meta — the one figure it can answer today.
+  // Live layer: Meta answers leads/spend/CPL; GHL answers the funnel
+  // (created → referred to agents → MAs booked) from the paid pipelines.
   const [liveLeads, setLiveLeads] = useState<{
     leads: number | null;
     spend?: number;
     cpl?: number | null;
     source?: string;
+    ghl?: {
+      leads: number;
+      referred: number;
+      masBooked: number;
+      pipelines: string[];
+    } | null;
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -201,7 +208,7 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
         const res = await fetch("/api/admin/paid-leads-live", { cache: "no-store" });
         if (!res.ok) return;
         const j = await res.json();
-        if (!cancelled && j.leads != null) setLiveLeads(j);
+        if (!cancelled && (j.leads != null || j.ghl != null)) setLiveLeads(j);
       } catch {
         /* snapshot stays */
       }
@@ -230,17 +237,75 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
         }`
       : undefined;
 
+  // GHL funnel — live when connected, Susan's 11 Jul snapshot otherwise.
+  const ghl = liveLeads?.ghl ?? null;
+  const asOf = new Date().toISOString().slice(0, 10);
+  const ghlNote = ghl
+    ? `Live from Go High Level — ${ghl.pipelines.join(" + ")}, this month.`
+    : "";
+  const referredStat = ghl
+    ? {
+        value: ghl.referred,
+        source: "live-ghl" as const,
+        note: `${ghlNote} Referred = reached "Initial Call Booked" (or beyond).`,
+        asOf,
+      }
+    : pl.referredToAgents;
+  const masStat = ghl
+    ? {
+        value: ghl.masBooked,
+        source: "live-ghl" as const,
+        note: `${ghlNote} MA booked = "MA Booked" stage or the opportunity marked won.`,
+        asOf,
+      }
+    : pl.masBooked;
+  // Conversions off the CRM's own lead count so numerator/denominator match.
+  const funnelLeads = ghl ? ghl.leads : (pl.funnel[0]?.value ?? null);
+  const leadToReferralStat = ghl
+    ? {
+        value: funnelLeads ? (ghl.referred / funnelLeads) * 100 : null,
+        display: funnelLeads ? `${((ghl.referred / funnelLeads) * 100).toFixed(1)}%` : "—",
+        source: "live-ghl" as const,
+        note: ghlNote,
+        asOf,
+      }
+    : pl.leadToReferralPct;
+  const leadToMaStat = ghl
+    ? {
+        value: ghl.referred ? (ghl.masBooked / ghl.referred) * 100 : null,
+        display: ghl.referred ? `${((ghl.masBooked / ghl.referred) * 100).toFixed(0)}%` : "—",
+        source: "live-ghl" as const,
+        note: ghlNote,
+        asOf,
+      }
+    : pl.leadToMaPct;
+  const funnelStages = ghl
+    ? [
+        { label: "Leads", value: ghl.leads },
+        { label: "Referred", value: ghl.referred },
+        { label: "MAs Booked", value: ghl.masBooked },
+      ]
+    : pl.funnel;
+
   return (
     <div className="space-y-6">
       {/* Live socials snapshot (Facebook + Instagram) */}
       <SocialsSection />
 
       {/* Source banner */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-        <span className="font-semibold">Sources:</span> Leads generated is live
-        from Meta; referrals &amp; MAs booked are Go High Level snapshot figures
-        (11 Jul 2026) until the TEG system provides them.
-      </div>
+      {ghl ? (
+        <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-[13px] text-green-800">
+          <span className="font-semibold">Sources:</span> Leads generated is
+          live from Meta; referrals &amp; MAs booked are live from Go High
+          Level ({ghl.pipelines.join(" + ")}).
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          <span className="font-semibold">Sources:</span> Leads generated is live
+          from Meta; referrals &amp; MAs booked are Go High Level snapshot figures
+          (11 Jul 2026) until the GHL connection answers.
+        </div>
+      )}
 
       {!isSnapshotMonth ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
@@ -252,17 +317,25 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
       {/* July MTD cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label="Leads generated (MTD)" stat={leadsStat} sub={leadsSub} big />
-        <StatCard label="Referred to agents" stat={pl.referredToAgents} />
-        <StatCard label="MAs booked" stat={pl.masBooked} />
+        <StatCard label="Referred to agents" stat={referredStat} />
+        <StatCard label="MAs booked" stat={masStat} />
         <StatCard
           label="Lead → referral"
-          stat={pl.leadToReferralPct}
-          sub="3 of 180 leads referred"
+          stat={leadToReferralStat}
+          sub={
+            ghl
+              ? `${ghl.referred} of ${ghl.leads} leads referred`
+              : "3 of 180 leads referred"
+          }
         />
         <StatCard
-          label="Lead → MA"
-          stat={pl.leadToMaPct}
-          sub="2 MAs from 3 referred leads"
+          label="Referral → MA"
+          stat={leadToMaStat}
+          sub={
+            ghl
+              ? `${ghl.masBooked} MA${ghl.masBooked === 1 ? "" : "s"} from ${ghl.referred} referred lead${ghl.referred === 1 ? "" : "s"}`
+              : "2 MAs from 3 referred leads"
+          }
         />
         <StatCard
           label="Pro licence income (MTD)"
@@ -273,12 +346,16 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
 
       {/* Lead funnel */}
       <section className="card p-5">
-        <h2 className="text-sm font-semibold">Paid lead funnel — July MTD</h2>
+        <h2 className="text-sm font-semibold">
+          Paid lead funnel — {ghl ? `${monthLabel(month)} MTD · live` : "July MTD"}
+        </h2>
         <p className="mt-0.5 text-xs text-muted">
-          180 leads → 3 referred to agents → 2 market appraisals booked
+          {ghl
+            ? `${ghl.leads} leads → ${ghl.referred} referred to agents → ${ghl.masBooked} market appraisal${ghl.masBooked === 1 ? "" : "s"} booked`
+            : "180 leads → 3 referred to agents → 2 market appraisals booked"}
         </p>
         <div className="mt-4">
-          <FunnelBar stages={pl.funnel} />
+          <FunnelBar stages={funnelStages} />
         </div>
       </section>
 
