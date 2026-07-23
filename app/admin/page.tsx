@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
+import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import { PresentProvider, PresentButton, usePresent } from "@/components/PresentMode";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
@@ -386,12 +387,8 @@ function AdminShell({
 
       {/* ── Desktop sidebar ── */}
       <aside className="hide-when-presenting fixed inset-y-0 left-0 z-30 hidden w-60 flex-col lg:flex">
-        <div className="flex items-center gap-2.5 px-5 pt-7">
-          <BrandMark size={34} />
-          <div className="leading-tight">
-            <div className="text-[15px] font-semibold tracking-tight">The Lettings Expert</div>
-            <div className="text-[10px] uppercase tracking-wide text-muted">Business</div>
-          </div>
+        <div className="px-5 pt-7">
+          <WorkspaceSwitcher user={user} current="admin" size={34} />
         </div>
 
         <div className="mx-5 mt-6 border-t border-line" />
@@ -475,8 +472,7 @@ function AdminShell({
       {/* ── Mobile top bar ── */}
       <header className="hide-when-presenting sticky top-0 z-40 border-b border-line bg-white lg:hidden">
         <div className="flex h-14 items-center gap-3 px-4">
-          <BrandMark size={28} />
-          <span className="text-sm font-semibold">TLE Business</span>
+          <WorkspaceSwitcher user={user} current="admin" size={28} />
           <div className="ml-auto flex items-center gap-2">
             <a href="/dashboard" className="rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-medium text-muted">Customer</a>
             <PresentButton />

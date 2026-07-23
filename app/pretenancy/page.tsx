@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
+import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import { NotesThread } from "@/components/DealNotes";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
@@ -376,15 +377,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
       {/* ---- header ---- */}
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 backdrop-blur">
         <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
-          <BrandMark size={28} />
-          <div className="min-w-0">
-            <h1 className="truncate text-[15px] font-semibold leading-tight">
-              Pre-Tenancy
-            </h1>
-            <p className="text-[11px] leading-tight text-muted">
-              Every move-in, every agent, one board
-            </p>
-          </div>
+          <WorkspaceSwitcher user={user} current="pretenancy" size={28} />
 
           {/* headline counters live in the header — the board needs the space */}
           {summary ? (
@@ -412,15 +405,6 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           ) : null}
 
           <div className="ml-auto flex items-center gap-3">
-            {user.isAdmin ? (
-              <a
-                href="/admin"
-                className="hidden text-[12px] font-medium text-muted underline-offset-2 hover:underline sm:block"
-              >
-                Admin dashboard
-              </a>
-            ) : null}
-
             {/* today's date + her worklist for the day */}
             <div className="hidden items-center gap-2 sm:flex">
               <span className="text-[12px] text-muted">
