@@ -1,5 +1,6 @@
 import "server-only";
 import { ImapFlow } from "imapflow";
+import nodemailer from "nodemailer";
 import type { Mailbox } from "@/lib/mailbox-store";
 import type { DealEmail } from "@/lib/types";
 
@@ -48,6 +49,57 @@ export async function verifyMailbox(mb: Mailbox): Promise<{ ok: boolean; error?:
   } finally {
     c.close();
   }
+}
+
+/* ------------------------------- sending ------------------------------- */
+
+// SMTP host for the same provider as the connected IMAP mailbox — the app
+// password already works for both. Falls back to swapping "imap" → "smtp".
+function smtpHostFor(imapHost: string): { host: string; port: number; secure: boolean } {
+  const h = imapHost.toLowerCase();
+  if (h.includes("gmail") || h.includes("googlemail")) {
+    return { host: "smtp.gmail.com", port: 465, secure: true };
+  }
+  if (h.includes("office365") || h.includes("outlook")) {
+    return { host: "smtp.office365.com", port: 587, secure: false };
+  }
+  return { host: imapHost.replace(/^imap/i, "smtp"), port: 465, secure: true };
+}
+
+export interface OutgoingAttachment {
+  filename: string;
+  /** base64-encoded content. */
+  content: string;
+}
+
+/**
+ * Send an email from the connected mailbox. Used by the pre-tenancy Emails
+ * tab — Kirstie only ever emails the AGENT, never the tenant, so `to` is the
+ * agent's address. Throws on failure; the route turns it into a message.
+ */
+export async function sendEmail(
+  mb: Mailbox,
+  msg: { to: string; subject: string; text: string; attachments?: OutgoingAttachment[] }
+): Promise<void> {
+  const smtp = smtpHostFor(mb.imapHost);
+  const transport = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: { user: mb.email, pass: mb.password },
+    connectionTimeout: CONNECT_TIMEOUT_MS,
+  });
+  await transport.sendMail({
+    from: mb.email,
+    to: msg.to,
+    subject: msg.subject,
+    text: msg.text,
+    attachments: (msg.attachments ?? []).map((a) => ({
+      filename: a.filename,
+      content: Buffer.from(a.content, "base64"),
+    })),
+  });
+  transport.close();
 }
 
 interface RawText {

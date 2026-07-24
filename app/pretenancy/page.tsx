@@ -11,7 +11,7 @@
 // Auth flow mirrors /admin: refreshUser → inline login if signed out →
 // locked card unless PRETENANCY_EMAILS (or admin — Susan can look in).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
@@ -1374,61 +1374,133 @@ function Composer({
 
 /* -------------------------------- emails -------------------------------- */
 
+// Document types we can spot being discussed and suggest attaching. Matched
+// against recent message text so the composer can nudge "Attach the EPC".
+const DOC_HINTS: { key: string; label: string; re: RegExp }[] = [
+  { key: "epc", label: "EPC certificate", re: /\bepc\b|energy performance/i },
+  { key: "gas", label: "Gas safety certificate", re: /\bgas\b|cp12|gas safety/i },
+  { key: "eicr", label: "EICR", re: /\beicr\b|electric(al)? (report|cert|safety)/i },
+  { key: "references", label: "References", re: /referenc/i },
+  { key: "agreement", label: "Tenancy agreement", re: /tenancy agreement|\bast\b|contract/i },
+  { key: "inventory", label: "Inventory", re: /inventory|check[- ]?in/i },
+  { key: "id", label: "ID / Right to Rent", re: /right to rent|\bid\b|passport|visa/i },
+];
+
+interface PendingAttachment {
+  filename: string;
+  content: string; // base64
+  size: number;
+}
+
 function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: () => void }) {
   const [state, setState] = useState<{
     loading: boolean;
     connected: boolean;
-    noAddresses?: boolean;
+    noAgentEmail?: boolean;
     error?: string;
     emails: DealEmail[];
+    agentName?: string | null;
+    agentEmail?: string | null;
   }>({ loading: true, connected: true, emails: [] });
-  const [openId, setOpenId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  // Composer
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  const agentName = state.agentName || deal.agentName || "the agent";
+  const agentFirst = agentName.split(" ")[0];
+
+  const load = useCallback(() => {
     fetch(`/api/deals/${deal.app.id}/emails`, { cache: "no-store" })
       .then((r) => r.json())
-      .then(
-        (d: {
-          connected?: boolean;
-          emails?: DealEmail[];
-          noAddresses?: boolean;
-          error?: string;
-        }) => {
-          if (cancelled) return;
-          setState({
-            loading: false,
-            connected: d.connected !== false,
-            noAddresses: d.noAddresses,
-            error: d.error,
-            emails: d.emails ?? [],
-          });
-        }
+      .then((d: typeof state) =>
+        setState({
+          loading: false,
+          connected: d.connected !== false,
+          noAgentEmail: d.noAgentEmail,
+          error: d.error,
+          emails: d.emails ?? [],
+          agentName: d.agentName,
+          agentEmail: d.agentEmail,
+        })
       )
-      .catch(
-        () =>
-          !cancelled &&
-          setState({
-            loading: false,
-            connected: true,
-            error: "Couldn't load emails just now.",
-            emails: [],
-          })
+      .catch(() =>
+        setState((s) => ({ ...s, loading: false, error: "Couldn't load emails just now." }))
       );
-    return () => {
-      cancelled = true;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deal.app.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Keep the log pinned to the newest message.
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [state.emails, composing]);
+
+  // Suggested docs — from keywords in the most recent inbound messages.
+  const suggestions = useMemo(() => {
+    const text = state.emails
+      .filter((e) => e.direction === "in")
+      .slice(0, 5)
+      .map((e) => `${e.subject} ${e.body}`)
+      .join(" ");
+    return DOC_HINTS.filter((h) => h.re.test(text));
+  }, [state.emails]);
+
+  async function onFiles(files: FileList | null) {
+    if (!files) return;
+    const next: PendingAttachment[] = [];
+    for (const f of Array.from(files)) {
+      const buf = await f.arrayBuffer();
+      let bin = "";
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      next.push({ filename: f.name, content: btoa(bin), size: f.size });
+    }
+    setAttachments((prev) => [...prev, ...next]);
+  }
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const res = await fetch(`/api/deals/${deal.app.id}/email-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          attachments: attachments.map((a) => ({ filename: a.filename, content: a.content })),
+        }),
+      });
+      const d = (await res.json()) as { ok?: boolean; email?: DealEmail; error?: string };
+      if (!res.ok || !d.email) throw new Error(d.error ?? "Couldn't send.");
+      setState((s) => ({ ...s, emails: [...s.emails, d.email!] }));
+      setDraft("");
+      setAttachments([]);
+      setComposing(false);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : "Couldn't send.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   if (state.loading) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-12 animate-pulse rounded-xl bg-page" />
+          <div key={i} className={`h-10 animate-pulse rounded-2xl bg-page ${i % 2 ? "ml-10" : "mr-10"}`} />
         ))}
-        <p className="pt-1 text-center text-[11px] text-muted">
-          Checking your mailbox for tenant emails…
-        </p>
+        <p className="pt-1 text-center text-[11px] text-muted">Loading your emails with {agentFirst}…</p>
       </div>
     );
   }
@@ -1437,8 +1509,8 @@ function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: ()
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
         <p className="max-w-xs text-[13px] text-muted">
-          Connect your email to see every message to and from this deal&apos;s
-          tenants, logged right here for the records.
+          Connect your email to message {agentFirst} here — it sends from your mailbox and
+          keeps a chat log against the deal.
         </p>
         <button
           type="button"
@@ -1452,68 +1524,164 @@ function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: ()
     );
   }
 
-  if (state.error) {
-    return <p className="rounded-xl bg-page px-4 py-3 text-[12px] text-muted">{state.error}</p>;
-  }
-
-  if (state.noAddresses) {
+  if (state.noAgentEmail) {
     return (
       <p className="rounded-xl bg-page px-4 py-3 text-[12px] text-muted">
-        No tenant email addresses on this deal yet, so there&apos;s nothing to match
-        against your mailbox.
-      </p>
-    );
-  }
-
-  if (state.emails.length === 0) {
-    return (
-      <p className="rounded-xl bg-page px-4 py-3 text-[12px] text-muted">
-        No emails with {deal.app.tenants.map((t) => t.name.split(" ")[0]).join(" or ")} in
-        the last 90 days.
+        No email address on file for {agentName}, so there&apos;s no one to message yet.
       </p>
     );
   }
 
   return (
-    <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-      {state.emails.map((e) => {
-        const open = openId === e.id;
-        return (
-          <div key={e.id} className="rounded-xl border border-line">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* who we're emailing */}
+      <div className="flex items-center gap-2 border-b border-line pb-2.5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold accent-text">
+          {agentName.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")}
+        </span>
+        <div className="leading-tight">
+          <p className="text-[13px] font-semibold">Emailing {agentName}</p>
+          <p className="text-[11px] text-muted">{state.agentEmail}</p>
+        </div>
+      </div>
+
+      {/* chat log */}
+      <div ref={logRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto py-3">
+        {state.error ? (
+          <p className="rounded-xl bg-page px-4 py-3 text-[12px] text-muted">{state.error}</p>
+        ) : state.emails.length === 0 ? (
+          <p className="py-8 text-center text-[12px] text-muted">
+            No emails with {agentFirst} yet. Start the conversation below.
+          </p>
+        ) : (
+          state.emails.map((e) => <EmailBubble key={e.id} e={e} />)
+        )}
+      </div>
+
+      {/* composer */}
+      {composing ? (
+        <div className="modal-pop rounded-2xl border border-line bg-card p-3 shadow-lg">
+          {suggestions.length > 0 ? (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Suggested</span>
+              {suggestions.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  title={`Attach the ${s.label} — pick it from your files`}
+                  className="rounded-full border border-line bg-page px-2 py-0.5 text-[11px] font-medium text-muted transition hover:text-ink"
+                >
+                  + {s.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {attachments.length > 0 ? (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {attachments.map((a, i) => (
+                <span key={i} className="flex items-center gap-1 rounded-lg border border-line bg-page px-2 py-1 text-[11px]">
+                  <svg viewBox="0 0 24 24" className="h-3 w-3 text-muted" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49" />
+                  </svg>
+                  <span className="max-w-[120px] truncate">{a.filename}</span>
+                  <button type="button" onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))} className="text-muted hover:text-ink">
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
+              if (e.key === "Escape" && !draft) setComposing(false);
+            }}
+            rows={3}
+            placeholder={`Write to ${agentFirst}…`}
+            className="w-full resize-none rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none transition focus:border-gray-400"
+          />
+          {sendError ? <p className="mt-1 text-[12px] text-accent">{sendError}</p> : null}
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => void onFiles(e.target.files)} />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                title="Attach a file"
+                className="btn-press flex h-8 w-8 items-center justify-center rounded-full border border-line text-muted transition hover:text-ink"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setComposing(false); setSendError(null); }}
+                className="px-2 text-[12px] font-medium text-muted transition hover:text-ink"
+              >
+                Cancel
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setOpenId(open ? null : e.id)}
-              className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left"
+              disabled={sending || !draft.trim()}
+              onClick={() => void send()}
+              className="btn-press rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition disabled:opacity-50"
+              style={{ background: BRAND.accent }}
             >
-              <span
-                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
-                  e.direction === "in"
-                    ? "bg-sky-50 text-sky-700"
-                    : "bg-green-50 text-green-700"
-                }`}
-              >
-                {e.direction === "in" ? "IN" : "SENT"}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium">{e.subject}</span>
-                <span className="block truncate text-[11px] text-muted">
-                  {e.direction === "in" ? e.from : `To ${e.to}`}
-                </span>
-              </span>
-              <span className="shrink-0 text-[10px] text-muted">
-                {e.date ? fmtDateTime(e.date) : ""}
-              </span>
+              {sending ? "Sending…" : `Send to ${agentFirst}`}
             </button>
-            {open ? (
-              <div className="border-t border-line px-3.5 py-3">
-                <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink">
-                  {e.body || "No readable text in this email."}
-                </p>
-              </div>
-            ) : null}
           </div>
-        );
-      })}
+        </div>
+      ) : (
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            onClick={() => setComposing(true)}
+            className="btn-press flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white shadow-md transition hover:shadow-lg"
+            style={{ background: BRAND.accent }}
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+            </svg>
+            Email {agentFirst}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmailBubble({ e }: { e: DealEmail }) {
+  const [open, setOpen] = useState(false);
+  const out = e.direction === "out";
+  const preview = e.body.length > 220 && !open ? e.body.slice(0, 220) + "…" : e.body;
+  return (
+    <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-left transition ${
+          out
+            ? "rounded-br-md bg-accent text-white"
+            : "rounded-bl-md border border-line bg-white text-ink"
+        }`}
+      >
+        <div className={`mb-0.5 flex items-baseline gap-2 text-[10px] ${out ? "text-white/70" : "text-muted"}`}>
+          <span className="font-semibold">{out ? "You" : e.from.replace(/<.*>/, "").trim() || e.from}</span>
+          <span>{e.date ? fmtDateTime(e.date) : ""}</span>
+        </div>
+        {e.subject ? <p className={`text-[12px] font-semibold ${out ? "text-white" : "text-ink"}`}>{e.subject}</p> : null}
+        <p className={`whitespace-pre-wrap text-[12.5px] leading-relaxed ${out ? "text-white/95" : "text-ink"}`}>
+          {preview || "(no text)"}
+        </p>
+      </button>
     </div>
   );
 }
@@ -1544,6 +1712,155 @@ function downloadIcs(task: DealTask) {
   a.download = `follow-up-${day}.ics`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/* ------------------------------ date picker ------------------------------ */
+// A softer, animated calendar for follow-up dates — bubbles up from the
+// trigger with rounded corners and quick-pick shortcuts, instead of the
+// browser's stock date input.
+
+const DP_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DP_DOW = ["M", "T", "W", "T", "F", "S", "S"];
+
+function toIso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function DatePicker({ value, onChange }: { value: string; onChange: (iso: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = value ? new Date(`${value}T00:00:00`) : null;
+  const [view, setView] = useState(() => (selected ? new Date(selected) : new Date()));
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const todayIso = today();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const year = view.getFullYear();
+  const month = view.getMonth();
+  // Monday-first grid.
+  const first = new Date(year, month, 1);
+  const startPad = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startPad; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+
+  const label = value
+    ? new Date(`${value}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : "Set a date";
+
+  const pick = (d: Date) => {
+    onChange(toIso(d));
+    setOpen(false);
+  };
+  const quick = (addDays: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + addDays);
+    pick(d);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`btn-press flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-[13px] outline-none transition ${
+          value ? "border-line text-ink" : "border-line text-muted"
+        } hover:border-gray-400`}
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4 text-muted" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <rect x={3} y={4.5} width={18} height={16} rx={2.5} />
+          <path d="M3 9h18M8 3v3M16 3v3" />
+        </svg>
+        {label}
+      </button>
+
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="cal-pop absolute bottom-full z-50 mb-2 w-[264px] rounded-2xl border border-line bg-card p-3 shadow-xl">
+            {/* month header */}
+            <div className="mb-2 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setView(new Date(year, month - 1, 1))}
+                className="btn-press flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-page hover:text-ink"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+              </button>
+              <span className="text-[13px] font-semibold">{DP_MONTHS[month]} {year}</span>
+              <button
+                type="button"
+                onClick={() => setView(new Date(year, month + 1, 1))}
+                className="btn-press flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-page hover:text-ink"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+              </button>
+            </div>
+
+            {/* day-of-week */}
+            <div className="grid grid-cols-7 gap-1">
+              {DP_DOW.map((d, i) => (
+                <span key={i} className="py-1 text-center text-[10px] font-semibold uppercase text-muted">{d}</span>
+              ))}
+            </div>
+
+            {/* days */}
+            <div className="grid grid-cols-7 gap-1">
+              {cells.map((d, i) => {
+                if (!d) return <span key={i} />;
+                const iso = toIso(d);
+                const isSel = iso === value;
+                const isToday = iso === todayIso;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => pick(d)}
+                    style={{ ["--cal-delay" as string]: `${i * 6}ms` }}
+                    className={`cal-day flex h-8 items-center justify-center rounded-full text-[12.5px] transition ${
+                      isSel
+                        ? "font-semibold text-white"
+                        : isToday
+                          ? "font-semibold accent-text"
+                          : "text-ink hover:bg-page"
+                    }`}
+                  >
+                    <span className={isSel ? "flex h-8 w-8 items-center justify-center rounded-full" : ""} style={isSel ? { background: BRAND.accent } : undefined}>
+                      {d.getDate()}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* quick picks */}
+            <div className="mt-2 flex gap-1.5 border-t border-line pt-2">
+              {[
+                { label: "Today", days: 0 },
+                { label: "Tomorrow", days: 1 },
+                { label: "+1 week", days: 7 },
+              ].map((q) => (
+                <button
+                  key={q.label}
+                  type="button"
+                  onClick={() => quick(q.days)}
+                  className="btn-press flex-1 rounded-lg bg-page px-2 py-1.5 text-[11px] font-medium text-muted transition hover:text-ink"
+                >
+                  {q.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 function TasksTab({
@@ -1673,12 +1990,7 @@ function TasksTab({
           placeholder="Add a follow-up — e.g. Chase references…"
           className="min-w-0 flex-1 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] outline-none transition focus:border-gray-400"
         />
-        <input
-          type="date"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-          className="rounded-xl border border-line bg-white px-3 py-2 text-[13px] text-muted outline-none"
-        />
+        <DatePicker value={due} onChange={setDue} />
         <button
           type="button"
           disabled={busy || !title.trim()}

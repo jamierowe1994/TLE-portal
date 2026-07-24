@@ -3,9 +3,10 @@ import { resolveDealAccess } from "@/lib/deal-access";
 import { getMailbox } from "@/lib/mailbox-store";
 import { searchEmails } from "@/lib/mail";
 
-// GET /api/deals/:id/emails — emails between the VIEWER'S connected mailbox
-// and this deal's tenants (in + sent, last 90 days, collapsed list).
-// { connected:false } when the viewer hasn't linked their email yet.
+// GET /api/deals/:id/emails — the viewer's email correspondence with this
+// deal's AGENT (pre-tenancy never emails tenants directly). Rendered as a
+// chat log. { connected:false } when the viewer hasn't linked their email.
+// Returns the agent's name/email so the tab can title "Emailing {agent}".
 
 export async function GET(
   req: NextRequest,
@@ -17,26 +18,27 @@ export async function GET(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
+  const agentEmail = access.deal.managerEmail;
+  const agentName = access.deal.managerName;
+
   const mailbox = await getMailbox(access.user.id);
   if (!mailbox) {
-    return NextResponse.json({ connected: false, emails: [] });
+    return NextResponse.json({ connected: false, emails: [], agentEmail, agentName });
   }
-
-  const addresses = access.deal.app.tenants
-    .map((t) => t.email)
-    .filter((e): e is string => !!e);
-  if (addresses.length === 0) {
-    return NextResponse.json({ connected: true, emails: [], noAddresses: true });
+  if (!agentEmail) {
+    return NextResponse.json({ connected: true, emails: [], noAgentEmail: true, agentName });
   }
 
   try {
-    const emails = await searchEmails(mailbox, addresses);
-    return NextResponse.json({ connected: true, emails });
+    const emails = await searchEmails(mailbox, [agentEmail]);
+    return NextResponse.json({ connected: true, emails, agentEmail, agentName });
   } catch {
     return NextResponse.json(
       {
         connected: true,
         emails: [],
+        agentEmail,
+        agentName,
         error:
           "Couldn't reach your mailbox just now — check the connection under your name.",
       },
