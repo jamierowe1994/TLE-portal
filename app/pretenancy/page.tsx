@@ -357,6 +357,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   const [openId, setOpenId] = useState<string | null>(null);
   // Which stage tab is active. Always opens on the first stage.
   const [tab, setTab] = useState<string>("deal_started");
+  const [moreOpen, setMoreOpen] = useState(false);
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [tasksTodayOpen, setTasksTodayOpen] = useState(false);
   const [todayCount, setTodayCount] = useState<number | null>(null);
@@ -586,43 +587,136 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           </div>
         </section>
 
-        {/* ---- merged stage nav: icons + underline tabs in one row ---- */}
+        {/* ---- stage nav: the 8 stages on one row; Slipped/All/Cancelled
+             tucked behind a three-dot menu at the end (no scroll bar) ---- */}
         {deals ? (
-          <section className="enter enter-up mt-6 flex items-stretch gap-1 overflow-x-auto border-b border-line" style={enterAt(80)}>
-            {tabs.map((t) => {
+          (() => {
+            const STAGE_KEYS = new Set(PORTAL_STAGES.map((s) => s.key));
+            const stageTabs = tabs.filter((t) => STAGE_KEYS.has(t.key));
+            const extraTabs = tabs.filter((t) => !STAGE_KEYS.has(t.key)); // slipped, all, cancelled
+            const activeExtra = extraTabs.find((t) => t.key === activeTab.key) ?? null;
+
+            const TabButton = ({
+              t,
+              compact = false,
+            }: {
+              t: (typeof tabs)[number];
+              compact?: boolean;
+            }) => {
               const activeT = t.key === activeTab.key;
               const v = stageVisual(t.key);
               return (
                 <button
-                  key={t.key}
                   type="button"
                   onClick={() => setTab(t.key)}
-                  className={`relative flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-3 transition ${
+                  className={`relative flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2 py-3 transition ${
                     activeT ? "text-ink" : "text-muted hover:text-ink"
                   }`}
                 >
-                  <span className={`relative flex h-7 w-7 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
+                  <span className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
                     <StageIcon stageKey={t.key} className="h-3.5 w-3.5" />
                     <MovementDot kind={t.movement} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
                   </span>
-                  <span className="text-[12.5px] font-semibold">{t.label}</span>
-                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${activeT ? "bg-ink/10 text-ink" : "bg-page text-muted"}`}>
+                  <span className={`truncate text-[12.5px] font-semibold ${compact ? "" : "hidden xl:inline"}`}>{t.label}</span>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${activeT ? "bg-ink/10 text-ink" : "bg-page text-muted"}`}>
                     {t.deals.length}
                   </span>
                   {activeT ? (
-                    <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full" style={{ background: BRAND.accent }} />
+                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full" style={{ background: BRAND.accent }} />
                   ) : null}
                 </button>
               );
-            })}
-            <button
-              type="button"
-              onClick={() => setShowCancelled((v) => !v)}
-              className="ml-auto shrink-0 self-center whitespace-nowrap px-3 text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
-            >
-              {showCancelled ? "Hide cancelled" : `Show cancelled (${byStage.cancelled.length})`}
-            </button>
-          </section>
+            };
+
+            return (
+              <section className="enter enter-up mt-6 flex items-stretch border-b border-line" style={enterAt(80)}>
+                {stageTabs.map((t) => (
+                  <TabButton key={t.key} t={t} />
+                ))}
+
+                {/* the active extra (Slipped/All/Cancelled) is promoted so you
+                    can always see the current view */}
+                {activeExtra ? <TabButton t={activeExtra} compact /> : null}
+
+                {/* three-dot "more views" menu */}
+                <div className="relative flex shrink-0 items-center">
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen((v) => !v)}
+                    aria-label="More views"
+                    className={`btn-press flex h-9 w-9 items-center justify-center rounded-lg transition ${
+                      moreOpen ? "bg-page text-ink" : "text-muted hover:bg-page hover:text-ink"
+                    }`}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                      <circle cx={5} cy={12} r={1.6} />
+                      <circle cx={12} cy={12} r={1.6} />
+                      <circle cx={19} cy={12} r={1.6} />
+                    </svg>
+                  </button>
+                  {moreOpen ? (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
+                      <div className="menu-pop absolute right-0 top-full z-50 mt-1 w-52 rounded-xl border border-line bg-card p-1.5 shadow-lg">
+                        {[
+                          tabs.find((t) => t.key === "all"),
+                          tabs.find((t) => t.key === "slipped"),
+                        ]
+                          .filter((t): t is (typeof tabs)[number] => !!t)
+                          .map((t) => (
+                            <button
+                              key={t.key}
+                              type="button"
+                              onClick={() => {
+                                setTab(t.key);
+                                setMoreOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition hover:bg-page ${
+                                t.key === activeTab.key ? "font-semibold text-ink" : "text-ink"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                {t.label}
+                                <MovementDot kind={t.movement} />
+                              </span>
+                              <span className="text-[11px] text-muted">{t.deals.length}</span>
+                            </button>
+                          ))}
+                        <div className="my-1 border-t border-line" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (showCancelled && activeTab.key === "cancelled") setTab("deal_started");
+                            setShowCancelled((v) => !v);
+                            setMoreOpen(false);
+                          }}
+                          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
+                        >
+                          {showCancelled ? "Hide cancelled" : "Show cancelled"}
+                          <span className="text-[11px] text-muted">{byStage.cancelled.length}</span>
+                        </button>
+                        {showCancelled ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab("cancelled");
+                              setMoreOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition hover:bg-page ${
+                              activeTab.key === "cancelled" ? "font-semibold text-ink" : "text-ink"
+                            }`}
+                          >
+                            View cancelled
+                            <span className="text-[11px] text-muted">{byStage.cancelled.length}</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </section>
+            );
+          })()
         ) : null}
 
         {/* ---- tile grid: up to five across ---- */}
