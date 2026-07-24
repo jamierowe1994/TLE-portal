@@ -11,7 +11,8 @@
 // Auth flow mirrors /admin: refreshUser → inline login if signed out →
 // locked card unless PRETENANCY_EMAILS (or admin — Susan can look in).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
@@ -358,6 +359,8 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   // Which stage tab is active. Always opens on the first stage.
   const [tab, setTab] = useState<string>("deal_started");
   const [moreOpen, setMoreOpen] = useState(false);
+  // Board layout: focused tiles (one stage) or the full kanban.
+  const [view, setView] = useState<"tiles" | "kanban">("tiles");
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [tasksTodayOpen, setTasksTodayOpen] = useState(false);
   const [todayCount, setTodayCount] = useState<number | null>(null);
@@ -563,6 +566,40 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                 <MiniStat label="No date" value={undatedCount} />
               </div>
             ) : null}
+            {/* tiles ↔ kanban flick toggle */}
+            {deals ? (
+              <div className="flex items-center rounded-xl border border-line bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setView("tiles")}
+                  title="Tile view"
+                  className={`btn-press flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                    view === "tiles" ? "bg-page text-ink shadow-sm" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                    <rect x={3} y={3} width={7} height={7} rx={1.5} />
+                    <rect x={14} y={3} width={7} height={7} rx={1.5} />
+                    <rect x={3} y={14} width={7} height={7} rx={1.5} />
+                    <rect x={14} y={14} width={7} height={7} rx={1.5} />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("kanban")}
+                  title="Board view"
+                  className={`btn-press flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                    view === "kanban" ? "bg-page text-ink shadow-sm" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                    <rect x={3} y={4} width={5} height={16} rx={1.5} />
+                    <rect x={9.5} y={4} width={5} height={11} rx={1.5} />
+                    <rect x={16} y={4} width={5} height={14} rx={1.5} />
+                  </svg>
+                </button>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2">
               <input
                 type="search"
@@ -589,7 +626,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
 
         {/* ---- stage nav: the 8 stages on one row; Slipped/All/Cancelled
              tucked behind a three-dot menu at the end (no scroll bar) ---- */}
-        {deals ? (
+        {deals && view === "tiles" ? (
           (() => {
             const STAGE_KEYS = new Set(PORTAL_STAGES.map((s) => s.key));
             const stageTabs = tabs.filter((t) => STAGE_KEYS.has(t.key));
@@ -720,25 +757,60 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         ) : null}
 
         {/* ---- tile grid: up to five across ---- */}
-        <section className="enter enter-up mt-5 min-h-0 flex-1 overflow-y-auto pb-8" style={enterAt(120)}>
-          {deals == null && !error ? (
-            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="h-[130px] animate-pulse rounded-2xl bg-white/70" />
-              ))}
+        {view === "tiles" ? (
+          <section className="enter enter-up mt-5 min-h-0 flex-1 overflow-y-auto pb-8" style={enterAt(120)}>
+            {deals == null && !error ? (
+              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <div key={i} className="h-[130px] animate-pulse rounded-2xl bg-white/70" />
+                ))}
+              </div>
+            ) : activeTab.deals.length === 0 ? (
+              <div className="card p-12 text-center text-[13px] text-muted">
+                Nothing in {activeTab.label.toLowerCase()} right now.
+              </div>
+            ) : (
+              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                {activeTab.deals.map((d) => (
+                  <DealTile key={d.app.id} d={d} onOpen={() => setOpenId(d.app.id)} />
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          /* ---- kanban: a column per stage ---- */
+          <section className="enter enter-up mt-5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-4" style={enterAt(120)}>
+            <div className="flex h-full gap-3">
+              {[...PORTAL_STAGES.map((s) => s.key), ...(showCancelled ? ["cancelled"] : [])].map((key) => {
+                const col = tabs.find((t) => t.key === key);
+                const dealsIn = col?.deals ?? [];
+                const v = stageVisual(key);
+                return (
+                  <div key={key} className="flex w-64 shrink-0 flex-col rounded-2xl bg-black/[0.02]">
+                    <div className="flex items-center gap-2 px-3 pb-2 pt-3">
+                      <span className={`flex h-6 w-6 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
+                        <StageIcon stageKey={key} className="h-3 w-3" />
+                      </span>
+                      <span className="text-[12px] font-semibold text-ink">{stageLabel(key)}</span>
+                      <span className="ml-auto flex items-center gap-1.5">
+                        <MovementDot kind={col?.movement ?? null} />
+                        <span className="text-[11px] font-medium text-muted">{dealsIn.length}</span>
+                      </span>
+                    </div>
+                    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
+                      {dealsIn.map((d) => (
+                        <DealCardMini key={d.app.id} d={d} onOpen={() => setOpenId(d.app.id)} />
+                      ))}
+                      {dealsIn.length === 0 ? (
+                        <p className="px-2 py-6 text-center text-[11px] text-muted">Nothing here</p>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ) : activeTab.deals.length === 0 ? (
-            <div className="card p-12 text-center text-[13px] text-muted">
-              Nothing in {activeTab.label.toLowerCase()} right now.
-            </div>
-          ) : (
-            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {activeTab.deals.map((d) => (
-                <DealTile key={d.app.id} d={d} onOpen={() => setOpenId(d.app.id)} />
-              ))}
-            </div>
-          )}
-        </section>
+          </section>
+        )}
       </div>
 
       {open ? (
@@ -1752,6 +1824,48 @@ function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: ()
   );
 }
 
+// Compact card for the kanban columns — the column header already says the
+// stage, so this is address + tenant/agent + move-in, with a movement dot.
+function DealCardMini({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
+  const lead = d.app.tenants.find((t) => t.isPrimary) ?? d.app.tenants[0];
+  const overdue = isOverdue(d);
+  const attn = dealNeedsAttention(d);
+  const upd = dealHasUpdate(d);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="btn-press w-full rounded-xl border border-line bg-white p-2.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-black/20"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold leading-snug">{d.app.propertyName}</p>
+        <MovementDot kind={attn ? "red" : upd ? "green" : null} className="mt-1 shrink-0" />
+      </div>
+      <p className="mt-0.5 truncate text-[11px] text-muted">
+        {lead ? lead.name : "No tenant recorded"}
+        {d.app.tenants.length > 1 ? ` +${d.app.tenants.length - 1}` : ""}
+      </p>
+      <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
+        <span className="truncate text-muted">{d.agentName ?? "—"}</span>
+        <span className="shrink-0 text-ink">
+          {d.app.startDate ? `${fmtDate(d.app.startDate)}${overdue ? " · slipped" : ""}` : "TBC"}
+        </span>
+      </div>
+      {d.portal.notesCount > 0 ? (
+        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted">
+          <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          {d.portal.notesCount}
+          {d.portal.lastNote?.authorRole === "agent" ? (
+            <span className="ml-0.5 rounded bg-red-50 px-1 text-[9px] font-semibold text-red-600">reply</span>
+          ) : null}
+        </div>
+      ) : null}
+    </button>
+  );
+}
+
 function EmailBubble({ e }: { e: DealEmail }) {
   const [open, setOpen] = useState(false);
   const out = e.direction === "out";
@@ -1820,12 +1934,37 @@ function toIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+const CAL_W = 264;
+const CAL_H = 340;
+
 function DatePicker({ value, onChange }: { value: string; onChange: (iso: string) => void }) {
   const [open, setOpen] = useState(false);
   const selected = value ? new Date(`${value}T00:00:00`) : null;
   const [view, setView] = useState(() => (selected ? new Date(selected) : new Date()));
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // Fixed position, computed from the trigger and clamped to the viewport so
+  // the calendar is never clipped by the scrolling panel it lives in.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const todayIso = today();
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const place = () => {
+      const r = btnRef.current!.getBoundingClientRect();
+      const left = Math.min(Math.max(8, r.left), window.innerWidth - CAL_W - 8);
+      // Prefer above the trigger; drop below if there isn't room.
+      const above = r.top - CAL_H - 8;
+      const top = above >= 8 ? above : Math.min(r.bottom + 8, window.innerHeight - CAL_H - 8);
+      setPos({ left, top });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1859,8 +1998,9 @@ function DatePicker({ value, onChange }: { value: string; onChange: (iso: string
   };
 
   return (
-    <div ref={wrapRef} className="relative">
+    <div className="relative">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`btn-press flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-[13px] outline-none transition ${
@@ -1874,10 +2014,14 @@ function DatePicker({ value, onChange }: { value: string; onChange: (iso: string
         {label}
       </button>
 
-      {open ? (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="cal-pop absolute bottom-full z-50 mb-2 w-[264px] rounded-2xl border border-line bg-card p-3 shadow-xl">
+      {open && typeof document !== "undefined" ? (
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+            <div
+              className="cal-pop fixed z-[61] w-[264px] rounded-2xl border border-line bg-card p-3 shadow-xl"
+              style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}
+            >
             {/* month header */}
             <div className="mb-2 flex items-center justify-between">
               <button
@@ -1950,8 +2094,10 @@ function DatePicker({ value, onChange }: { value: string; onChange: (iso: string
                 </button>
               ))}
             </div>
-          </div>
-        </>
+            </div>
+          </>,
+          document.body
+        )
       ) : null}
     </div>
   );
