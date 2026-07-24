@@ -90,6 +90,8 @@ const STAGE_VISUAL: Record<string, StageVisual> = {
   rent_payment: { iconBg: "bg-emerald-100", iconText: "text-emerald-600", dot: "bg-emerald-400" },
   move_day: { iconBg: "bg-green-100", iconText: "text-green-700", dot: "bg-green-500" },
   cancelled: { iconBg: "bg-gray-100", iconText: "text-gray-400", dot: "bg-gray-300" },
+  all: { iconBg: "bg-slate-100", iconText: "text-slate-600", dot: "bg-slate-400" },
+  slipped: { iconBg: "bg-red-100", iconText: "text-red-600", dot: "bg-red-500" },
 };
 function stageVisual(key: string): StageVisual {
   return STAGE_VISUAL[key] ?? STAGE_VISUAL.deal_started;
@@ -200,6 +202,22 @@ function isOverdue(d: BoardDeal): boolean {
     d.app.startDate != null &&
     d.app.startDate < today()
   );
+}
+
+// Old lingering deals (move-in — or, if undated, created — before 2026) are
+// hidden for now: they're mostly stale records that should have completed.
+// We'll reconcile them once PayProp is connected.
+function isFrom2025(d: BoardDeal): boolean {
+  const ref = d.app.startDate ?? d.app.dateReceived;
+  return ref != null && ref < "2026-01-01";
+}
+
+// The dot strip shows how far through the 8-stage pipeline a deal is: e.g.
+// Referencing is the 3rd stage → 3 of 8 filled.
+function stageProgress(key: string): { done: number; total: number } {
+  const total = PORTAL_STAGES.length;
+  const idx = PORTAL_STAGES.findIndex((s) => s.key === key);
+  return { done: idx >= 0 ? idx + 1 : 0, total };
 }
 
 /* --------------------------------- page --------------------------------- */
@@ -337,8 +355,8 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   const [agent, setAgent] = useState("all");
   const [showCancelled, setShowCancelled] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  // Which stage tab is active: "all", a stage key, or the "slipped" view.
-  const [tab, setTab] = useState<string>("all");
+  // Which stage tab is active. Always opens on the first stage.
+  const [tab, setTab] = useState<string>("deal_started");
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [tasksTodayOpen, setTasksTodayOpen] = useState(false);
   const [todayCount, setTodayCount] = useState<number | null>(null);
@@ -413,9 +431,11 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   }, [deals]);
 
   // Base set: agent + search filters only. Stage is a TAB, not a filter.
+  // 2025 deals are hidden for now (see isFrom2025).
   const base = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (deals ?? [])
+      .filter((d) => !isFrom2025(d))
       .filter((d) => d.agentName === agent || agent === "all")
       .filter((d) => {
         if (!needle) return true;
@@ -449,6 +469,9 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   }, [base]);
 
   const activeCount = base.filter((d) => d.statusKey !== "cancelled").length;
+  const undatedCount = base.filter(
+    (d) => d.statusKey !== "cancelled" && d.app.startDate == null
+  ).length;
 
   // Tabs: All + each stage + Slipped (+ Cancelled when toggled). Each carries
   // a count and a movement dot so you can see where there's action.
@@ -461,13 +484,15 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         return (a.app.startDate ?? "9999").localeCompare(b.app.startDate ?? "9999");
       });
     const list: { key: string; label: string; deals: BoardDeal[]; movement: "red" | "green" | null }[] = [];
-    const allActive = base.filter((d) => d.statusKey !== "cancelled");
-    list.push({ key: "all", label: "All", deals: sortDeals(allActive), movement: movementOf(allActive) });
+    // Stages first (always open on the first), then Slipped, then All, then
+    // Cancelled when toggled.
     for (const s of PORTAL_STAGES) {
       const dl = byStage.byKey.get(s.key) ?? [];
       list.push({ key: s.key, label: s.label, deals: sortDeals(dl), movement: movementOf(dl) });
     }
     list.push({ key: "slipped", label: "Slipped", deals: sortDeals(byStage.slipped), movement: byStage.slipped.length ? "red" : null });
+    const allActive = base.filter((d) => d.statusKey !== "cancelled");
+    list.push({ key: "all", label: "All", deals: sortDeals(allActive), movement: movementOf(allActive) });
     if (showCancelled) {
       list.push({ key: "cancelled", label: "Cancelled", deals: byStage.cancelled, movement: null });
     }
@@ -483,29 +508,6 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 backdrop-blur">
         <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
           <WorkspaceSwitcher user={user} current="pretenancy" size={28} />
-
-          {/* headline counters live in the header — the board needs the space */}
-          {summary ? (
-            <div className="ml-6 hidden items-center gap-5 lg:flex">
-              <HeaderStat label="In progression" value={summary.pipelineTotal} />
-              <HeaderStat label="Moved in this month" value={summary.completedMtd ?? "—"} />
-              <button
-                type="button"
-                onClick={() => setTab("slipped")}
-                className={`btn-press rounded-lg border px-3 py-1.5 text-left transition ${
-                  tab === "slipped" ? "border-red-300 bg-red-50" : "border-transparent hover:border-line"
-                }`}
-              >
-                <div className={`stat-value text-[17px] leading-5 ${summary.overdue > 0 ? "text-red-600" : ""}`}>
-                  {summary.overdue}
-                </div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                  Date slipped
-                </div>
-              </button>
-              <HeaderStat label="No date" value={summary.undated} />
-            </div>
-          ) : null}
 
           <div className="ml-auto flex items-center gap-3">
             {/* today's date + her worklist for the day */}
@@ -537,7 +539,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 sm:px-6">
+      <div className="flex min-h-0 flex-1 flex-col px-5 pt-4 sm:px-8">
         {!configured ? (
           <div className="card p-6 text-sm text-muted">
             Propoly isn&apos;t connected yet — the deal board appears as soon as the
@@ -546,95 +548,69 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         ) : null}
         {error ? <div className="card p-6 text-sm text-muted">{error}</div> : null}
 
-        {/* ---- title + search ---- */}
-        <section className="enter enter-up flex flex-wrap items-end justify-between gap-3" style={enterAt(30)}>
+        {/* ---- title + stats + search ---- */}
+        <section className="enter enter-up flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-3" style={enterAt(30)}>
           <div>
-            <h1 className="text-[22px] font-semibold tracking-tight">Pre-Tenancy pipeline</h1>
-            <p className="mt-0.5 text-[13px] text-muted">
-              {deals
-                ? `${activeCount} in progression${
-                    summary?.overdue ? ` · ${summary.overdue} slipped` : ""
-                  }${summary?.completedMtd != null ? ` · ${summary.completedMtd} moved in this month` : ""}`
-                : "Loading the pipeline…"}
-            </p>
+            <h1 className="text-[26px] font-semibold tracking-tight">Pre-Tenancy pipeline</h1>
+            <p className="mt-1 text-[13px] text-muted">Every move-in in progress, across all agents.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="search"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search property, tenant or agent…"
-              className="w-full max-w-xs rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] outline-none transition focus:border-gray-400"
-            />
-            <select
-              value={agent}
-              onChange={(e) => setAgent(e.target.value)}
-              className="rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none"
-            >
-              <option value="all">All agents</option>
-              {agents.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            {deals ? (
+              <div className="flex items-center gap-6">
+                <MiniStat label="In progression" value={activeCount} />
+                <MiniStat label="Moved in this month" value={summary?.completedMtd ?? "—"} />
+                <MiniStat label="No date" value={undatedCount} />
+              </div>
+            ) : null}
+            <div className="flex items-center gap-2">
+              <input
+                type="search"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search property, tenant or agent…"
+                className="w-52 rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] outline-none transition focus:border-gray-400"
+              />
+              <select
+                value={agent}
+                onChange={(e) => setAgent(e.target.value)}
+                className="rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="all">All agents</option>
+                {agents.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </section>
 
-        {/* ---- browse by stage ---- */}
+        {/* ---- merged stage nav: icons + underline tabs in one row ---- */}
         {deals ? (
-          <section className="enter enter-up card mt-4 p-4" style={enterAt(60)}>
-            <div className="mb-3">
-              <h2 className="text-[13px] font-semibold">Browse by stage</h2>
-              <p className="text-[11.5px] text-muted">Where every deal is up to — tap a stage to focus it</p>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 lg:grid-cols-8">
-              {PORTAL_STAGES.map((s) => {
-                const dl = byStage.byKey.get(s.key) ?? [];
-                const v = stageVisual(s.key);
-                return (
-                  <button
-                    key={s.key}
-                    type="button"
-                    onClick={() => setTab(s.key)}
-                    className="group flex items-center gap-2.5 rounded-xl p-1.5 text-left transition hover:bg-page"
-                  >
-                    <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
-                      <StageIcon stageKey={s.key} />
-                      <MovementDot kind={movementOf(dl)} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[12px] font-semibold leading-tight">{s.label}</span>
-                      <span className="block text-[11px] text-muted">{dl.length} deal{dl.length === 1 ? "" : "s"}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ) : null}
-
-        {/* ---- tabs ---- */}
-        {deals ? (
-          <section className="enter enter-up mt-4 flex items-center gap-1 overflow-x-auto border-b border-line pb-px" style={enterAt(90)}>
+          <section className="enter enter-up mt-6 flex items-stretch gap-1 overflow-x-auto border-b border-line" style={enterAt(80)}>
             {tabs.map((t) => {
               const activeT = t.key === activeTab.key;
+              const v = stageVisual(t.key);
               return (
                 <button
                   key={t.key}
                   type="button"
                   onClick={() => setTab(t.key)}
-                  className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-[12.5px] font-semibold transition ${
+                  className={`relative flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-3 transition ${
                     activeT ? "text-ink" : "text-muted hover:text-ink"
                   }`}
                 >
-                  {t.label}
+                  <span className={`relative flex h-7 w-7 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
+                    <StageIcon stageKey={t.key} className="h-3.5 w-3.5" />
+                    <MovementDot kind={t.movement} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
+                  </span>
+                  <span className="text-[12.5px] font-semibold">{t.label}</span>
                   <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${activeT ? "bg-ink/10 text-ink" : "bg-page text-muted"}`}>
                     {t.deals.length}
                   </span>
-                  <MovementDot kind={t.movement} />
                   {activeT ? (
-                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full" style={{ background: BRAND.accent }} />
+                    <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full" style={{ background: BRAND.accent }} />
                   ) : null}
                 </button>
               );
@@ -642,19 +618,19 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
             <button
               type="button"
               onClick={() => setShowCancelled((v) => !v)}
-              className="ml-auto shrink-0 whitespace-nowrap px-2 text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+              className="ml-auto shrink-0 self-center whitespace-nowrap px-3 text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
             >
               {showCancelled ? "Hide cancelled" : `Show cancelled (${byStage.cancelled.length})`}
             </button>
           </section>
         ) : null}
 
-        {/* ---- tile grid ---- */}
-        <section className="enter enter-up mt-4 min-h-0 flex-1 overflow-y-auto pb-6" style={enterAt(120)}>
+        {/* ---- tile grid: up to five across ---- */}
+        <section className="enter enter-up mt-5 min-h-0 flex-1 overflow-y-auto pb-8" style={enterAt(120)}>
           {deals == null && !error ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-[112px] animate-pulse rounded-2xl bg-white/70" />
+            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="h-[130px] animate-pulse rounded-2xl bg-white/70" />
               ))}
             </div>
           ) : activeTab.deals.length === 0 ? (
@@ -662,7 +638,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
               Nothing in {activeTab.label.toLowerCase()} right now.
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {activeTab.deals.map((d) => (
                 <DealTile key={d.app.id} d={d} onOpen={() => setOpenId(d.app.id)} />
               ))}
@@ -702,18 +678,19 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   );
 }
 
-function HeaderStat({ label, value }: { label: string; value: number | string }) {
+function MiniStat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div>
-      <div className="stat-value text-[17px] leading-5">{value}</div>
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</div>
+    <div className="text-right">
+      <div className="stat-value text-[18px] leading-5">{value}</div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</div>
     </div>
   );
 }
 
 /* ------------------------------- deal tile ------------------------------- */
-// A card per deal: colour-coded stage icon, property + stage badge, tenant &
-// agent, the rent/move-in line, and a footer with checklist + notes. A
+// A card per deal: colour-coded stage icon + property address (the icon says
+// the stage, so no pill). Tenant & agent, the rent/move-in line, and a footer
+// showing pipeline progress (dots filled to the current stage) + notes. A
 // movement dot flags anything new or updated at a glance.
 
 function DealTile({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
@@ -724,16 +701,16 @@ function DealTile({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
   const v = stageVisual(key);
   const attn = dealNeedsAttention(d);
   const upd = dealHasUpdate(d);
-  const done = d.portal.checklistDone;
-  const total = d.portal.checklistTotal || 9;
+  // Dots show how far through the pipeline the deal is — filled to its stage.
+  const { done, total } = stageProgress(key);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="btn-press flex w-full flex-col rounded-2xl border border-line bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-black/20 hover:shadow-md"
+      className="btn-press flex w-full flex-col rounded-2xl border border-line bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-black/20 hover:shadow-md"
     >
-      {/* header: icon + name + stage badge */}
+      {/* header: icon + property address */}
       <div className="flex items-start gap-2.5">
         <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
           <StageIcon stageKey={key} />
@@ -743,13 +720,10 @@ function DealTile({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
           <p className="truncate text-[13px] font-semibold leading-tight">{d.app.propertyName}</p>
           <p className="truncate text-[11px] text-muted">{d.app.locality}</p>
         </div>
-        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${stagePill(key)}`}>
-          {(cancelled ? "Cancelled" : stageLabel(key)).toUpperCase()}
-        </span>
       </div>
 
       {/* tenant + agent */}
-      <div className="mt-2.5 flex items-center justify-between gap-2 text-[11.5px] text-muted">
+      <div className="mt-3 flex items-center justify-between gap-2 text-[11.5px] text-muted">
         <span className="truncate">
           {lead ? lead.name : "No tenant recorded"}
           {d.app.tenants.length > 1 ? ` +${d.app.tenants.length - 1}` : ""}
@@ -757,22 +731,22 @@ function DealTile({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
         <span className="shrink-0 truncate">{d.agentName ?? "—"}</span>
       </div>
 
-      {/* rent + move-in */}
-      <div className="mt-1 flex items-center justify-between gap-2 text-[11.5px]">
+      {/* rent + move-in (move-in stays black; the Slipped tab surfaces late ones) */}
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11.5px]">
         <span className="font-medium text-ink">
           {d.app.offer != null ? `${formatGBP(d.app.offer)}/mo` : "—"}
         </span>
-        <span className={overdue ? "font-semibold text-red-600" : "text-muted"}>
+        <span className={overdue ? "font-semibold text-ink" : "text-muted"}>
           {d.app.startDate ? `Move-in ${fmtDate(d.app.startDate)}${overdue ? " · slipped" : ""}` : "Move-in TBC"}
         </span>
       </div>
 
-      {/* footer: checklist + notes */}
-      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2 text-[10.5px] text-muted">
-        <span className="flex items-center gap-1.5">
+      {/* footer: pipeline progress + notes */}
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-2.5 text-[10.5px] text-muted">
+        <span className="flex items-center gap-1.5" title={`Stage ${done} of ${total}`}>
           <span className="flex gap-0.5">
             {Array.from({ length: total }).map((_, i) => (
-              <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < done ? "bg-green-500" : "bg-gray-200"}`} />
+              <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < done ? v.dot : "bg-gray-200"}`} />
             ))}
           </span>
           {done}/{total}
