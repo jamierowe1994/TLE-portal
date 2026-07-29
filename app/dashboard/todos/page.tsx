@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BRAND } from "@/lib/brand";
 import { PLATFORMS } from "@/lib/platforms";
 import DateTimePicker from "@/components/DateTimePicker";
+import DoodleIcon from "@/components/DoodleIcon";
 import Loader from "@/components/Loader";
 
 const enterAt = (ms: number) =>
@@ -318,6 +319,11 @@ function DetailFields({
 
 const EMPTY_DETAILS: Details = { dueAt: "", platform: "", property: "", tenant: "" };
 
+// How long the completion celebration runs before the tile leaves the list.
+// Deliberately unhurried — this is the one moment the page gets to be silly.
+const CELEBRATION_MS = 3750;
+
+
 /** ISO from the store → value a datetime-local input accepts. */
 function isoToLocal(iso: string | null): string {
   if (!iso) return "";
@@ -340,6 +346,9 @@ export default function TodosPage() {
   const [details, setDetails] = useState<Details>(EMPTY_DETAILS);
   const [moreOpen, setMoreOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // The tile currently playing its completion celebration (id → started at).
+  const [celebrating, setCelebrating] = useState<string | null>(null);
 
   // edit-in-place
   const [editId, setEditId] = useState<string | null>(null);
@@ -430,15 +439,37 @@ export default function TodosPage() {
   }
 
   async function toggle(t: Todo) {
-    setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, done: !t.done } : x)));
+    // Un-ticking is instant; ticking gets the full song and dance first.
+    if (t.done) {
+      setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, done: false } : x)));
+      const res = await fetch("/api/my/todos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: t.id, done: false }),
+      });
+      if (!res.ok) {
+        setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, done: true } : x)));
+      }
+      return;
+    }
+
+    if (celebrating) return;
+    setCelebrating(t.id);
+
+    // Save straight away; the animation plays over the top either way.
     const res = await fetch("/api/my/todos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: t.id, done: !t.done }),
+      body: JSON.stringify({ id: t.id, done: true }),
     });
-    if (!res.ok) {
-      setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, done: t.done } : x)));
-    }
+
+    // Total run: spin → tick → confetti → liftoff → scoot → collapse.
+    setTimeout(() => {
+      if (res.ok) {
+        setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, done: true } : x)));
+      }
+      setCelebrating(null);
+    }, CELEBRATION_MS);
   }
 
   async function remove(t: Todo) {
@@ -471,7 +502,7 @@ export default function TodosPage() {
 
     if (editing) {
       return (
-        <li className="menu-pop col-span-full space-y-3 rounded-xl border border-black/20 bg-card p-4">
+        <li className="menu-pop col-span-full space-y-3 rounded-xl border border-black/20 p-4">
           <input
             type="text"
             value={editNote}
@@ -509,55 +540,108 @@ export default function TodosPage() {
       );
     }
 
+    const party = celebrating === t.id;
+
     return (
       <li
-        className="group card btn-press flex cursor-pointer flex-col p-4 text-left transition hover:border-black/20"
-        onClick={() => startEdit(t)}
+        className={`group card relative flex cursor-pointer flex-col overflow-hidden p-4 text-left transition hover:border-black/20 ${
+          party ? "done-collapse" : ""
+        }`}
+        onClick={() => !party && startEdit(t)}
       >
-        <div className="flex items-start gap-2.5">
+        {/* everything that flies away when the job's done */}
+        <div className={party ? "done-liftoff" : ""}>
+          {/* the title, on its own line */}
+          <p className={`text-[14px] font-medium leading-snug ${t.done ? "text-muted line-through" : "text-ink"}`}>
+            {t.note}
+          </p>
+
+          {/* the details, one thing per line so it reads rather than jumbles */}
+          <div className="mt-3 space-y-1.5">
+            <div className="flex items-center gap-2 text-[12px] text-muted" onClick={(e) => e.stopPropagation()}>
+              <DoodleIcon name="calendar" size={13} className="shrink-0 text-muted/70" />
+              <DateTimePicker
+                value={isoToLocal(t.dueAt)}
+                onChange={(v) => void patchDue(t, v)}
+                variant="chip"
+                overdue={Boolean(due?.overdue && !t.done)}
+                placeholder="Add a date"
+              />
+            </div>
+            {t.property ? (
+              <div className="flex items-center gap-2 text-[12px] text-muted">
+                <DoodleIcon name="home" size={13} className="shrink-0 text-muted/70" />
+                <span className="truncate text-ink">{t.property}</span>
+              </div>
+            ) : null}
+            {t.tenant || t.platform ? (
+              <div className="flex items-center gap-2 text-[12px] text-muted">
+                <DoodleIcon name={t.tenant ? "user" : "grid"} size={13} className="shrink-0 text-muted/70" />
+                <span className="truncate text-ink">{t.tenant ?? t.platform}</span>
+                {t.tenant && t.platform ? <span className={chip}>{t.platform}</span> : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Mark as done — the only button on the tile; deleting lives behind
+            the click-through so nothing goes missing by accident. */}
+        <div className={`mt-auto pt-4 ${party ? "done-liftoff" : ""}`}>
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               void toggle(t);
             }}
-            aria-label={t.done ? "Mark as not done" : "Mark as done"}
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
-              t.done ? "border-transparent" : "border-line hover:border-black/30"
+            disabled={Boolean(celebrating) && !party}
+            className={`btn-press inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${
+              t.done
+                ? "border-line text-muted hover:text-ink"
+                : "border-line text-ink hover:border-black/25"
             }`}
-            style={t.done ? { background: BRAND.accent } : undefined}
           >
-            {t.done ? (
-              <svg viewBox="0 0 24 24" className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 13l4 4L19 7" />
-              </svg>
-            ) : null}
+            <span
+              className={`relative flex h-4 w-4 items-center justify-center rounded-full border ${
+                t.done || party ? "border-transparent" : "border-line"
+              }`}
+              style={t.done || party ? { background: BRAND.accent } : undefined}
+            >
+              {party ? (
+                <>
+                  <span className="done-spin absolute inset-0 rounded-full border-2 border-white/70 border-t-transparent" />
+                  <svg viewBox="0 0 24 24" className="done-tick h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                </>
+              ) : t.done ? (
+                <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 13l4 4L19 7" />
+                </svg>
+              ) : null}
+            </span>
+            {t.done ? "Done" : party ? "Nice one!" : "Mark as done"}
           </button>
-          <p className={`min-w-0 flex-1 text-[14px] leading-snug ${t.done ? "text-muted line-through" : "text-ink"}`}>
-            {t.note}
-          </p>
         </div>
 
-        <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
-          <span onClick={(e) => e.stopPropagation()}>
-            <DateTimePicker
-              value={isoToLocal(t.dueAt)}
-              onChange={(v) => void patchDue(t, v)}
-              variant="chip"
-              overdue={Boolean(due?.overdue && !t.done)}
-              placeholder="Add date"
+        {/* ---- the Fast Worker scoots through on his chair, clipped to the
+             tile and facing the way he's travelling ---- */}
+        {party ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/illustrations/notioly/fast-worker.svg"
+              alt=""
+              aria-hidden
+              className="done-scoot h-32 w-auto -scale-x-100"
             />
-          </span>
-          {t.platform ? <span className={chip}>{t.platform}</span> : null}
-          {t.property ? <span className={chip}>🏠 {t.property}</span> : null}
-          {t.tenant ? <span className={chip}>👤 {t.tenant}</span> : null}
-        </div>
+          </div>
+        ) : null}
       </li>
     );
   };
 
   return (
-    <div className="space-y-6">
+    <div className="outline-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">To-dos</h1>
         <p className="mt-1 text-[13px] text-muted">
@@ -661,13 +745,17 @@ export default function TodosPage() {
 
       {/* A little Notioly scene in the corner — sits behind the assistant
           bubble, purely decorative. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/illustrations/notioly/to-do-list.svg"
-        alt=""
+      <div
         aria-hidden
         className="corner-art pointer-events-none fixed -bottom-14 -right-10 -z-10 hidden w-[420px] opacity-90 lg:block"
-      />
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/illustrations/notioly/to-do-list.svg"
+          alt=""
+          className="h-auto w-full -scale-x-100"
+        />
+      </div>
     </div>
   );
 }

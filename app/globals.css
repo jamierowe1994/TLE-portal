@@ -264,7 +264,11 @@ h5 {
    page animates, their fixed positioning is temporarily owned by the moving
    wrapper, so showing them mid-flight reads as a jolt. */
 .corner-art {
-  animation: enter-fade 0.45s ease 1.15s both;
+  animation: corner-rise 0.65s cubic-bezier(0.22, 1, 0.36, 1) 1.15s both;
+}
+@keyframes corner-rise {
+  from { opacity: 0; transform: translateY(64px); }
+  to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .corner-art { animation: none; }
@@ -526,5 +530,76 @@ body.presenting .source-badge[class*="border"] {
   .btn-press:active {
     transition: none;
     transform: none;
+  }
+}
+
+
+/* ---------------------------------------------------------------------------
+   To-do completion choreography — deliberately slow and theatrical:
+   1. the circle spins, then snaps to a tick
+   2. confetti falls inside the tile only
+   3. the tile's content flies up and out
+   4. the Fast Worker scoots across on his chair, the tile collapsing behind him
+--------------------------------------------------------------------------- */
+
+/* 1 — the button spins, then the tick pops in */
+.done-spin {
+  animation: done-spin 0.9s cubic-bezier(0.5, 0, 0.3, 1) both;
+}
+@keyframes done-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  70% { transform: rotate(720deg) scale(1.18); }
+  100% { transform: rotate(720deg) scale(1); }
+}
+.done-tick {
+  animation: done-tick 0.5s cubic-bezier(0.34, 1.7, 0.5, 1) 0.75s both;
+}
+@keyframes done-tick {
+  0% { opacity: 0; transform: scale(0.2); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes confetti-fall {
+  0% { opacity: 0; transform: translate(0, -20px) rotate(0deg); }
+  12% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--drift, 0px), 230px) rotate(var(--spin, 540deg)); }
+}
+
+/* 3 — the tile's content lifts away */
+.done-liftoff {
+  animation: done-liftoff 0.75s cubic-bezier(0.5, 0, 0.75, 0.4) 1.15s both;
+}
+@keyframes done-liftoff {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-130px); }
+}
+
+/* 4 — the Fast Worker scoots left→right across the tile, then off */
+.done-scoot {
+  animation: done-scoot 1.9s cubic-bezier(0.4, 0, 0.6, 1) 1.55s both;
+}
+@keyframes done-scoot {
+  0% { opacity: 0; transform: translateX(-115%) rotate(-3deg); }
+  10% { opacity: 1; }
+  35% { transform: translateX(-10%) rotate(2deg); }
+  60% { transform: translateX(45%) rotate(-2deg); }
+  90% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(150%) rotate(3deg); }
+}
+
+/* …and the tile collapses shut behind him */
+.done-collapse {
+  animation: done-collapse 1.5s cubic-bezier(0.6, 0, 0.4, 1) 2.25s both;
+}
+@keyframes done-collapse {
+  0% { max-height: 460px; opacity: 1; margin-bottom: 0; }
+  70% { opacity: 1; }
+  100% { max-height: 0; opacity: 0; margin-bottom: -0.75rem; padding-top: 0; padding-bottom: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .done-spin, .done-tick, .done-liftoff, .done-scoot, .done-collapse {
+    animation: none;
   }
 }
