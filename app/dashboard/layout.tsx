@@ -55,6 +55,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [user, setUser] = useState<UserProfile | null>(null);
   const [checking, setChecking] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Kept mounted briefly on close so it can shrink upwards before unmounting.
+  const [menuClosing, setMenuClosing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // TLE OS spring box: open pops the brand chips up; closing keeps them
   // mounted just long enough to tumble back down behind the line.
@@ -85,13 +87,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const closeMenu = () => {
+    setMenuOpen(false);
+    setMenuClosing(true);
+    setTimeout(() => setMenuClosing(false), 240);
+  };
+
   // Close the account menu on an outside click or Escape.
   useEffect(() => {
     if (!menuOpen) return;
     const onDoc = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) closeMenu();
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeMenu();
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -116,7 +124,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [router, pathname]);
 
-  useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {
+    setMenuOpen(false);
+    setMenuClosing(false);
+  }, [pathname]);
 
   async function handleSignOut() {
     await signOut();
@@ -182,7 +193,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="relative mt-5 px-3" ref={menuRef}>
           <button
             type="button"
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             className={`flex w-full items-center gap-2.5 rounded-lg border ${RAIL_LINE} px-3 py-2.5 text-left transition hover:bg-white/60 ${
@@ -212,8 +223,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </svg>
           </button>
 
-          {menuOpen ? (
-            <div className="swing-down absolute left-3 right-3 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl">
+          {menuOpen || menuClosing ? (
+            <div className={`${menuClosing ? "shrink-up" : "swing-down"} absolute left-3 right-3 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl`}>
               <Link
                 href="/dashboard/profile"
                 className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-ink transition hover:bg-black/[0.04]"
@@ -281,15 +292,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   url: p.url,
                   external: true,
                 })),
-              ].map((c, i) => {
+              ].map((c, i, arr) => {
                 // Alternating tilts + uneven delays = thrown in the air,
-                // knocking about, landing in place.
+                // knocking about, landing in place. --travel is each chip's
+                // distance past the bottom line, so every chip rises from
+                // behind it and falls fully back behind it — the top chip
+                // travels the furthest, no fading.
                 const tilt = [-7, 6, -5, 8, -6, 5, -8, 4][i % 8];
                 const delay = [0, 70, 35, 105, 55, 120, 20, 90][i % 8];
+                const travel = (arr.length - i) * 38 + 24;
                 const cls = `${tleClosing ? "chip-fall" : "chip-pop"} flex items-center rounded-lg border ${RAIL_LINE} bg-white/70 px-3 py-1.5 text-[12.5px] font-medium`;
                 const style = {
                   "--tilt": `${tilt}deg`,
                   "--delay": `${delay}ms`,
+                  "--travel": `${travel}px`,
                 } as React.CSSProperties;
                 if (!c.url) {
                   return (

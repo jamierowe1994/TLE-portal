@@ -171,7 +171,9 @@ export default function MyDashboardPage() {
   const c = stats?.conversions;
 
   return (
-    <div className="space-y-5">
+    // outline-cards: the dashboard experiment — boxes as outlines on the grey
+    // rather than filled white (globals.css).
+    <div className="outline-cards space-y-5">
       {/* Period selector — drives the earnings view below.
           Slides in from behind the nav rail. */}
       <div
@@ -212,10 +214,10 @@ export default function MyDashboardPage() {
 
       {!loading && stats ? (
         <>
-          {/* ---- HERO: compact earnings + the portfolio mix donut ---- */}
-          <section className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
-            <div className="enter enter-up" style={enterAt(900)}>
-            <div className="card card-lift flex h-full flex-col p-5">
+          {/* ---- HERO: earnings + portfolio mix share ONE outlined box, split
+               by a centre line that stops short of the edges ---- */}
+          <section className="enter enter-up card grid lg:grid-cols-[1fr_1.3fr]" style={enterAt(900)}>
+            <div className="flex h-full flex-col p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
                   <DoodleIcon name="wallet" size={16} />
@@ -252,7 +254,9 @@ export default function MyDashboardPage() {
                 </span>
               </div>
             </div>
-            </div>
+
+            {/* stacked on mobile: a short horizontal rule instead */}
+            <div className="mx-6 border-t border-black/[0.08] lg:hidden" />
 
             {(() => {
               const detail = stats.portfolioDetail;
@@ -272,8 +276,9 @@ export default function MyDashboardPage() {
                 { label: "On market", value: onMarket, color: "#f8ccd2" },
               ].filter((s) => s.value > 0);
               return (
-                <div className="enter enter-right h-full" style={enterAt(1000)}>
-                <div className="card card-lift flex h-full flex-col p-5">
+                <div className="relative flex h-full flex-col p-5">
+                  {/* the split — deliberately stops short of top and bottom */}
+                  <div className="absolute bottom-6 left-0 top-6 hidden w-px bg-black/[0.08] lg:block" />
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
                       <DoodleIcon name="pie" size={16} />
@@ -337,7 +342,6 @@ export default function MyDashboardPage() {
                       </div>
                     </div>
                   </div>
-                </div>
                 </div>
               );
             })()}

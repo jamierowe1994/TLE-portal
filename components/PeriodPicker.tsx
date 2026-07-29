@@ -130,7 +130,11 @@ export default function PeriodPicker({
     return () => window.removeEventListener("pointerdown", onDown);
   }, [openMenu]);
 
-  const presetLabel = PRESET_MENU.find((p) => p.key === presetKey)?.label ?? "This month";
+  // When a custom range is active, the preset box wears the range itself.
+  const presetLabel =
+    mode === "custom"
+      ? rangeLabel(range(idx(from), idx(to)))
+      : (PRESET_MENU.find((p) => p.key === presetKey)?.label ?? "This month");
 
   function pickPreset(k: string) {
     setPresetKey(k);
@@ -165,116 +169,113 @@ export default function PeriodPicker({
   );
 
   return (
-    <div className="space-y-2">
-      <div ref={wrap} className="flex flex-wrap items-center gap-2">
-        {/* Box 1 — preset dropdown */}
-        <div className="relative">
-          <button
-            type="button"
-            className={boxClass(mode === "preset")}
-            onClick={() => setOpenMenu((m) => (m === "preset" ? null : "preset"))}
-          >
-            <CalendarIcon />
-            <span>{presetLabel}</span>
-            <Chevron open={openMenu === "preset"} />
-          </button>
-          {openMenu === "preset" ? (
-            <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 min-w-[188px] rounded-xl border border-line bg-card p-1 shadow-lg">
-              {PRESET_MENU.map((p) => (
-                <button
-                  key={p.key}
-                  type="button"
-                  onClick={() => pickPreset(p.key)}
-                  className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
-                >
-                  {p.label}
-                  {mode === "preset" && presetKey === p.key ? check : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        {/* Box 2 — by month (custom dropdown, mirrors Box 1) */}
-        <div className="relative">
-          <button
-            type="button"
-            className={boxClass(mode === "month")}
-            onClick={() => setOpenMenu((m) => (m === "month" ? null : "month"))}
-          >
-            <MonthIcon />
-            <span>{mode === "month" ? monthLabel(selectedMonth) : "By month"}</span>
-            <Chevron open={openMenu === "month"} />
-          </button>
-          {openMenu === "month" ? (
-            <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 max-h-64 min-w-[184px] overflow-y-auto rounded-xl border border-line bg-card p-1 shadow-lg">
-              {ALL_MONTHS.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => pickMonth(m)}
-                  className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
-                >
-                  {monthLabel(m)}
-                  {mode === "month" && selectedMonth === m ? check : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Custom range — tucked underneath */}
-      <div>
+    <div ref={wrap} className="flex flex-wrap items-center gap-2">
+      {/* Box 1 — preset dropdown, with custom dates tucked in at the bottom */}
+      <div className="relative">
         <button
           type="button"
-          onClick={() => {
-            const next = !customOpen;
-            setCustomOpen(next);
-            if (next) {
-              setMode("custom");
-              applyCustom(from, to);
-            }
-          }}
-          className={`inline-flex items-center gap-1.5 text-[12.5px] font-medium transition ${
-            mode === "custom" ? "text-ink underline underline-offset-2" : "text-muted hover:text-ink"
-          }`}
+          className={boxClass(mode === "preset" || mode === "custom")}
+          onClick={() => setOpenMenu((m) => (m === "preset" ? null : "preset"))}
         >
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-          Custom range
-          <Chevron open={customOpen} />
+          <CalendarIcon />
+          <span>{presetLabel}</span>
+          <Chevron open={openMenu === "preset"} />
         </button>
+        {openMenu === "preset" ? (
+          <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 min-w-[208px] rounded-xl border border-line bg-card p-1 shadow-lg">
+            {PRESET_MENU.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => pickPreset(p.key)}
+                className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
+              >
+                {p.label}
+                {mode === "preset" && presetKey === p.key ? check : null}
+              </button>
+            ))}
 
-        {customOpen ? (
-          <div className="fade-up mt-2 flex flex-wrap items-center gap-2 text-[13px] text-muted">
-            <span>From</span>
-            <input
-              type="month"
-              min="2026-01"
-              max="2026-12"
-              value={from}
-              onChange={(e) => {
-                setFrom(e.target.value);
-                setMode("custom");
-                applyCustom(e.target.value, to);
+            <div className="mx-2 my-1 border-t border-line" />
+            <button
+              type="button"
+              onClick={() => {
+                const next = !customOpen;
+                setCustomOpen(next);
+                if (next) {
+                  setMode("custom");
+                  applyCustom(from, to);
+                }
               }}
-              className="hairline rounded-lg border border-line bg-card px-2.5 py-1.5 text-ink outline-none focus:border-accent"
-            />
-            <span>to</span>
-            <input
-              type="month"
-              min="2026-01"
-              max="2026-12"
-              value={to}
-              onChange={(e) => {
-                setTo(e.target.value);
-                setMode("custom");
-                applyCustom(from, e.target.value);
-              }}
-              className="hairline rounded-lg border border-line bg-card px-2.5 py-1.5 text-ink outline-none focus:border-accent"
-            />
+              className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
+            >
+              Custom dates
+              <span className="flex items-center gap-1.5">
+                {mode === "custom" ? check : null}
+                <Chevron open={customOpen} />
+              </span>
+            </button>
+            {customOpen ? (
+              <div className="fade-up space-y-1.5 px-3 pb-2 pt-1 text-[12px] text-muted">
+                <label className="flex items-center justify-between gap-2">
+                  From
+                  <input
+                    type="month"
+                    min="2026-01"
+                    max="2026-12"
+                    value={from}
+                    onChange={(e) => {
+                      setFrom(e.target.value);
+                      setMode("custom");
+                      applyCustom(e.target.value, to);
+                    }}
+                    className="hairline rounded-lg border border-line bg-card px-2 py-1 text-ink outline-none focus:border-ink/40"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2">
+                  To
+                  <input
+                    type="month"
+                    min="2026-01"
+                    max="2026-12"
+                    value={to}
+                    onChange={(e) => {
+                      setTo(e.target.value);
+                      setMode("custom");
+                      applyCustom(from, e.target.value);
+                    }}
+                    className="hairline rounded-lg border border-line bg-card px-2 py-1 text-ink outline-none focus:border-ink/40"
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Box 2 — by month (custom dropdown, mirrors Box 1) */}
+      <div className="relative">
+        <button
+          type="button"
+          className={boxClass(mode === "month")}
+          onClick={() => setOpenMenu((m) => (m === "month" ? null : "month"))}
+        >
+          <MonthIcon />
+          <span>{mode === "month" ? monthLabel(selectedMonth) : "By month"}</span>
+          <Chevron open={openMenu === "month"} />
+        </button>
+        {openMenu === "month" ? (
+          <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 max-h-64 min-w-[184px] overflow-y-auto rounded-xl border border-line bg-card p-1 shadow-lg">
+            {ALL_MONTHS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => pickMonth(m)}
+                className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
+              >
+                {monthLabel(m)}
+                {mode === "month" && selectedMonth === m ? check : null}
+              </button>
+            ))}
           </div>
         ) : null}
       </div>
