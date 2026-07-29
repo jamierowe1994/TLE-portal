@@ -7,7 +7,7 @@ import NoPhoto from "@/components/NoPhoto";
 // flick through, dots for where you are. One photo → no chrome at all.
 
 function Placeholder() {
-  return <NoPhoto label="No photos yet" className="border-0" />;
+  return <NoPhoto label="No photos yet" className="border-0" fit="contain" />;
 }
 
 export default function PhotoCarousel({
