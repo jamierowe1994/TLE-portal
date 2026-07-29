@@ -13,13 +13,17 @@ import { useEffect } from "react";
 export function DrawerPanel({
   children,
   className = "",
+  style,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Inline sizing (e.g. a fixed width) — beats any utility-class ordering. */
+  style?: React.CSSProperties;
 }) {
   return (
     <div
       className={`modal-pop w-full rounded-2xl bg-card ${className}`}
+      style={style}
       onClick={(e) => e.stopPropagation()}
     >
       {children}

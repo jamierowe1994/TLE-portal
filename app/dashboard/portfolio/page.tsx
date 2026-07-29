@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import Loader from "@/components/Loader";
+import NoPhoto from "@/components/NoPhoto";
 import { rexListingUrl } from "@/lib/rex-links";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import PhotoCarousel from "@/components/PhotoCarousel";
@@ -99,15 +100,7 @@ function renewalLabel(p: PortfolioProperty): { text: string; urgent: boolean } |
 
 function Photo({ image, alt }: { image: string | null; alt: string }) {
   if (!image) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-page text-muted">
-        <svg className="h-5 w-5 opacity-40" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-          <rect x={3} y={5} width={18} height={14} rx={2} />
-          <path d="M3 15l5-5 4 4 3-3 6 6" />
-          <circle cx={8.5} cy={9.5} r={1} />
-        </svg>
-      </div>
-    );
+    return <NoPhoto />;
   }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={image} alt={alt} loading="lazy" className="h-full w-full object-cover" />;

@@ -1,25 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import NoPhoto from "@/components/NoPhoto";
 
 // Square photo carousel for the split drawers: arrows to step, drag/swipe to
 // flick through, dots for where you are. One photo → no chrome at all.
 
 function Placeholder() {
-  // No photos on file → a little Notioly person who's lost the way, sat in
-  // the same rounded frame the photo would fill.
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-page">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/illustrations/notioly/lost-the-way.svg"
-        alt=""
-        aria-hidden
-        className="h-[70%] w-auto max-w-[80%] object-contain"
-      />
-      <span className="text-[11px] text-muted">No photos yet</span>
-    </div>
-  );
+  return <NoPhoto label="No photos yet" className="border-0" />;
 }
 
 export default function PhotoCarousel({

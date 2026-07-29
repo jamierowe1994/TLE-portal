@@ -14,6 +14,7 @@ import { platformById } from "@/lib/platforms";
 import { rexListingUrl } from "@/lib/rex-links";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import PhotoCarousel from "@/components/PhotoCarousel";
+import NoPhoto from "@/components/NoPhoto";
 import type { AgentListing } from "@/lib/rex-stats";
 
 const enterAt = (ms: number) =>
@@ -132,16 +133,7 @@ function stepsFor(l: AgentListing, stage: Stage): Step[] {
 
 function Photo({ l, rounded }: { l: AgentListing; rounded?: string }) {
   if (!l.image) {
-    return (
-      <div className={`flex h-full w-full flex-col items-center justify-center gap-1 bg-page text-muted ${rounded ?? ""}`}>
-        <svg className="h-5 w-5 opacity-40" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-          <rect x={3} y={5} width={18} height={14} rx={2} />
-          <path d="M3 15l5-5 4 4 3-3 6 6" />
-          <circle cx={8.5} cy={9.5} r={1} />
-        </svg>
-        <span className="text-[10px]">No photos</span>
-      </div>
-    );
+    return <NoPhoto className={rounded} />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -203,7 +195,7 @@ function ListingTile({
       {/* The photo sits inset, so the card's own white reads as a border around
           it. Cropped to fill — a slight crop beats letterboxing. */}
       <div className="w-[38%] shrink-0 p-3 pl-0">
-        <div className="relative h-full w-full overflow-hidden rounded-xl bg-page">
+        <div className={`relative h-full w-full overflow-hidden rounded-xl ${l.image ? "bg-page" : ""}`}>
           <Photo l={l} />
           {l.imageCount > 1 ? (
             <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
@@ -253,7 +245,10 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
 
   return (
     <SplitDrawer onClose={onClose}>
-      <DrawerPanel className="w-[min(56rem,calc(100vw-2rem))] p-3">
+      <DrawerPanel
+        className="shrink-0 grow-0 overflow-hidden p-3"
+        style={{ width: "min(56rem, calc(100vw - 2rem))" }}
+      >
         <PhotoCarousel images={l.images} alt={l.name} aspect="h-64 sm:h-80" />
 
         <div className="grid gap-x-8 p-5 sm:p-6 lg:grid-cols-[1.1fr_1fr]">
