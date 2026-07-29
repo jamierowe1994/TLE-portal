@@ -254,7 +254,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   return (
     <SplitDrawer onClose={onClose}>
       <DrawerPanel className="w-[min(56rem,calc(100vw-2rem))] p-3">
-        <PhotoCarousel images={l.images} alt={l.name} aspect="h-56 sm:h-64" />
+        <PhotoCarousel images={l.images} alt={l.name} aspect="h-64 sm:h-80" />
 
         <div className="grid gap-x-8 p-5 sm:p-6 lg:grid-cols-[1.1fr_1fr]">
         <div>

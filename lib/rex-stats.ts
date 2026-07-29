@@ -839,14 +839,21 @@ function dedupeComplianceItems(items: ComplianceItem[]): ComplianceItem[] {
   return [...byType.values()];
 }
 
+const COMPLIANCE_TTL_MS = 60_000;
+const complianceCache = new Map<string, { at: number; data: PropertyCompliance[] }>();
+
 /**
  * The agent's properties with their compliance, worst first. Live from REX.
  * null on failure so the caller can say so rather than imply all-clear.
+ * Short-cached per agent — the join costs several REX round-trips.
  */
 export async function getAgentCompliance(
   rexUserId: string
 ): Promise<PropertyCompliance[] | null> {
   if (!rexConfigured() || !rexUserId) return null;
+
+  const cached = complianceCache.get(rexUserId);
+  if (cached && Date.now() - cached.at < COMPLIANCE_TTL_MS) return cached.data;
 
   const work = (async (): Promise<PropertyCompliance[] | null> => {
     const listings = await getAgentListings(rexUserId);
@@ -876,9 +883,11 @@ export async function getAgentCompliance(
     });
 
     // Worst first — this page exists to surface what needs doing.
-    return out.sort(
+    out.sort(
       (a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name, "en-GB")
     );
+    complianceCache.set(rexUserId, { at: Date.now(), data: out });
+    return out;
   })();
 
   const deadline = new Promise<null>((resolve) =>

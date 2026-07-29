@@ -102,8 +102,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const dropTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // Warm the destination's API while the transition plays (and on hover) so
+  // the page lands with its data already cached server-side.
+  const PREFETCH: Record<string, string[]> = {
+    "/dashboard": ["/api/my/stats?month=2026-07", "/api/my/forecast?month=2026-07"],
+    "/dashboard/todos": ["/api/my/todos"],
+    "/dashboard/listings": ["/api/my/listings"],
+    "/dashboard/applications": ["/api/my/applications"],
+    "/dashboard/compliance": ["/api/my/compliance"],
+    "/dashboard/portfolio": ["/api/my/portfolio"],
+  };
+  const warmed = useRef<Record<string, number>>({});
+  const warm = (href: string) => {
+    const urls = PREFETCH[href];
+    if (!urls) return;
+    const now = Date.now();
+    if (warmed.current[href] && now - warmed.current[href] < 30_000) return;
+    warmed.current[href] = now;
+    for (const u of urls) fetch(u, { cache: "no-store" }).catch(() => {});
+  };
+
   const navTo = (href: string) => {
     if (href === pathname || dropping) return;
+    warm(href);
     setDropping(true);
     if (dropTimer.current) clearTimeout(dropTimer.current);
     // Push once the drop has played; `dropping` stays true (page held off
@@ -231,6 +252,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               onNavigate?.();
               navTo(item.href);
             }}
+            onMouseEnter={() => warm(item.href)}
             className={`${navItem} ${
               active
                 ? "font-semibold text-ink"
@@ -330,15 +352,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-3">
           <NavLinks />
-          {user.isAdmin ? (
-            <Link
-              href="/admin"
-              className={`${navItem} mt-2 text-muted hover:bg-black/[0.04] hover:text-ink`}
-            >
-              <NavIcon active={false} name="setting" />
-              Admin
-            </Link>
-          ) : null}
         </nav>
 
         {/* ── TLE OS — one quiet item pinned at the bottom. Clicking it throws

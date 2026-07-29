@@ -6,13 +6,18 @@ import { useRef, useState } from "react";
 // flick through, dots for where you are. One photo → no chrome at all.
 
 function Placeholder() {
+  // No photos on file → a little Notioly person who's lost the way, sat in
+  // the same rounded frame the photo would fill.
   return (
-    <div className="flex h-full w-full items-center justify-center bg-page text-muted">
-      <svg className="h-6 w-6 opacity-40" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-        <rect x={3} y={5} width={18} height={14} rx={2} />
-        <path d="M3 15l5-5 4 4 3-3 6 6" />
-        <circle cx={8.5} cy={9.5} r={1} />
-      </svg>
+    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-page">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/illustrations/notioly/lost-the-way.svg"
+        alt=""
+        aria-hidden
+        className="h-[70%] w-auto max-w-[80%] object-contain"
+      />
+      <span className="text-[11px] text-muted">No photos yet</span>
     </div>
   );
 }

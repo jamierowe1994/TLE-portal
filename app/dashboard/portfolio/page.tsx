@@ -383,7 +383,8 @@ export default function PortfolioPage() {
   const rentRoll = all.reduce((t, p) => t + (p.rent ?? 0), 0);
 
   return (
-    <div className="space-y-6">
+    // Same outline treatment as the rest of the portal.
+    <div className="outline-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">My Portfolio</h1>
         <p className="mt-1 text-[13px] text-muted">
