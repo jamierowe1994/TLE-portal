@@ -666,7 +666,7 @@ export default function TodosPage() {
         src="/illustrations/notioly/to-do-list.svg"
         alt=""
         aria-hidden
-        className="pointer-events-none fixed bottom-0 right-0 -z-10 hidden w-[420px] opacity-90 lg:block"
+        className="corner-art pointer-events-none fixed -bottom-14 -right-10 -z-10 hidden w-[420px] opacity-90 lg:block"
       />
     </div>
   );

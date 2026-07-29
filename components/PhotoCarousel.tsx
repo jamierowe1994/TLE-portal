@@ -20,9 +20,12 @@ function Placeholder() {
 export default function PhotoCarousel({
   images,
   alt,
+  aspect = "aspect-square",
 }: {
   images: string[];
   alt: string;
+  /** Shape of the frame, e.g. "aspect-square" (default) or a fixed height. */
+  aspect?: string;
 }) {
   const [index, setIndex] = useState(0);
   // Drag offset in px while the pointer is down; null when at rest.
@@ -56,7 +59,7 @@ export default function PhotoCarousel({
   return (
     <div
       ref={box}
-      className="group relative aspect-square w-full touch-pan-y select-none overflow-hidden rounded-xl bg-page"
+      className={`group relative ${aspect} w-full touch-pan-y select-none overflow-hidden rounded-xl bg-page`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

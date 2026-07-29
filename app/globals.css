@@ -238,23 +238,36 @@ h5 {
    and chrome stay put; only the page moves.
 --------------------------------------------------------------------------- */
 .page-drop {
-  animation: page-drop 0.4s cubic-bezier(0.55, 0, 0.85, 0.4) both;
+  animation: page-drop 0.6s cubic-bezier(0.45, 0, 0.8, 0.45) both;
 }
 @keyframes page-drop {
   0% { transform: translateY(0); }
   100% { transform: translateY(104vh); }
 }
-/* Deliberately a touch exaggerated: glides up past its mark and settles. */
+/* Deliberately exaggerated: rises from right off the bottom of the screen,
+   glides past its mark and settles. fill-mode backwards (not both) on purpose:
+   `both` would pin a lingering identity transform on the wrapper, which turns
+   it into the containing block for every fixed child (corner art, pickers) —
+   same trap .enter documents above. */
 .page-rise {
-  animation: page-rise 0.75s cubic-bezier(0.22, 1.18, 0.32, 1) both;
+  animation: page-rise 1.05s cubic-bezier(0.19, 1.12, 0.32, 1) backwards;
 }
 @keyframes page-rise {
-  0% { transform: translateY(14vh); opacity: 0; }
-  35% { opacity: 1; }
+  0% { transform: translateY(85vh); opacity: 1; }
   100% { transform: none; opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .page-drop, .page-rise { animation: none; }
+}
+
+/* Corner illustrations hold off until the page-rise has finished — while the
+   page animates, their fixed positioning is temporarily owned by the moving
+   wrapper, so showing them mid-flight reads as a jolt. */
+.corner-art {
+  animation: enter-fade 0.45s ease 1.15s both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .corner-art { animation: none; }
 }
 
 /* Outline mode (dashboard experiment): cards drop their white fill and

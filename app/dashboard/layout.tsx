@@ -109,11 +109,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // Push once the drop has played; `dropping` stays true (page held off
     // screen) until the pathname actually changes, so a slow route can't
     // flash the old page back mid-transition.
-    dropTimer.current = setTimeout(() => router.push(href), 380);
+    dropTimer.current = setTimeout(() => router.push(href), 560);
   };
 
   useEffect(() => {
     setDropping(false);
+    // Every page starts from the top — no inheriting the last page's scroll.
+    window.scrollTo(0, 0);
   }, [pathname]);
 
   const toggleTle = () => {
@@ -472,16 +474,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
 
-      {/* Top hairline across the content area — sits a little above the
-          greeting, capping the page the way the rail's right line caps it. */}
+      {/* Solid top band, page-coloured, capped by the line — content scrolls
+          in underneath and is cut off cleanly instead of sliding through the
+          line. Only the assistant bubble lives up here. */}
       <div
         aria-hidden
-        className={`fixed left-[240px] right-0 top-[56px] z-20 hidden border-t ${RAIL_LINE} lg:block`}
+        className={`fixed left-[240px] right-0 top-0 z-20 hidden h-[56px] border-b ${RAIL_LINE} lg:block`}
+        style={{ background: "var(--page)" }}
       />
 
       {/* ── Main ── */}
+      {/* relative z-0 makes main its own stacking context, so negative-z page
+          furniture (the corner illustrations) sits behind the cards but in
+          front of the page background. */}
       <main
-        className={`dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-[92px] ${
+        className={`dash-cards relative z-0 px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-[92px] ${
           dropping ? "page-drop" : ""
         }`}
       >

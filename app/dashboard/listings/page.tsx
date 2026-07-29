@@ -244,7 +244,8 @@ function StepRow({ s }: { s: Step }) {
   );
 }
 
-// Two windows: the property on the left, what to do about it on the right.
+// One box: the photos run full-width across the top, then the property
+// details on the left and what-to-do on the right beneath them.
 function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   const stage = stageOf(l);
   const epc = epcState(l);
@@ -252,11 +253,11 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
 
   return (
     <SplitDrawer onClose={onClose}>
-      {/* ---- the property ---- */}
-      <DrawerPanel className="p-3 lg:w-[26rem]">
-        <PhotoCarousel images={l.images} alt={l.name} />
+      <DrawerPanel className="w-[min(56rem,calc(100vw-2rem))] p-3">
+        <PhotoCarousel images={l.images} alt={l.name} aspect="h-56 sm:h-64" />
 
-        <div className="p-5 sm:p-6">
+        <div className="grid gap-x-8 p-5 sm:p-6 lg:grid-cols-[1.1fr_1fr]">
+        <div>
           <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[stage]}`}>
             {STAGE_LABEL[stage]}
           </span>
@@ -354,11 +355,9 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
             </dl>
           </details>
         </div>
-      </DrawerPanel>
 
-      {/* ---- what you need to do ---- */}
-      <DrawerPanel className="lg:w-[24rem]">
-        <div className="p-5 sm:p-6">
+        {/* ---- what you need to do ---- */}
+        <div className="mt-6 border-t border-line pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
           <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
             {steps.length ? "What's next" : "Nothing outstanding"}
           </h3>
@@ -378,6 +377,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
               Nothing needs doing on this one right now.
             </p>
           )}
+        </div>
         </div>
       </DrawerPanel>
     </SplitDrawer>
@@ -424,7 +424,9 @@ export default function ListingsPage() {
   const needs = all.filter((l) => stepsFor(l, stageOf(l)).length > 0).length;
 
   return (
-    <div className="space-y-6">
+    // Same outline treatment as the dashboard — boxes as hairline outlines on
+    // the grey, photos and property details inside.
+    <div className="outline-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">My properties</h1>
         <p className="mt-1 text-[13px] text-muted">
