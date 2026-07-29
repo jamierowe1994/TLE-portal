@@ -185,6 +185,53 @@ h5 {
   .shrink-up { animation: none; }
 }
 
+/* The greeting's waving lady rises up from behind the line under the welcome
+   — pure translate inside an overflow-hidden box, no fade, so she reads as
+   standing behind it. */
+.rise-in {
+  animation: rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+@keyframes rise-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise-in { animation: none; }
+}
+
+/* Greeting-art life: the whole figure gives a periodic little wave; the
+   frazzled scribble jitters; the Zs bob as she sleeps. */
+.art-wave {
+  transform-origin: 50% 88%;
+  animation: art-wave 3.6s ease-in-out infinite;
+}
+@keyframes art-wave {
+  0%, 55%, 96%, 100% { transform: none; }
+  62% { transform: rotate(-4deg); }
+  70% { transform: rotate(4.5deg); }
+  78% { transform: rotate(-3deg); }
+  86% { transform: rotate(2deg); }
+}
+.art-scribble {
+  transform-origin: center;
+  animation: art-scribble 1.5s ease-in-out infinite;
+}
+@keyframes art-scribble {
+  0%, 100% { transform: rotate(-9deg) scale(0.95); }
+  50% { transform: rotate(9deg) scale(1.06); }
+}
+.art-zs {
+  animation: art-zs 2.6s ease-in-out infinite;
+}
+@keyframes art-zs {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .art-wave, .art-scribble, .art-zs { animation: none; }
+}
+
 /* Outline mode (dashboard experiment): cards drop their white fill and
    shadows, leaving just the hairline outline on the grey. */
 .outline-cards .card {
