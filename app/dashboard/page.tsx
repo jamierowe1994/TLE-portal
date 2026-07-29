@@ -7,7 +7,9 @@ import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Collapsible from "@/components/Collapsible";
 import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
-import Donut from "@/components/charts/Donut";
+import DoodleIcon from "@/components/DoodleIcon";
+import HatchPie from "@/components/charts/HatchPie";
+import Loader from "@/components/Loader";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
 import { formatGBP, formatNum, monthLabel } from "@/lib/format";
@@ -206,19 +208,7 @@ export default function MyDashboardPage() {
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="space-y-5">
-          <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-            <div className="card h-44 animate-pulse" />
-            <div className="card h-44 animate-pulse" />
-          </div>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="card h-28 animate-pulse" />
-            ))}
-          </div>
-        </div>
-      ) : null}
+      {loading ? <Loader label="Pulling your numbers together…" /> : null}
 
       {!loading && stats ? (
         <>
@@ -227,7 +217,8 @@ export default function MyDashboardPage() {
             <div className="enter enter-up" style={enterAt(900)}>
             <div className="card card-lift flex h-full flex-col p-5">
               <div className="flex items-start justify-between gap-3">
-                <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                  <DoodleIcon name="wallet" size={16} />
                   Earnings · {period.label}
                 </div>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
@@ -284,7 +275,8 @@ export default function MyDashboardPage() {
                 <div className="enter enter-right h-full" style={enterAt(1000)}>
                 <div className="card card-lift flex h-full flex-col p-5">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                    <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                      <DoodleIcon name="pie" size={16} />
                       Your portfolio mix
                     </div>
                     <SourceBadge
@@ -294,11 +286,25 @@ export default function MyDashboardPage() {
                     />
                   </div>
 
-                  <div className="mt-3">
-                    <Donut
+                  {/* Clean pie, hand-shaded — white slices with diagonal
+                      hatch lines in each segment's colour. */}
+                  <div className="mt-3 flex flex-wrap items-center gap-5">
+                    <HatchPie
                       segments={segments}
-                      centerLabel={`${formatNum(totalProps)} props`}
+                      centerLabel={formatNum(totalProps)}
+                      centerSub="properties"
                     />
+                    <div className="grid gap-2">
+                      {segments.map((s) => (
+                        <span key={s.label} className="inline-flex items-center gap-2 text-[12px] text-muted">
+                          <span style={{ color: s.color }}>
+                            <DoodleIcon name="home" size={14} />
+                          </span>
+                          <span className="text-ink">{s.label}</span>
+                          <span className="tnum">{formatNum(s.value)}</span>
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
                   {/* rent roll underneath, with the supporting stats */}
@@ -340,7 +346,8 @@ export default function MyDashboardPage() {
           {/* ---- THE BASICS ---- one quiet box, four figures inside */}
           <section className="enter enter-up" style={enterAt(1100)}>
             <div className="card card-lift p-5">
-              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+              <h2 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                <DoodleIcon name="calendar" size={16} />
                 This month · {monthLabel(ANCHOR)}
               </h2>
               <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
@@ -375,7 +382,7 @@ export default function MyDashboardPage() {
           {/* ---- DETAIL (progressive disclosure) ---- everything heavier lives
                behind a click: the forecast builder, conversions, tables. */}
           <section className="enter enter-pop space-y-3" style={enterAt(1300)}>
-            <Collapsible title="Build your forecast">
+            <Collapsible title="Build your forecast" icon="trend-up">
               <ForecastBuilder
                 monthKeys={MONTH_KEYS}
                 monthLabels={MONTH_LABELS}
@@ -390,7 +397,7 @@ export default function MyDashboardPage() {
             </Collapsible>
 
             {c ? (
-              <Collapsible title="Conversion rates">
+              <Collapsible title="Conversion rates" icon="target">
                 <div className="mb-3 flex justify-end">
                   <SourceBadge source="snapshot" asOf={SNAP} note="Derived from your sales funnel in the TLE Business Dashboard snapshot." />
                 </div>
@@ -406,7 +413,7 @@ export default function MyDashboardPage() {
                 ) : null}
               </Collapsible>
             ) : null}
-            <Collapsible title={`My move-ins · ${monthLabel(ANCHOR)}`} badge={stats.moveIns.length}>
+            <Collapsible title={`My move-ins · ${monthLabel(ANCHOR)}`} badge={stats.moveIns.length} icon="key">
               {stats.moveIns.length ? (
                 <DataTable columns={moveInColumns} rows={stats.moveIns as Rowify<MoveInRow>[]} compact />
               ) : (
@@ -414,7 +421,7 @@ export default function MyDashboardPage() {
               )}
             </Collapsible>
 
-            <Collapsible title="My pipeline" badge={stats.pipeline.length}>
+            <Collapsible title="My pipeline" badge={stats.pipeline.length} icon="list">
               {stats.pipeline.length ? (
                 <DataTable columns={pipelineColumns} rows={stats.pipeline as Rowify<PipelineRow>[]} compact />
               ) : (
@@ -424,6 +431,7 @@ export default function MyDashboardPage() {
 
             <Collapsible
               title="Full funnel & compliance"
+              icon="analytics"
               badge={stats.compliance ? `${stats.compliance.overdue} overdue` : undefined}
             >
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

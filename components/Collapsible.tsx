@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
+import DoodleIcon from "@/components/DoodleIcon";
 
 interface CollapsibleProps {
   title: string;
   /** Small count/label chip shown next to the title, e.g. "4". */
   badge?: string | number;
+  /** Doodle icon name (public/icons/doodle) shown before the title. */
+  icon?: string;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }
@@ -18,6 +21,7 @@ interface CollapsibleProps {
 export default function Collapsible({
   title,
   badge,
+  icon,
   defaultOpen = false,
   children,
 }: CollapsibleProps) {
@@ -31,6 +35,7 @@ export default function Collapsible({
         aria-expanded={open}
         className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition hover:bg-black/[0.015]"
       >
+        {icon ? <DoodleIcon name={icon} size={17} className="text-muted" /> : null}
         <span className="text-[13px] font-semibold uppercase tracking-wide text-muted">
           {title}
         </span>

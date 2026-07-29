@@ -8,6 +8,7 @@
 // behind the click, so the grid stays scannable.
 
 import { useEffect, useState } from "react";
+import Loader from "@/components/Loader";
 import { formatGBP } from "@/lib/format";
 import { platformById } from "@/lib/platforms";
 import { rexListingUrl } from "@/lib/rex-links";
@@ -442,11 +443,7 @@ export default function ListingsPage() {
       {error ? <div className="card p-6 text-center text-sm text-muted">{error}</div> : null}
 
       {loading ? (
-        <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="card h-[210px] animate-pulse" />
-          ))}
-        </div>
+        <Loader label="Loading your properties…" />
       ) : linked && !error && all.length === 0 ? (
         <div className="card p-10 text-center text-[13px] text-muted">
           Nothing on the market at the moment.

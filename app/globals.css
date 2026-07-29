@@ -160,6 +160,85 @@ h5 {
   to { opacity: 1; transform: none; }
 }
 
+/* Billboard swing — the account dropdown hinges from its top edge and swings
+   down like a sign, with a little overshoot before it settles. */
+.swing-down {
+  transform-origin: top center;
+  animation: swing-down 0.45s cubic-bezier(0.34, 1.4, 0.5, 1) both;
+}
+@keyframes swing-down {
+  0% { opacity: 0; transform: perspective(600px) rotateX(-75deg); }
+  55% { opacity: 1; transform: perspective(600px) rotateX(9deg); }
+  80% { transform: perspective(600px) rotateX(-4deg); }
+  100% { opacity: 1; transform: perspective(600px) rotateX(0deg); }
+}
+
+/* TLE OS spring box — brand chips thrown up from behind the bottom line,
+   knocking about (per-chip --tilt and --delay) before landing in place; on
+   close they tumble back down behind the line. Pair with overflow-hidden on
+   the container so they genuinely appear/disappear behind it. */
+.chip-pop {
+  animation: chip-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: var(--delay, 0ms);
+}
+@keyframes chip-pop {
+  0% { opacity: 0; transform: translateY(72px) rotate(var(--tilt, 0deg)); }
+  55% { opacity: 1; transform: translateY(-8px) rotate(calc(var(--tilt, 0deg) * -0.5)); }
+  78% { transform: translateY(3px) rotate(calc(var(--tilt, 0deg) * 0.2)); }
+  100% { opacity: 1; transform: none; }
+}
+.chip-fall {
+  animation: chip-fall 0.38s cubic-bezier(0.5, 0, 0.75, 0.4) both;
+  animation-delay: var(--delay, 0ms);
+}
+@keyframes chip-fall {
+  0% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(76px) rotate(var(--tilt, 0deg)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .swing-down, .chip-pop, .chip-fall { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Loader — two hand-drawn shapes (a square and a round friend) chasing each
+   other around a square-ish orbit, morphing square → pill → square as they
+   corner. The site's "anything loading" mark (components/Loader.tsx).
+--------------------------------------------------------------------------- */
+.duo-loader {
+  position: relative;
+  width: 68px;
+  height: 68px;
+}
+.duo-loader::before,
+.duo-loader::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  border: 3px solid currentColor;
+  border-radius: 5px;
+  animation: duo-orbit 1.7s cubic-bezier(0.45, 0.05, 0.35, 0.95) infinite;
+}
+.duo-loader::after {
+  animation-delay: -0.85s; /* half a lap behind — always chasing */
+}
+@keyframes duo-orbit {
+  0%   { transform: translate(0, 0); border-radius: 5px; width: 24px; }
+  12%  { transform: translate(20px, -3px); border-radius: 13px; width: 36px; }
+  25%  { transform: translate(40px, 0); border-radius: 5px; width: 24px; }
+  37%  { transform: translate(43px, 20px); border-radius: 13px; width: 24px; }
+  50%  { transform: translate(40px, 40px); border-radius: 5px; width: 24px; }
+  62%  { transform: translate(20px, 43px); border-radius: 13px; width: 36px; }
+  75%  { transform: translate(0, 40px); border-radius: 5px; width: 24px; }
+  87%  { transform: translate(-3px, 20px); border-radius: 13px; width: 24px; }
+  100% { transform: translate(0, 0); border-radius: 5px; width: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .duo-loader::before, .duo-loader::after { animation: none; }
+}
+
 /* Calendar "bubble up" — springs out from its trigger with a soft overshoot */
 .cal-pop {
   transform-origin: bottom center;

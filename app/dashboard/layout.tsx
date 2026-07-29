@@ -7,7 +7,9 @@ import BrandMark from "@/components/BrandMark";
 import AssistantBubble from "@/components/AssistantBubble";
 import SearchOverlay from "@/components/SearchOverlay";
 import DoodleIcon from "@/components/DoodleIcon";
+import Loader from "@/components/Loader";
 import { refreshUser, signOut } from "@/lib/session";
+import { platformsIn } from "@/lib/platforms";
 import type { UserProfile } from "@/lib/types";
 
 // Agent dashboard shell — a flat, Notion-style layout: one grey canvas, a grey
@@ -54,7 +56,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [checking, setChecking] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // TLE OS spring box: open pops the brand chips up; closing keeps them
+  // mounted just long enough to tumble back down behind the line.
+  const [tleOpen, setTleOpen] = useState(false);
+  const [tleClosing, setTleClosing] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const toggleTle = () => {
+    if (tleOpen) {
+      setTleOpen(false);
+      setTleClosing(true);
+      setTimeout(() => setTleClosing(false), 600);
+    } else {
+      setTleClosing(false);
+      setTleOpen(true);
+    }
+  };
 
   // ⌘K / Ctrl+K opens the property search from anywhere in the shell.
   useEffect(() => {
@@ -108,11 +125,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (checking || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="flex items-center gap-3 text-sm text-muted">
-          <BrandMark size={28} />
-          <span>Checking your session…</span>
-        </div>
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--page)" }}>
+        <Loader label="Checking your session…" />
       </div>
     );
   }
@@ -199,15 +213,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
 
           {menuOpen ? (
-            <div className="menu-pop absolute left-3 right-3 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl">
+            <div className="swing-down absolute left-3 right-3 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl">
               <Link
                 href="/dashboard/profile"
                 className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-ink transition hover:bg-black/[0.04]"
               >
-                <svg className="h-4 w-4 text-muted" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                  <circle cx={12} cy={12} r={3} />
-                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.58.78.98 1.42 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
-                </svg>
+                <DoodleIcon name="setting" size={17} className="text-muted" />
                 Settings
               </Link>
               <button
@@ -215,9 +226,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 onClick={() => void handleSignOut()}
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] font-medium text-muted transition hover:bg-black/[0.04] hover:text-ink"
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-                </svg>
+                <DoodleIcon name="logout" size={17} />
                 Sign out
               </button>
             </div>
@@ -225,7 +234,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* Notifications + search, reference-style, above the first divider */}
-        <div className="mt-3 space-y-0.5 px-3">
+        <div className="mt-7 space-y-0.5 px-3">
           <span
             className={`${navItem} cursor-default text-muted/60`}
             title="Notifications — coming soon"
@@ -259,21 +268,83 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ) : null}
         </nav>
 
-        {/* ── TLE OS — one quiet item pinned at the bottom; the platforms
-            themselves live on its page now, not in the rail. ── */}
+        {/* ── TLE OS — one quiet item pinned at the bottom. Clicking it throws
+            the brand chips up from behind the line (spring box); clicking
+            again tumbles them back down behind it. ── */}
+        {tleOpen || tleClosing ? (
+          <div className="overflow-hidden px-3">
+            <div className="flex flex-col gap-1.5 pb-2">
+              {[
+                { name: "All tools →", url: "/dashboard/tools", external: false },
+                ...platformsIn("platforms").map((p) => ({
+                  name: p.name,
+                  url: p.url,
+                  external: true,
+                })),
+              ].map((c, i) => {
+                // Alternating tilts + uneven delays = thrown in the air,
+                // knocking about, landing in place.
+                const tilt = [-7, 6, -5, 8, -6, 5, -8, 4][i % 8];
+                const delay = [0, 70, 35, 105, 55, 120, 20, 90][i % 8];
+                const cls = `${tleClosing ? "chip-fall" : "chip-pop"} flex items-center rounded-lg border ${RAIL_LINE} bg-white/70 px-3 py-1.5 text-[12.5px] font-medium`;
+                const style = {
+                  "--tilt": `${tilt}deg`,
+                  "--delay": `${delay}ms`,
+                } as React.CSSProperties;
+                if (!c.url) {
+                  return (
+                    <span key={c.name} title="Link coming" className={`${cls} cursor-default text-muted/50`} style={style}>
+                      {c.name}
+                    </span>
+                  );
+                }
+                return c.external ? (
+                  <a
+                    key={c.name}
+                    href={c.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`${cls} text-ink transition hover:bg-white`}
+                    style={style}
+                  >
+                    {c.name}
+                  </a>
+                ) : (
+                  <Link key={c.name} href={c.url} className={`${cls} text-ink transition hover:bg-white`} style={style}>
+                    {c.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         <div className={`mx-4 border-t ${RAIL_LINE}`} />
         <div className="px-3 py-2">
-          <Link
-            href="/dashboard/tools"
-            className={`${navItem} ${
-              pathname.startsWith("/dashboard/tools")
+          <button
+            type="button"
+            onClick={toggleTle}
+            aria-expanded={tleOpen}
+            className={`${navItem} w-full ${
+              tleOpen || pathname.startsWith("/dashboard/tools")
                 ? "font-semibold text-ink"
                 : "text-muted hover:bg-black/[0.04] hover:text-ink"
             }`}
           >
-            <NavIcon active={pathname.startsWith("/dashboard/tools")} name="grid" />
+            <NavIcon active={tleOpen || pathname.startsWith("/dashboard/tools")} name="grid" />
             TLE OS
-          </Link>
+            <svg
+              className={`ml-auto h-3 w-3 text-muted transition-transform duration-200 ${tleOpen ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path d="M18 15l-6-6-6 6" />
+            </svg>
+          </button>
         </div>
 
         {/* Small print, reference-style */}

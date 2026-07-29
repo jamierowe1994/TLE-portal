@@ -8,6 +8,7 @@
 // different job and deliberately not mixed in here.
 
 import { useEffect, useState } from "react";
+import Loader from "@/components/Loader";
 import type { ComplianceItem, ComplianceState, PropertyCompliance } from "@/lib/rex-stats";
 
 const enterAt = (ms: number) =>
@@ -300,11 +301,7 @@ export default function CompliancePage() {
       {error ? <div className="card p-6 text-center text-sm text-muted">{error}</div> : null}
 
       {loading ? (
-        <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="card h-[210px] animate-pulse" />
-          ))}
-        </div>
+        <Loader label="Checking your certificates…" />
       ) : linked && !error && all.length === 0 ? (
         <div className="card p-10 text-center text-[13px] text-muted">
           No properties to check.

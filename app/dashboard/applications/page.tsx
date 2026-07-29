@@ -8,6 +8,7 @@
 // appears on the click.
 
 import { useEffect, useMemo, useState } from "react";
+import Loader from "@/components/Loader";
 import { formatGBP } from "@/lib/format";
 import { BRAND } from "@/lib/brand";
 import { DealNotesPanel } from "@/components/DealNotes";
@@ -515,11 +516,7 @@ export default function ApplicationsPage() {
       {error ? <div className="card p-6 text-center text-sm text-muted">{error}</div> : null}
 
       {loading ? (
-        <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="card h-[210px] animate-pulse" />
-          ))}
-        </div>
+        <Loader label="Loading your pipeline…" />
       ) : linked && !error && all.length === 0 ? (
         <div className="card p-10 text-center text-[13px] text-muted">
           No applications yet. Offers on your properties will appear here.
