@@ -24,7 +24,7 @@ export default function NoPhoto({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/illustrations/notioly/lost-the-way.svg"
+          src="/illustrations/notioly/adventurous-cat.svg"
           alt=""
           aria-hidden
           className="max-h-[72%] max-w-[72%] object-contain"
@@ -42,10 +42,10 @@ export default function NoPhoto({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/illustrations/notioly/lost-the-way.svg"
+        src="/illustrations/notioly/adventurous-cat.svg"
         alt=""
         aria-hidden
-        className="absolute left-1/2 top-[-18%] h-[185%] w-auto max-w-none -translate-x-1/2"
+        className="absolute left-1/2 top-[-8%] h-[150%] w-auto max-w-none -translate-x-1/2"
       />
     </div>
   );
