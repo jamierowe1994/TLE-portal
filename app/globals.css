@@ -232,6 +232,31 @@ h5 {
   .art-wave, .art-scribble, .art-zs { animation: none; }
 }
 
+/* ---------------------------------------------------------------------------
+   Page transition — clicking a nav item drops the current page out through
+   the bottom of the screen; the next page's content flies back up. The rail
+   and chrome stay put; only the page moves.
+--------------------------------------------------------------------------- */
+.page-drop {
+  animation: page-drop 0.4s cubic-bezier(0.55, 0, 0.85, 0.4) both;
+}
+@keyframes page-drop {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(104vh); }
+}
+/* Deliberately a touch exaggerated: glides up past its mark and settles. */
+.page-rise {
+  animation: page-rise 0.75s cubic-bezier(0.22, 1.18, 0.32, 1) both;
+}
+@keyframes page-rise {
+  0% { transform: translateY(14vh); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-drop, .page-rise { animation: none; }
+}
+
 /* Outline mode (dashboard experiment): cards drop their white fill and
    shadows, leaving just the hairline outline on the grey. */
 .outline-cards .card {

@@ -383,39 +383,44 @@ export default function MyDashboardPage() {
             </div>
           </section>
 
-          {/* ---- DETAIL (progressive disclosure) ---- everything heavier lives
-               behind a click: the forecast builder, conversions, tables. */}
-          <section className="enter enter-pop space-y-3" style={enterAt(1300)}>
-            <Collapsible title="Build your forecast" icon="trend-up">
-              <ForecastBuilder
-                monthKeys={MONTH_KEYS}
-                monthLabels={MONTH_LABELS}
-                actualsNetIncome={actualsArr}
-                currentMonthIndex={monthIdx(ANCHOR)}
-                savedForecasts={forecastHistory}
-                currentManaged={managed}
-                avgFeePerProperty={avgFeePerProperty}
-                onSaved={() => {}}
-                bare
-              />
-            </Collapsible>
+          {/* ---- FORECAST SNAPSHOT + CONVERSIONS ---- open, side by side */}
+          <section className="enter enter-up grid gap-4 lg:grid-cols-2" style={enterAt(1300)}>
+            <div className="card card-lift p-5">
+              <h2 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                <DoodleIcon name="trend-up" size={16} />
+                Build your forecast
+              </h2>
+              <div className="mt-2">
+                <ForecastBuilder
+                  monthKeys={MONTH_KEYS}
+                  monthLabels={MONTH_LABELS}
+                  actualsNetIncome={actualsArr}
+                  currentMonthIndex={monthIdx(ANCHOR)}
+                  savedForecasts={forecastHistory}
+                  currentManaged={managed}
+                  avgFeePerProperty={avgFeePerProperty}
+                  onSaved={() => {}}
+                  bare
+                  compact
+                />
+              </div>
+            </div>
 
             {c ? (
-              <Collapsible title="Conversion rates" icon="target">
-                <div className="mb-3 flex justify-end">
+              <div className="card card-lift flex flex-col p-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                    <DoodleIcon name="target" size={16} />
+                    Conversion rates
+                  </h2>
                   <SourceBadge source="snapshot" asOf={SNAP} note="Derived from your sales funnel in the TLE Business Dashboard snapshot." />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="my-auto grid grid-cols-3 gap-2 py-4">
                   <Gauge label="Lead → MA" pct={c.leadToMa.value} />
                   <Gauge label="MA → Listing" pct={c.maToListing.value} />
                   <Gauge label="Listing → Move-in" pct={c.listingToMoveIn.value} />
                 </div>
-                {c.leadToMa.value == null && c.maToListing.value == null && c.listingToMoveIn.value == null ? (
-                  <p className="mt-3 text-center text-[13px] text-muted">
-                    Conversion rates appear once you&apos;ve got appraisals and listings recorded this month.
-                  </p>
-                ) : null}
-              </Collapsible>
+              </div>
             ) : null}
             <Collapsible title={`My move-ins · ${monthLabel(ANCHOR)}`} badge={stats.moveIns.length} icon="key">
               {stats.moveIns.length ? (

@@ -96,7 +96,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [tleOpen, setTleOpen] = useState(false);
   const [tleClosing, setTleClosing] = useState(false);
   const [artPreview, setArtPreview] = useState<ArtKey | null>(null);
+  // Page transition: nav clicks drop the current page out of the bottom of
+  // the screen, then navigate; the new page rises back up (keyed wrapper).
+  const [dropping, setDropping] = useState(false);
+  const dropTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const navTo = (href: string) => {
+    if (href === pathname || dropping) return;
+    setDropping(true);
+    if (dropTimer.current) clearTimeout(dropTimer.current);
+    // Push once the drop has played; `dropping` stays true (page held off
+    // screen) until the pathname actually changes, so a slow route can't
+    // flash the old page back mid-transition.
+    dropTimer.current = setTimeout(() => router.push(href), 380);
+  };
+
+  useEffect(() => {
+    setDropping(false);
+  }, [pathname]);
 
   const toggleTle = () => {
     if (tleOpen) {
@@ -206,7 +224,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link
             key={item.href}
             href={item.href}
-            onClick={onNavigate}
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate?.();
+              navTo(item.href);
+            }}
             className={`${navItem} ${
               active
                 ? "font-semibold text-ink"
@@ -458,8 +480,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       />
 
       {/* ── Main ── */}
-      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-[92px]">
-        <div className="mx-auto max-w-[1600px]">
+      <main
+        className={`dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-[92px] ${
+          dropping ? "page-drop" : ""
+        }`}
+      >
+        <div key={pathname} className="page-rise mx-auto max-w-[1600px]">
           {/* Welcome — lives in the dashboard content, big and roomy */}
           {pathname === "/dashboard" ? (
             <div

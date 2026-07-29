@@ -12,6 +12,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BRAND } from "@/lib/brand";
 import { PLATFORMS } from "@/lib/platforms";
+import DateTimePicker from "@/components/DateTimePicker";
+import Loader from "@/components/Loader";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
@@ -269,16 +271,14 @@ function DetailFields({
   onChange: (patch: Partial<Details>) => void;
 }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-      <label className="block text-[11px] font-medium text-muted">
+    // Four fields in a square — due date, platform, property, tenant.
+    <div className="grid gap-2.5 sm:grid-cols-2">
+      <div className="text-[11px] font-medium text-muted">
         Due
-        <input
-          type="datetime-local"
-          value={d.dueAt}
-          onChange={(e) => onChange({ dueAt: e.target.value })}
-          className="mt-1 w-full rounded-lg border border-line bg-white px-2.5 py-2 text-[13px] text-ink outline-none focus:border-black/25"
-        />
-      </label>
+        <div className="mt-1">
+          <DateTimePicker value={d.dueAt} onChange={(dueAt) => onChange({ dueAt })} />
+        </div>
+      </div>
       <div className="text-[11px] font-medium text-muted">
         Platform
         <div className="mt-1">
@@ -446,18 +446,37 @@ export default function TodosPage() {
     await fetch(`/api/my/todos?id=${encodeURIComponent(t.id)}`, { method: "DELETE" });
   }
 
+  // Change just the date from the tile's chip — saves straight away.
+  async function patchDue(t: Todo, dueAt: string) {
+    const next = dueAt || null;
+    setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, dueAt: next } : x)));
+    const res = await fetch("/api/my/todos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: t.id, dueAt: next }),
+    });
+    if (!res.ok) {
+      setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, dueAt: t.dueAt } : x)));
+    }
+  }
+
   const chip = "inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[11px] text-muted";
 
-  const TodoRow = ({ t }: { t: Todo }) => {
+  // A to-do is a tile. Click it to open it up (the tile stretches to the full
+  // row and the detail square morphs in); the date chip is the calendar —
+  // click it and pick, no edit mode needed.
+  const TodoTile = ({ t }: { t: Todo }) => {
     const due = fmtDue(t.dueAt);
+    const editing = editId === t.id;
 
-    if (editId === t.id) {
+    if (editing) {
       return (
-        <li className="menu-pop space-y-3 rounded-xl border border-line bg-card p-3.5">
+        <li className="menu-pop col-span-full space-y-3 rounded-xl border border-black/20 bg-card p-4">
           <input
             type="text"
             value={editNote}
             onChange={(e) => setEditNote(e.target.value)}
+            autoFocus
             className="w-full rounded-lg border border-line bg-white px-3 py-2 text-[14px] outline-none transition focus:border-black/25"
           />
           <DetailFields d={editDetails} onChange={(p) => setEditDetails((v) => ({ ...v, ...p }))} />
@@ -478,73 +497,60 @@ export default function TodosPage() {
             >
               Cancel
             </button>
+            <button
+              type="button"
+              onClick={() => void remove(t)}
+              className="btn-press ml-auto rounded-lg border border-line px-3.5 py-2 text-[13px] font-medium text-muted transition hover:border-red-200 hover:text-red-600"
+            >
+              Delete
+            </button>
           </div>
         </li>
       );
     }
 
     return (
-      <li className="group flex items-start gap-3 rounded-xl border border-line bg-card p-3.5">
-        <button
-          type="button"
-          onClick={() => void toggle(t)}
-          aria-label={t.done ? "Mark as not done" : "Mark as done"}
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
-            t.done ? "border-transparent" : "border-line hover:border-black/30"
-          }`}
-          style={t.done ? { background: BRAND.accent } : undefined}
-        >
-          {t.done ? (
-            <svg viewBox="0 0 24 24" className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 13l4 4L19 7" />
-            </svg>
-          ) : null}
-        </button>
-        <div className="min-w-0 flex-1">
-          <p className={`text-[14px] leading-snug ${t.done ? "text-muted line-through" : "text-ink"}`}>
+      <li
+        className="group card btn-press flex cursor-pointer flex-col p-4 text-left transition hover:border-black/20"
+        onClick={() => startEdit(t)}
+      >
+        <div className="flex items-start gap-2.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void toggle(t);
+            }}
+            aria-label={t.done ? "Mark as not done" : "Mark as done"}
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
+              t.done ? "border-transparent" : "border-line hover:border-black/30"
+            }`}
+            style={t.done ? { background: BRAND.accent } : undefined}
+          >
+            {t.done ? (
+              <svg viewBox="0 0 24 24" className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 13l4 4L19 7" />
+              </svg>
+            ) : null}
+          </button>
+          <p className={`min-w-0 flex-1 text-[14px] leading-snug ${t.done ? "text-muted line-through" : "text-ink"}`}>
             {t.note}
           </p>
-          {due || t.platform || t.property || t.tenant ? (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {due ? (
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${
-                    due.overdue && !t.done
-                      ? "bg-red-50 font-semibold text-red-600"
-                      : "bg-page text-muted"
-                  }`}
-                >
-                  {due.overdue && !t.done ? "Overdue · " : ""}
-                  {due.label}
-                </span>
-              ) : null}
-              {t.platform ? <span className={chip}>{t.platform}</span> : null}
-              {t.property ? <span className={chip}>🏠 {t.property}</span> : null}
-              {t.tenant ? <span className={chip}>👤 {t.tenant}</span> : null}
-            </div>
-          ) : null}
         </div>
-        <div className="flex shrink-0 gap-1">
-          <button
-            type="button"
-            onClick={() => startEdit(t)}
-            aria-label="Edit"
-            className="rounded-md p-1 text-muted/50 transition hover:text-ink"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => void remove(t)}
-            aria-label="Delete"
-            className="rounded-md p-1 text-muted/50 transition hover:text-red-500"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6" />
-            </svg>
-          </button>
+
+        <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
+          <span onClick={(e) => e.stopPropagation()}>
+            <DateTimePicker
+              value={isoToLocal(t.dueAt)}
+              onChange={(v) => void patchDue(t, v)}
+              variant="chip"
+              overdue={Boolean(due?.overdue && !t.done)}
+              placeholder="Add date"
+            />
+          </span>
+          {t.platform ? <span className={chip}>{t.platform}</span> : null}
+          {t.property ? <span className={chip}>🏠 {t.property}</span> : null}
+          {t.tenant ? <span className={chip}>👤 {t.tenant}</span> : null}
         </div>
       </li>
     );
@@ -562,7 +568,7 @@ export default function TodosPage() {
 
       {/* ---- add ---- */}
       <form
-        className="enter enter-up card space-y-3 p-4"
+        className="enter enter-up card max-w-2xl space-y-3 p-4"
         style={enterAt(140)}
         onSubmit={(e) => {
           e.preventDefault();
@@ -595,20 +601,23 @@ export default function TodosPage() {
           {moreOpen ? "Hide details" : "Add date, platform, property or tenant"}
         </button>
 
-        {moreOpen ? (
-          <div className="menu-pop">
-            <DetailFields d={details} onChange={(p) => setDetails((v) => ({ ...v, ...p }))} />
+        {/* Morphs open — the row heights animate rather than the panel jumping in. */}
+        <div
+          className={`grid transition-all duration-300 ease-out ${
+            moreOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div className="pt-1">
+              <DetailFields d={details} onChange={(p) => setDetails((v) => ({ ...v, ...p }))} />
+            </div>
           </div>
-        ) : null}
+        </div>
       </form>
 
       {/* ---- list ---- */}
       {loading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="card h-16 animate-pulse" />
-          ))}
-        </div>
+        <Loader label="Loading your list…" />
       ) : error ? (
         <div className="card p-6 text-center text-sm text-muted">{error}</div>
       ) : open.length === 0 && done.length === 0 ? (
@@ -618,12 +627,12 @@ export default function TodosPage() {
         </div>
       ) : (
         <>
-          <ul className="enter enter-up space-y-2" style={enterAt(220)}>
+          <ul className="enter enter-up grid gap-3 sm:grid-cols-2 xl:grid-cols-3" style={enterAt(220)}>
             {open.map((t) => (
-              <TodoRow key={t.id} t={t} />
+              <TodoTile key={t.id} t={t} />
             ))}
             {open.length === 0 ? (
-              <li className="card p-6 text-center text-[13px] text-muted">
+              <li className="card col-span-full p-6 text-center text-[13px] text-muted">
                 All caught up — nothing open. 🎉
               </li>
             ) : null}
@@ -639,9 +648,9 @@ export default function TodosPage() {
                 {showDone ? `Hide ${done.length} done` : `Show ${done.length} done`}
               </button>
               {showDone ? (
-                <ul className="space-y-2">
+                <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {done.map((t) => (
-                    <TodoRow key={t.id} t={t} />
+                    <TodoTile key={t.id} t={t} />
                   ))}
                 </ul>
               ) : null}
@@ -649,6 +658,16 @@ export default function TodosPage() {
           ) : null}
         </>
       )}
+
+      {/* A little Notioly scene in the corner — sits behind the assistant
+          bubble, purely decorative. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/illustrations/notioly/to-do-list.svg"
+        alt=""
+        aria-hidden
+        className="pointer-events-none fixed bottom-0 right-0 -z-10 hidden w-[420px] opacity-90 lg:block"
+      />
     </div>
   );
 }

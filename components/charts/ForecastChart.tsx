@@ -112,16 +112,16 @@ export default function ForecastChart({
       style={{ display: "block", touchAction: "none", userSelect: "none" }}
     >
       <defs>
-        <linearGradient id="fc-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={accent} stopOpacity={0.16} />
-          <stop offset="100%" stopColor={accent} stopOpacity={0} />
-        </linearGradient>
+        {/* Same language as the hatched pie — earned months read as shaded-in. */}
+        <pattern id="fc-hatch" patternUnits="userSpaceOnUse" width={6} height={6} patternTransform="rotate(45)">
+          <line x1={0} y1={0} x2={0} y2={6} stroke={accent} strokeWidth={1.6} opacity={0.5} />
+        </pattern>
       </defs>
 
       {/* gridlines + y labels */}
       {ticks.map((t) => (
         <g key={t}>
-          <line x1={pad.left} x2={VB_W - pad.right} y1={y(t)} y2={y(t)} stroke={CHART_GRID} strokeWidth={1} />
+          <line x1={pad.left} x2={VB_W - pad.right} y1={y(t)} y2={y(t)} stroke={CHART_GRID} strokeWidth={1} strokeDasharray="2 4" />
           <text x={pad.left - 8} y={y(t) + 3.5} textAnchor="end" fontSize={10.5} fill={CHART_MUTED}>
             {format(t)}
           </text>
@@ -143,7 +143,16 @@ export default function ForecastChart({
         </text>
       ))}
 
-      {/* actuals */}
+      {/* actuals — line plus a hatched area beneath, like the pie's shading */}
+      {(() => {
+        const pts = actuals
+          .map((v, i) => (v == null ? null : { i, v }))
+          .filter((p): p is { i: number; v: number } => p != null);
+        if (pts.length < 2) return null;
+        const top = pts.map((p, k) => `${k ? "L" : "M"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+        const base = `L${x(pts[pts.length - 1].i).toFixed(1)},${(pad.top + plotH).toFixed(1)} L${x(pts[0].i).toFixed(1)},${(pad.top + plotH).toFixed(1)} Z`;
+        return <path d={`${top} ${base}`} fill="url(#fc-hatch)" stroke="none" />;
+      })()}
       <path d={actualLine.trim()} fill="none" stroke={accent} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
       {actuals.map((v, i) =>
         v == null ? null : <circle key={i} cx={x(i)} cy={y(v)} r={3} fill="#fff" stroke={accent} strokeWidth={1.75} />

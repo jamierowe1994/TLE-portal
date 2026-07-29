@@ -94,7 +94,7 @@ export default function AssistantBubble({ firstName }: { firstName?: string }) {
       {open ? (
         <div
           ref={panelRef}
-          className="menu-pop fixed bottom-24 right-4 z-50 flex h-[min(560px,calc(100vh-8rem))] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-card shadow-2xl sm:right-6"
+          className="swing-down fixed right-4 top-[64px] z-50 flex h-[min(540px,calc(100vh-6rem))] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-card shadow-2xl sm:right-6"
           role="dialog"
           aria-label="TLE Assistant"
         >
@@ -219,15 +219,15 @@ export default function AssistantBubble({ firstName }: { firstName?: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Close TLE Assistant" : "Open TLE Assistant"}
         aria-expanded={open}
-        className="btn-press fixed bottom-6 right-4 z-50 flex h-13 w-13 items-center justify-center rounded-full text-white shadow-lg transition hover:shadow-xl sm:right-6"
-        style={{ background: BRAND.accent, height: 52, width: 52 }}
+        className="btn-press fixed right-4 top-2 z-50 flex items-center justify-center rounded-full text-white shadow-lg transition hover:shadow-xl sm:right-6"
+        style={{ background: BRAND.accent, height: 40, width: 40 }}
       >
         {open ? (
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
           </svg>
         ) : (
-          <svg className="h-5.5 w-5.5" style={{ height: 22, width: 22 }} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+          <svg style={{ height: 18, width: 18 }} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
             <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 20l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
           </svg>
         )}

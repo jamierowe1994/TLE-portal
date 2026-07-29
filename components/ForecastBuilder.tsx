@@ -20,6 +20,8 @@ interface ForecastBuilderProps {
   onSaved?: () => void;
   /** Render without the card chrome — for when it lives inside another box. */
   bare?: boolean;
+  /** Snapshot mode: no revenue/portfolio toggle, tighter chart + readouts. */
+  compact?: boolean;
 }
 
 type Mode = "revenue" | "portfolio";
@@ -36,6 +38,7 @@ export default function ForecastBuilder({
   avgFeePerProperty,
   onSaved,
   bare = false,
+  compact = false,
 }: ForecastBuilderProps) {
   const [mode, setMode] = useState<Mode>("revenue");
   const [saved, setSaved] = useState<Record<string, SavedForecast>>(savedForecasts);
@@ -152,8 +155,8 @@ export default function ForecastBuilder({
             Saved ✓
           </span>
         ) : null}
-        {/* revenue / portfolio toggle */}
-        <div className="ml-auto flex overflow-hidden rounded-lg border border-line">
+        {/* revenue / portfolio toggle — dropped in snapshot mode */}
+        <div className={`ml-auto ${compact ? "hidden" : "flex"} overflow-hidden rounded-lg border border-line`}>
           <button
             type="button"
             onClick={() => setMode("revenue")}
@@ -173,8 +176,9 @@ export default function ForecastBuilder({
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className={compact ? "mt-3" : "mt-4"}>
         <ForecastChart
+          height={compact ? 200 : 260}
           labels={monthLabels}
           actuals={actualsSeries}
           forecast={live}
@@ -185,20 +189,20 @@ export default function ForecastBuilder({
         />
       </div>
 
-      {/* readouts */}
-      <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-3">
+      {/* readouts — smaller in snapshot mode */}
+      <div className={`mt-4 grid border-t border-line pt-4 sm:grid-cols-3 ${compact ? "gap-3" : "gap-4"}`}>
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
             {mode === "revenue" ? "Forecast total" : "Est. fees total"} · {rangeLabel}
           </div>
-          <div className="stat-value mt-1.5 text-[22px]">{formatGBP(totalGci)}</div>
+          <div className={`stat-value mt-1.5 ${compact ? "text-[17px]" : "text-[22px]"}`}>{formatGBP(totalGci)}</div>
           <div className="mt-0.5 text-xs text-muted">Sum of your forecast months</div>
         </div>
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
             {mode === "revenue" ? "Avg / month" : "Portfolio by year-end"}
           </div>
-          <div className="stat-value mt-1.5 text-[22px]">
+          <div className={`stat-value mt-1.5 ${compact ? "text-[17px]" : "text-[22px]"}`}>
             {mode === "revenue"
               ? editable.length
                 ? formatGBP(Math.round(totalGci / editable.length))
@@ -213,7 +217,7 @@ export default function ForecastBuilder({
         </div>
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">This month</div>
-          <div className="stat-value mt-1.5 text-[22px]">
+          <div className={`stat-value mt-1.5 ${compact ? "text-[17px]" : "text-[22px]"}`}>
             {live[currentMonthIndex] != null ? fmt(live[currentMonthIndex] as number) : "—"}
           </div>
           <div className="mt-0.5 text-xs text-muted">{monthLabel(monthKeys[currentMonthIndex])}</div>
