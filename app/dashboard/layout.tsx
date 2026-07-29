@@ -20,6 +20,7 @@ const NAV = [
   { href: "/dashboard/listings", label: "My Properties", icon: "M3 11l9-8 9 8M5 9.5V20a1 1 0 001 1h12a1 1 0 001-1V9.5M9.5 21v-6h5v6" },
   { href: "/dashboard/applications", label: "Applications", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
   { href: "/dashboard/compliance", label: "Compliance", icon: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 8.3-7 9-4-0.7-7-4.5-7-9V6l7-3z" },
+  { href: "/dashboard/portfolio", label: "My Portfolio", icon: "M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M4 7h16a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1zM3 12h18M12 11v2.5" },
   { href: "/dashboard/ads", label: "My Ads", icon: "M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm2 11l4-5 3 3 2-2 3 4M9 9.5a.5.5 0 11-1 0 .5.5 0 011 0z" },
   { href: "/dashboard/forecast", label: "Forecast", icon: "M3 17l6-6 4 4 8-8M21 7v6M21 7h-6" },
 ];

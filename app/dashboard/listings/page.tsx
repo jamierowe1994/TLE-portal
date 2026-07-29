@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { formatGBP } from "@/lib/format";
 import { platformById } from "@/lib/platforms";
+import { rexListingUrl } from "@/lib/rex-links";
 import type { AgentListing } from "@/lib/rex-stats";
 
 const enterAt = (ms: number) =>
@@ -273,6 +274,19 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           </span>
           <h2 className="mt-3 text-[17px] font-semibold leading-snug">{l.name}</h2>
           <p className="mt-0.5 text-[13px] text-muted">{l.locality}</p>
+
+          {/* Straight through to the record in REX — no hunting by address. */}
+          <a
+            href={rexListingUrl(l.id, "rental")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-press mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[12px] font-semibold text-white transition hover:opacity-90"
+          >
+            View Listing
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 17L17 7M9 7h8v8" />
+            </svg>
+          </a>
 
           <div className="mt-6 grid grid-cols-3 gap-3 border-y border-line py-5 text-[11px] text-muted">
             <div>

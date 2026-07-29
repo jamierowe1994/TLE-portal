@@ -831,6 +831,165 @@ export async function getAgentCompliance(
   }
 }
 
+/* ------------------------------ my portfolio ------------------------------ */
+
+// A property the agent has let and now manages — REX "leased" listings, joined
+// with their compliance entries. This is the "after the let" view: My
+// Properties is the market, this is the book.
+export interface PortfolioProperty {
+  listingId: string;
+  /** REX property id — the record maintenance/compliance hangs off in REX. */
+  propertyId: string;
+  name: string;
+  locality: string;
+  address: string;
+  image: string | null;
+  rent: number | null;
+  rentPeriod: string | null;
+  letType: string | null;
+  /**
+   * When the listing was created in REX — the closest thing the Listings row
+   * gives us to "joined the portfolio". Good for "on the books since", not a
+   * tenancy start date.
+   */
+  sinceISO: string | null;
+  epcExpiry: string | null;
+  epcRating: number | null;
+  epcNotRequired: boolean;
+  items: ComplianceItem[];
+  /** How many compliance items need a human — drives badges + sort. */
+  outstanding: number;
+  /** The soonest certificate renewal (incl. overdue), or null if none dated. */
+  nextRenewal: { label: string; expiry: string } | null;
+}
+
+// The managed book is much bigger than the market book (50 properties vs ~12),
+// and REX's ComplianceEntries search slows superlinearly with the id count —
+// one "in" query over 92 ids measured 21s (29 Jul 2026), and its 100-row cap
+// silently drops entries besides. So: small id chunks in parallel (each fast
+// and comfortably under the row cap), under a longer overall deadline.
+const PORTFOLIO_TTL_MS = 5 * 60_000;
+const PORTFOLIO_DEADLINE_MS = 20_000;
+const COMPLIANCE_CHUNK = 10;
+const portfolioCache = new Map<string, { at: number; data: PortfolioProperty[] }>();
+
+/**
+ * The agent's managed portfolio with compliance, worst first. Two REX calls:
+ * leased Listings (with images), then ComplianceEntries for the lot.
+ * null on failure so the caller can say so rather than imply an empty book.
+ */
+export async function getAgentPortfolioProperties(
+  rexUserId: string
+): Promise<PortfolioProperty[] | null> {
+  if (!rexConfigured() || !rexUserId) return null;
+
+  const cached = portfolioCache.get(rexUserId);
+  if (cached && Date.now() - cached.at < PORTFOLIO_TTL_MS) return cached.data;
+
+  const work = (async (): Promise<PortfolioProperty[] | null> => {
+    const res = await rexCall("Listings", "search", {
+      criteria: [
+        { name: "listing_agent_1_id", type: "=", value: rexUserId },
+        { name: "system_listing_state", type: "=", value: "leased" },
+      ],
+      extra_options: { extra_fields: ["related.listing_images"] },
+      limit: COUNT_LIMIT,
+    }).catch(() => null);
+    if (!res || !res.ok) return null;
+
+    const rows = rexRows(res.result);
+    const listings = rows.map((r) => {
+      // system_ctime is epoch seconds; anything non-numeric → unknown.
+      const ctime = Number(r.system_ctime);
+      const sinceISO =
+        Number.isFinite(ctime) && ctime > 0
+          ? new Date(ctime * 1000).toISOString().slice(0, 10)
+          : null;
+      return { base: toListing(r), sinceISO };
+    });
+
+    const ids = [
+      ...new Set(
+        listings.flatMap((l) => [l.base.propertyId, l.base.id]).filter(Boolean)
+      ),
+    ];
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += COMPLIANCE_CHUNK) {
+      chunks.push(ids.slice(i, i + COMPLIANCE_CHUNK));
+    }
+    const results = await Promise.all(
+      chunks.map((chunk) =>
+        rexCall("ComplianceEntries", "search", {
+          criteria: [{ name: "parent_object_id", type: "in", value: chunk }],
+          limit: COUNT_LIMIT,
+        }).catch(() => null)
+      )
+    );
+
+    const byParent = new Map<string, ComplianceItem[]>();
+    for (const cres of results) {
+      if (!cres || !cres.ok) continue; // a failed chunk costs its properties' items, not the page
+      for (const row of rexRows(cres.result)) {
+        const item = toComplianceItem(row);
+        if (!item) continue;
+        const parent = String(row.parent_object_id ?? "");
+        if (!parent) continue;
+        const list = byParent.get(parent) ?? [];
+        list.push(item);
+        byParent.set(parent, list);
+      }
+    }
+
+    const out: PortfolioProperty[] = listings.map(({ base: l, sinceISO }) => {
+      const items = [
+        ...(byParent.get(l.propertyId) ?? []),
+        ...(byParent.get(l.id) ?? []),
+      ].sort((a, b) => a.label.localeCompare(b.label));
+
+      // Soonest dated renewal, overdue first — expired certs are the most
+      // urgent "renewal due", not a separate category.
+      const dated = items
+        .filter((i) => i.expiry && i.state !== "not-required")
+        .sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
+      const next = dated[0] ?? null;
+
+      return {
+        listingId: l.id,
+        propertyId: l.propertyId,
+        name: l.name,
+        locality: l.locality,
+        address: l.address,
+        image: l.image,
+        rent: l.rent,
+        rentPeriod: l.rentPeriod,
+        letType: l.letType,
+        sinceISO,
+        epcExpiry: l.epcExpiry,
+        epcRating: l.epcRating,
+        epcNotRequired: l.epcNotRequired,
+        items,
+        outstanding: items.filter((i) => complianceNeedsWork(i.state)).length,
+        nextRenewal: next ? { label: next.label, expiry: String(next.expiry) } : null,
+      };
+    });
+
+    out.sort(
+      (a, b) => b.outstanding - a.outstanding || a.address.localeCompare(b.address, "en-GB")
+    );
+    portfolioCache.set(rexUserId, { at: Date.now(), data: out });
+    return out;
+  })();
+
+  const deadline = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), PORTFOLIO_DEADLINE_MS)
+  );
+  try {
+    return await Promise.race([work, deadline]);
+  } catch {
+    return null;
+  }
+}
+
 /* -------------------------- tenancy applications -------------------------- */
 
 export interface ApplicationTenant {
