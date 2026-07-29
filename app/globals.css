@@ -15,11 +15,12 @@
   --accent-dark: #c11a2e;
   --accent-soft: #fef2f2;
 
-  /* Neutrals */
+  /* Neutrals — flat, very light grey canvas (CompanyOS reference); soft
+     against the white cards rather than fighting them. */
   --ink: #101014;
-  --muted: #6b6b76;
-  --line: #e7e7ec;
-  --page: #f6f6f7;
+  --muted: #6b6b70;
+  --line: #e9e9e7;
+  --page: #f4f4f3;
   --card: #ffffff;
 
   --radius-card: 16px;
@@ -45,12 +46,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Headings stay on the body face but lean light — the Launch Pad look.
+   Utility classes (font-semibold etc.) still win where a heading needs weight. */
 h1,
 h2,
 h3,
 h4,
 h5 {
   font-family: var(--font-heading);
+  font-weight: 500;
 }
 
 /* Accent helpers (TEG pattern) */
@@ -99,7 +103,7 @@ h5 {
 /* Stat card number — scaled up in presentation mode */
 .stat-value {
   font-size: clamp(28px, 2.6vw, 36px);
-  font-weight: 600;
+  font-weight: 500; /* was 600 — the whole surface leans lighter now */
   letter-spacing: -0.02em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;

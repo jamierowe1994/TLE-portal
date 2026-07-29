@@ -11,6 +11,8 @@
 
 import { useEffect, useState } from "react";
 import { rexListingUrl } from "@/lib/rex-links";
+import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
+import PhotoCarousel from "@/components/PhotoCarousel";
 import type { ComplianceItem, ComplianceState, PortfolioProperty } from "@/lib/rex-stats";
 
 const enterAt = (ms: number) =>
@@ -182,45 +184,25 @@ function PortfolioTile({
 
 /* -------------------------------- drawer -------------------------------- */
 
+// Two windows: the property (front-of-house) on the left, what needs doing on
+// the right.
 function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const outstanding = p.items.filter((i) => needsWork(i.state));
   const settled = p.items.filter((i) => !needsWork(i.state));
   const since = sinceLabel(p.sinceISO);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-12"
-      onClick={onClose}
-    >
-      <div
-        className="modal-pop my-auto w-full max-w-2xl rounded-2xl bg-card p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative h-44 w-full overflow-hidden rounded-xl bg-page">
-          <Photo image={p.image} alt={p.name} />
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/70"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
+    <SplitDrawer onClose={onClose}>
+      {/* ---- the property ---- */}
+      <DrawerPanel className="p-3 lg:w-[26rem]">
+        <PhotoCarousel images={p.images} alt={p.name} />
 
-        <div className="p-6 sm:p-8">
+        <div className="p-5 sm:p-6">
           <h2 className="text-[17px] font-semibold leading-snug">{p.name}</h2>
           <p className="mt-0.5 text-[13px] text-muted">{p.locality}</p>
 
           {/* The facts of the tenancy at a glance */}
-          <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+          <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3">
             {money(p.rent) ? (
               <div>
                 <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Rent</dt>
@@ -277,8 +259,36 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
             </a>
           </div>
 
+          <p className="mt-5 text-[11px] text-muted">
+            Live from REX. Certificates and maintenance jobs are managed in REX /
+            REX PM — this is the view, not the record.
+          </p>
+        </div>
+      </DrawerPanel>
+
+      {/* ---- what you need to do ---- */}
+      <DrawerPanel className="lg:w-[24rem]">
+        <div className="p-5 sm:p-6">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+            {outstanding.length ? "What you need to do" : "Nothing outstanding"}
+          </h3>
+          <p className="mt-2 text-[13px] text-muted">
+            {outstanding.length ? (
+              <>
+                <span className="font-semibold text-ink">
+                  {outstanding.length} {outstanding.length === 1 ? "item needs" : "items need"} attention
+                </span>{" "}
+                on this property.
+              </>
+            ) : p.items.length ? (
+              "Everything on file is in date."
+            ) : (
+              "No compliance records against this property yet."
+            )}
+          </p>
+
           {outstanding.length ? (
-            <div className="mt-6 space-y-2.5">
+            <div className="mt-4 space-y-2.5">
               {outstanding.map((i) => (
                 <div
                   key={i.type}
@@ -323,14 +333,9 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
               </div>
             </div>
           ) : null}
-
-          <p className="mt-6 text-[11px] text-muted">
-            Live from REX. Certificates and maintenance jobs are managed in REX /
-            REX PM — this is the view, not the record.
-          </p>
         </div>
-      </div>
-    </div>
+      </DrawerPanel>
+    </SplitDrawer>
   );
 }
 
@@ -361,6 +366,16 @@ export default function PortfolioPage() {
       cancelled = true;
     };
   }, []);
+
+  // Deep link from the rail search: /dashboard/portfolio?open=<listingId> pops
+  // that property's drawer once the data is in.
+  useEffect(() => {
+    if (!properties) return;
+    const id = new URLSearchParams(window.location.search).get("open");
+    if (!id) return;
+    const match = properties.find((p) => p.listingId === id);
+    if (match) setOpen(match);
+  }, [properties]);
 
   const all = properties ?? [];
   const totalOutstanding = all.reduce((t, p) => t + p.outstanding, 0);

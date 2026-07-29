@@ -11,10 +11,20 @@ import { useEffect, useState } from "react";
 import { formatGBP } from "@/lib/format";
 import { platformById } from "@/lib/platforms";
 import { rexListingUrl } from "@/lib/rex-links";
+import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
+import PhotoCarousel from "@/components/PhotoCarousel";
 import type { AgentListing } from "@/lib/rex-stats";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
+
+// "2026-09-07" → "7 Sep 2026" — REX dates arrive as raw ISO.
+function fmtDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
 /* ------------------------------- the stage ------------------------------- */
 
@@ -233,42 +243,19 @@ function StepRow({ s }: { s: Step }) {
   );
 }
 
+// Two windows: the property on the left, what to do about it on the right.
 function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   const stage = stageOf(l);
   const epc = epcState(l);
   const steps = stepsFor(l, stage);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10"
-      onClick={onClose}
-    >
-      <div
-        className="modal-pop my-auto w-full max-w-xl rounded-2xl bg-card p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Photo inset exactly like the tile, so the two never look like
-            different products. */}
-        <div className="relative h-52 w-full overflow-hidden rounded-xl bg-page">
-          <Photo l={l} />
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/70"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
+    <SplitDrawer onClose={onClose}>
+      {/* ---- the property ---- */}
+      <DrawerPanel className="p-3 lg:w-[26rem]">
+        <PhotoCarousel images={l.images} alt={l.name} />
 
-        <div className="p-5 sm:p-7">
+        <div className="p-5 sm:p-6">
           <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[stage]}`}>
             {STAGE_LABEL[stage]}
           </span>
@@ -297,7 +284,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
             </div>
             <div>
               <div className="text-[13px] font-medium text-ink">
-                {l.availableFrom ?? "—"}
+                {fmtDate(l.availableFrom) ?? "—"}
               </div>
               Available from
             </div>
@@ -320,31 +307,79 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
             ) : null}
           </div>
 
-          {/* Next steps — only what this stage actually needs */}
-          <div className="mt-7">
-            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-              {steps.length ? "What's next" : "Nothing outstanding"}
-            </h3>
-            {steps.length ? (
-              <div className="mt-3 space-y-2.5">
-                {steps.map((s) => (
-                  <StepRow key={s.title} s={s} />
-                ))}
-                <p className="pt-2 text-[11px] text-muted">
-                  These aren&rsquo;t ticked off automatically yet — once the
-                  PayProp, Flatfair and Propoly connections are live, this list
-                  will know what&rsquo;s already done.
-                </p>
+          {/* The long tail lives behind a dropdown, so the box stays calm. */}
+          <details className="group/details mt-5 rounded-xl border border-line">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[12px] font-semibold text-muted [&::-webkit-details-marker]:hidden">
+              More details
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 transition-transform group-open/details:rotate-180" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </summary>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-line px-4 py-4 text-[12px]">
+              {l.category ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Category</dt>
+                  <dd className="mt-0.5 font-medium">{l.category}</dd>
+                </div>
+              ) : null}
+              {l.letType ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Let type</dt>
+                  <dd className="mt-0.5 font-medium">{l.letType}</dd>
+                </div>
+              ) : null}
+              {l.publicationStatus ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Publication</dt>
+                  <dd className="mt-0.5 font-medium">{l.publicationStatus}</dd>
+                </div>
+              ) : null}
+              {l.advertisedAs ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Advertised as</dt>
+                  <dd className="mt-0.5 font-medium">{l.advertisedAs}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX listing ID</dt>
+                <dd className="mt-0.5 font-medium tabular-nums">{l.id}</dd>
               </div>
-            ) : (
-              <p className="mt-1 text-[13px] text-muted">
-                Nothing needs doing on this one right now.
-              </p>
-            )}
-          </div>
+              {l.propertyId ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX property ID</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums">{l.propertyId}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </details>
         </div>
-      </div>
-    </div>
+      </DrawerPanel>
+
+      {/* ---- what you need to do ---- */}
+      <DrawerPanel className="lg:w-[24rem]">
+        <div className="p-5 sm:p-6">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+            {steps.length ? "What's next" : "Nothing outstanding"}
+          </h3>
+          {steps.length ? (
+            <div className="mt-3 space-y-2.5">
+              {steps.map((s) => (
+                <StepRow key={s.title} s={s} />
+              ))}
+              <p className="pt-2 text-[11px] text-muted">
+                These aren&rsquo;t ticked off automatically yet — once the
+                PayProp, Flatfair and Propoly connections are live, this list
+                will know what&rsquo;s already done.
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 text-[13px] text-muted">
+              Nothing needs doing on this one right now.
+            </p>
+          )}
+        </div>
+      </DrawerPanel>
+    </SplitDrawer>
   );
 }
 
@@ -373,6 +408,16 @@ export default function ListingsPage() {
       cancelled = true;
     };
   }, []);
+
+  // Deep link from the rail search: /dashboard/listings?open=<listingId> pops
+  // that property's drawer once the data is in.
+  useEffect(() => {
+    if (!listings) return;
+    const id = new URLSearchParams(window.location.search).get("open");
+    if (!id) return;
+    const match = listings.find((l) => l.id === id);
+    if (match) setOpen(match);
+  }, [listings]);
 
   const all = listings ?? [];
   const needs = all.filter((l) => stepsFor(l, stageOf(l)).length > 0).length;

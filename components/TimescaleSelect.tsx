@@ -80,7 +80,7 @@ export default function TimescaleSelect({
                   setOpen(false);
                 }}
                 className={`flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] font-medium transition ${
-                  active ? "accent-soft-bg accent-text" : "text-ink hover:bg-black/[0.04]"
+                  active ? "bg-black/[0.06] font-semibold text-ink" : "text-ink hover:bg-black/[0.04]"
                 }`}
               >
                 {o.label}

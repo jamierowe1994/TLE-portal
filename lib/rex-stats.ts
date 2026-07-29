@@ -529,6 +529,8 @@ export interface AgentListing {
   /** Hero shot (REX priority 1), 400x300 thumb. null when none uploaded. */
   image: string | null;
   imageCount: number;
+  /** Every photo in REX order, 800x600 thumbs — feeds the drawer carousel. */
+  images: string[];
 }
 
 // REX returns lookups as { id, text } and plain values elsewhere — normalise.
@@ -555,31 +557,38 @@ function absoluteUrl(u: unknown): string | null {
 }
 
 /**
- * The listing's hero shot. REX orders images by `priority` (1 = first), and
- * ships pre-made thumbs — take the 400x300 for a tile rather than pulling a
- * 1200x800 original per card.
+ * The listing's photos, REX priority order (1 = first). REX ships pre-made
+ * thumbs — the tile takes the 400x300 hero, the drawer carousel gets 800x600s
+ * rather than pulling 1200x800 originals per photo.
  */
-function heroImage(r: Record<string, unknown>): { url: string | null; count: number } {
+function listingImages(r: Record<string, unknown>): {
+  url: string | null;
+  count: number;
+  all: string[];
+} {
   const related = (r.related ?? {}) as Record<string, unknown>;
   const images = Array.isArray(related.listing_images)
     ? (related.listing_images as Array<Record<string, unknown>>)
     : [];
-  if (images.length === 0) return { url: null, count: 0 };
+  if (images.length === 0) return { url: null, count: 0, all: [] };
 
-  const hero = [...images].sort(
+  const ordered = [...images].sort(
     (a, b) => Number(a.priority ?? 999) - Number(b.priority ?? 999)
-  )[0];
-  const thumbs = (hero.thumbs ?? {}) as Record<string, { url?: string }>;
-  const url =
-    absoluteUrl(thumbs["400x300"]?.url) ??
-    absoluteUrl(thumbs["800x600"]?.url) ??
-    absoluteUrl(hero.url);
-  return { url, count: images.length };
+  );
+  const thumb = (img: Record<string, unknown>, size: string): string | null => {
+    const thumbs = (img.thumbs ?? {}) as Record<string, { url?: string }>;
+    return absoluteUrl(thumbs[size]?.url) ?? absoluteUrl(img.url);
+  };
+  const url = thumb(ordered[0], "400x300");
+  const all = ordered
+    .map((img) => thumb(img, "800x600"))
+    .filter((u): u is string => u != null);
+  return { url, count: images.length, all };
 }
 
 function toListing(r: Record<string, unknown>): AgentListing {
   const property = (r.property ?? {}) as Record<string, unknown>;
-  const hero = heroImage(r);
+  const hero = listingImages(r);
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
   // REX gives the address in parts; split it the way an address is actually
@@ -624,6 +633,7 @@ function toListing(r: Record<string, unknown>): AgentListing {
     epcNotRequired: r.epc_not_required === 1 || r.epc_not_required === true,
     image: hero.url,
     imageCount: hero.count,
+    images: hero.all,
   };
 }
 
@@ -763,6 +773,72 @@ function toComplianceItem(entry: Record<string, unknown>): ComplianceItem | null
   return { type, label: name, state, expiry, notes };
 }
 
+// REX can hold the same certificate against BOTH the property and the listing
+// (the managed book does this a lot) — merging the two parents then shows "EPC"
+// twice. One item per type: keep whichever needs a human, else the later expiry
+// (the current certificate, not the superseded one).
+const STATE_URGENCY: Record<ComplianceState, number> = {
+  expired: 4,
+  expiring: 3,
+  missing: 2,
+  valid: 1,
+  "not-required": 0,
+};
+
+// ComplianceEntries searches slow superlinearly with the id count (92 ids →
+// 21s measured 29 Jul 2026) and hard-cap at 100 rows. Small parallel chunks
+// keep each call fast and under the cap. A failed chunk costs its properties'
+// items, not the whole page.
+const COMPLIANCE_CHUNK = 10;
+
+async function fetchComplianceByParent(
+  ids: string[]
+): Promise<Map<string, ComplianceItem[]>> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += COMPLIANCE_CHUNK) {
+    chunks.push(ids.slice(i, i + COMPLIANCE_CHUNK));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      rexCall("ComplianceEntries", "search", {
+        criteria: [{ name: "parent_object_id", type: "in", value: chunk }],
+        limit: COUNT_LIMIT,
+      }).catch(() => null)
+    )
+  );
+
+  const byParent = new Map<string, ComplianceItem[]>();
+  for (const res of results) {
+    if (!res || !res.ok) continue;
+    for (const row of rexRows(res.result)) {
+      const item = toComplianceItem(row);
+      if (!item) continue;
+      const parent = String(row.parent_object_id ?? "");
+      if (!parent) continue;
+      const list = byParent.get(parent) ?? [];
+      list.push(item);
+      byParent.set(parent, list);
+    }
+  }
+  return byParent;
+}
+
+function dedupeComplianceItems(items: ComplianceItem[]): ComplianceItem[] {
+  const byType = new Map<string, ComplianceItem>();
+  for (const item of items) {
+    const seen = byType.get(item.type);
+    if (
+      !seen ||
+      STATE_URGENCY[item.state] > STATE_URGENCY[seen.state] ||
+      (STATE_URGENCY[item.state] === STATE_URGENCY[seen.state] &&
+        String(item.expiry ?? "") > String(seen.expiry ?? ""))
+    ) {
+      byType.set(item.type, item);
+    }
+  }
+  return [...byType.values()];
+}
+
 /**
  * The agent's properties with their compliance, worst first. Live from REX.
  * null on failure so the caller can say so rather than imply all-clear.
@@ -782,29 +858,13 @@ export async function getAgentCompliance(
     const ids = [...new Set([...propertyIds, ...listings.map((l) => l.id)])];
     if (ids.length === 0) return [];
 
-    const res = await rexCall("ComplianceEntries", "search", {
-      criteria: [{ name: "parent_object_id", type: "in", value: ids }],
-      limit: COUNT_LIMIT,
-    }).catch(() => null);
-    if (!res || !res.ok) return null;
-
-    // Bucket entries by the id they hang off.
-    const byParent = new Map<string, ComplianceItem[]>();
-    for (const row of rexRows(res.result)) {
-      const item = toComplianceItem(row);
-      if (!item) continue;
-      const parent = String(row.parent_object_id ?? "");
-      if (!parent) continue;
-      const list = byParent.get(parent) ?? [];
-      list.push(item);
-      byParent.set(parent, list);
-    }
+    const byParent = await fetchComplianceByParent(ids);
 
     const out = listings.map((l) => {
-      const items = [
+      const items = dedupeComplianceItems([
         ...(byParent.get(l.propertyId) ?? []),
         ...(byParent.get(l.id) ?? []),
-      ].sort((a, b) => a.label.localeCompare(b.label));
+      ]).sort((a, b) => a.label.localeCompare(b.label));
       return {
         listingId: l.id,
         name: l.name,
@@ -844,6 +904,8 @@ export interface PortfolioProperty {
   locality: string;
   address: string;
   image: string | null;
+  /** Every photo in REX order, 800x600 thumbs — feeds the drawer carousel. */
+  images: string[];
   rent: number | null;
   rentPeriod: string | null;
   letType: string | null;
@@ -864,13 +926,9 @@ export interface PortfolioProperty {
 }
 
 // The managed book is much bigger than the market book (50 properties vs ~12),
-// and REX's ComplianceEntries search slows superlinearly with the id count —
-// one "in" query over 92 ids measured 21s (29 Jul 2026), and its 100-row cap
-// silently drops entries besides. So: small id chunks in parallel (each fast
-// and comfortably under the row cap), under a longer overall deadline.
+// so even the chunked compliance fetch adds up — longer deadline, longer cache.
 const PORTFOLIO_TTL_MS = 5 * 60_000;
 const PORTFOLIO_DEADLINE_MS = 20_000;
-const COMPLIANCE_CHUNK = 10;
 const portfolioCache = new Map<string, { at: number; data: PortfolioProperty[] }>();
 
 /**
@@ -913,38 +971,13 @@ export async function getAgentPortfolioProperties(
         listings.flatMap((l) => [l.base.propertyId, l.base.id]).filter(Boolean)
       ),
     ];
-    const chunks: string[][] = [];
-    for (let i = 0; i < ids.length; i += COMPLIANCE_CHUNK) {
-      chunks.push(ids.slice(i, i + COMPLIANCE_CHUNK));
-    }
-    const results = await Promise.all(
-      chunks.map((chunk) =>
-        rexCall("ComplianceEntries", "search", {
-          criteria: [{ name: "parent_object_id", type: "in", value: chunk }],
-          limit: COUNT_LIMIT,
-        }).catch(() => null)
-      )
-    );
-
-    const byParent = new Map<string, ComplianceItem[]>();
-    for (const cres of results) {
-      if (!cres || !cres.ok) continue; // a failed chunk costs its properties' items, not the page
-      for (const row of rexRows(cres.result)) {
-        const item = toComplianceItem(row);
-        if (!item) continue;
-        const parent = String(row.parent_object_id ?? "");
-        if (!parent) continue;
-        const list = byParent.get(parent) ?? [];
-        list.push(item);
-        byParent.set(parent, list);
-      }
-    }
+    const byParent = await fetchComplianceByParent(ids);
 
     const out: PortfolioProperty[] = listings.map(({ base: l, sinceISO }) => {
-      const items = [
+      const items = dedupeComplianceItems([
         ...(byParent.get(l.propertyId) ?? []),
         ...(byParent.get(l.id) ?? []),
-      ].sort((a, b) => a.label.localeCompare(b.label));
+      ]).sort((a, b) => a.label.localeCompare(b.label));
 
       // Soonest dated renewal, overdue first — expired certs are the most
       // urgent "renewal due", not a separate category.
@@ -960,6 +993,7 @@ export async function getAgentPortfolioProperties(
         locality: l.locality,
         address: l.address,
         image: l.image,
+        images: l.images,
         rent: l.rent,
         rentPeriod: l.rentPeriod,
         letType: l.letType,

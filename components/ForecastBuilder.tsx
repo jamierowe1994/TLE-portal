@@ -18,6 +18,8 @@ interface ForecastBuilderProps {
   currentManaged: number; // current managed-property count
   avgFeePerProperty: number; // £/property/month (estimated)
   onSaved?: () => void;
+  /** Render without the card chrome — for when it lives inside another box. */
+  bare?: boolean;
 }
 
 type Mode = "revenue" | "portfolio";
@@ -33,6 +35,7 @@ export default function ForecastBuilder({
   currentManaged,
   avgFeePerProperty,
   onSaved,
+  bare = false,
 }: ForecastBuilderProps) {
   const [mode, setMode] = useState<Mode>("revenue");
   const [saved, setSaved] = useState<Record<string, SavedForecast>>(savedForecasts);
@@ -128,10 +131,10 @@ export default function ForecastBuilder({
       : `Drag each month to the number of managed properties you expect. £ is estimated at ${formatGBP(avgFeePerProperty)}/property/month.`;
 
   return (
-    <div className="card card-lift p-5 sm:p-6">
+    <div className={bare ? "" : "card card-lift p-5 sm:p-6"}>
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-          Build your forecast — {rangeLabel} {monthKeys[0].slice(0, 4)}
+          {rangeLabel} {monthKeys[0].slice(0, 4)}
         </h2>
         {/* How it works lives on hover, not on the page — the chart is legible
             without it, and the instructions only matter the first time. */}

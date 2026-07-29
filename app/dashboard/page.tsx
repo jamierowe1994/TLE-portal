@@ -8,10 +8,8 @@ import Collapsible from "@/components/Collapsible";
 import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
 import Donut from "@/components/charts/Donut";
-import AssistantChat from "@/components/AssistantChat";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
-import { getUser } from "@/lib/session";
 import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
   ConversionStats,
@@ -85,13 +83,6 @@ export default function MyDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [firstName, setFirstName] = useState<string | undefined>(undefined);
-
-  // Read the cached profile after mount (localStorage isn't there during SSR).
-  useEffect(() => {
-    const name = getUser()?.name;
-    if (name) setFirstName(name.split(" ")[0]);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,11 +170,6 @@ export default function MyDashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* ---- ASSISTANT ---- the all-in-one agent, front and centre */}
-      <div className="enter enter-up" style={enterAt(700)}>
-        <AssistantChat firstName={firstName} />
-      </div>
-
       {/* Period selector — drives the earnings view below.
           Slides in from behind the nav rail. */}
       <div
@@ -286,11 +272,13 @@ export default function MyDashboardPage() {
               const totalProps = (detail?.total ?? fullyManaged + letOnly) + onMarket + letAgreed;
               const rentRoll = stats.portfolio.rentRoll.value;
               const estFees = rentRoll != null ? rentRoll * MGMT_FEE_RATE : null;
+              // One hue, four shades — the brand red graded dark→light so the
+              // mix reads as one story instead of a rainbow.
               const segments = [
                 { label: "Fully managed", value: fullyManaged, color: "#e31f36" },
-                { label: "Let only", value: letOnly, color: "#111827" },
-                { label: "Let agreed", value: letAgreed, color: "#f59e0b" },
-                { label: "On market", value: onMarket, color: "#9ca3af" },
+                { label: "Let only", value: letOnly, color: "#8f1322" },
+                { label: "Let agreed", value: letAgreed, color: "#f0808d" },
+                { label: "On market", value: onMarket, color: "#f8ccd2" },
               ].filter((s) => s.value > 0);
               return (
                 <div className="enter enter-right h-full" style={enterAt(1000)}>
@@ -349,79 +337,75 @@ export default function MyDashboardPage() {
             })()}
           </section>
 
-          {/* ---- THE BASICS ---- four boxes, each flowing up on its own beat */}
-          <section>
-            <h2
-              className="enter enter-up mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted"
-              style={enterAt(1100)}
-            >
-              This month · {monthLabel(ANCHOR)}
-            </h2>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <div className="enter enter-up" style={enterAt(1180)}>
-                <StatCard label="Market appraisals" stat={stats.funnel.marketAppraisals} />
-              </div>
-              <div className="enter enter-up" style={enterAt(1255)}>
-                <StatCard label="Listings" stat={stats.funnel.listings} />
-              </div>
-              <div className="enter enter-up" style={enterAt(1330)}>
-                <StatCard
-                  label="Move-ins"
-                  stat={snapStat(stats.moveIns.length, "From your move-in list", formatNum(stats.moveIns.length))}
-                />
-              </div>
-              {/* Pipeline: prefer the live REX count (let-agreed) over the snapshot rows. */}
-              <div className="enter enter-up" style={enterAt(1405)}>
-                {stats.funnel.pipeline?.value != null ? (
-                  <StatCard label="Pipeline" stat={stats.funnel.pipeline} />
-                ) : (
-                  <StatCard
-                    label="Pipeline"
-                    stat={snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length))}
-                  />
-                )}
+          {/* ---- THE BASICS ---- one quiet box, four figures inside */}
+          <section className="enter enter-up" style={enterAt(1100)}>
+            <div className="card card-lift p-5">
+              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                This month · {monthLabel(ANCHOR)}
+              </h2>
+              <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
+                {(
+                  [
+                    ["Market appraisals", stats.funnel.marketAppraisals],
+                    ["Listings", stats.funnel.listings],
+                    ["Move-ins", snapStat(stats.moveIns.length, "From your move-in list", formatNum(stats.moveIns.length))],
+                    // Pipeline: prefer the live REX count (let-agreed) over the snapshot rows.
+                    [
+                      "Pipeline",
+                      stats.funnel.pipeline?.value != null
+                        ? stats.funnel.pipeline
+                        : snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length)),
+                    ],
+                  ] as const
+                ).map(([label, stat]) => (
+                  <div key={label}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted">{label}</span>
+                      <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} compact />
+                    </div>
+                    <div className="stat-value mt-1 text-[24px]">
+                      {stat.display ?? (stat.value == null ? "—" : formatNum(stat.value))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </section>
 
-          {/* ---- INTERACTIVE FORECAST BUILDER ---- fades in */}
-          <div className="enter enter-fade" style={enterAt(1520)}>
-            <ForecastBuilder
-              monthKeys={MONTH_KEYS}
-              monthLabels={MONTH_LABELS}
-              actualsNetIncome={actualsArr}
-              currentMonthIndex={monthIdx(ANCHOR)}
-              savedForecasts={forecastHistory}
-              currentManaged={managed}
-              avgFeePerProperty={avgFeePerProperty}
-              onSaved={() => {}}
-            />
-          </div>
+          {/* ---- DETAIL (progressive disclosure) ---- everything heavier lives
+               behind a click: the forecast builder, conversions, tables. */}
+          <section className="enter enter-pop space-y-3" style={enterAt(1300)}>
+            <Collapsible title="Build your forecast">
+              <ForecastBuilder
+                monthKeys={MONTH_KEYS}
+                monthLabels={MONTH_LABELS}
+                actualsNetIncome={actualsArr}
+                currentMonthIndex={monthIdx(ANCHOR)}
+                savedForecasts={forecastHistory}
+                currentManaged={managed}
+                avgFeePerProperty={avgFeePerProperty}
+                onSaved={() => {}}
+                bare
+              />
+            </Collapsible>
 
-          {/* ---- CONVERSION RATES ---- pops in after the builder */}
-          {c ? (
-            <section className="enter enter-pop" style={enterAt(1700)}>
-              <div className="card card-lift p-5 sm:p-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">Conversion rates</h2>
-                <SourceBadge source="snapshot" asOf={SNAP} note="Derived from your sales funnel in the TLE Business Dashboard snapshot." />
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <Gauge label="Lead → MA" pct={c.leadToMa.value} />
-                <Gauge label="MA → Listing" pct={c.maToListing.value} />
-                <Gauge label="Listing → Move-in" pct={c.listingToMoveIn.value} />
-              </div>
-              {c.leadToMa.value == null && c.maToListing.value == null && c.listingToMoveIn.value == null ? (
-                <p className="mt-3 text-center text-[13px] text-muted">
-                  Conversion rates appear once you&apos;ve got appraisals and listings recorded this month.
-                </p>
-              ) : null}
-              </div>
-            </section>
-          ) : null}
-
-          {/* ---- DETAIL (progressive disclosure) ---- last to arrive */}
-          <section className="enter enter-pop space-y-3" style={enterAt(1820)}>
+            {c ? (
+              <Collapsible title="Conversion rates">
+                <div className="mb-3 flex justify-end">
+                  <SourceBadge source="snapshot" asOf={SNAP} note="Derived from your sales funnel in the TLE Business Dashboard snapshot." />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Gauge label="Lead → MA" pct={c.leadToMa.value} />
+                  <Gauge label="MA → Listing" pct={c.maToListing.value} />
+                  <Gauge label="Listing → Move-in" pct={c.listingToMoveIn.value} />
+                </div>
+                {c.leadToMa.value == null && c.maToListing.value == null && c.listingToMoveIn.value == null ? (
+                  <p className="mt-3 text-center text-[13px] text-muted">
+                    Conversion rates appear once you&apos;ve got appraisals and listings recorded this month.
+                  </p>
+                ) : null}
+              </Collapsible>
+            ) : null}
             <Collapsible title={`My move-ins · ${monthLabel(ANCHOR)}`} badge={stats.moveIns.length}>
               {stats.moveIns.length ? (
                 <DataTable columns={moveInColumns} rows={stats.moveIns as Rowify<MoveInRow>[]} compact />

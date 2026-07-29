@@ -68,7 +68,7 @@ const PRESET_MENU = [
 const boxClass = (active: boolean) =>
   `inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
     active
-      ? "border-accent bg-accent-soft text-ink"
+      ? "border-ink/40 bg-black/[0.05] text-ink"
       : "hairline border-line bg-card text-muted hover:text-ink"
   }`;
 
@@ -237,7 +237,7 @@ export default function PeriodPicker({
             }
           }}
           className={`inline-flex items-center gap-1.5 text-[12.5px] font-medium transition ${
-            mode === "custom" ? "accent-text" : "text-muted hover:text-ink"
+            mode === "custom" ? "text-ink underline underline-offset-2" : "text-muted hover:text-ink"
           }`}
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">

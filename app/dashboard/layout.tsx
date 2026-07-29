@@ -4,30 +4,32 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BrandMark from "@/components/BrandMark";
+import AssistantBubble from "@/components/AssistantBubble";
+import SearchOverlay from "@/components/SearchOverlay";
+import DoodleIcon from "@/components/DoodleIcon";
 import { refreshUser, signOut } from "@/lib/session";
-import { BRAND } from "@/lib/brand";
-import { platformsIn, type Platform } from "@/lib/platforms";
 import type { UserProfile } from "@/lib/types";
 
-// Agent dashboard shell — a CRM-style layout: a fixed left nav rail and a top
-// bar joined by one seamless white "chrome" surface with a concave swoop, a
-// time-of-day welcome, and full-width content. Modelled on the sister TEG
-// portal's layout.
+// Agent dashboard shell — a flat, Notion-style layout: one grey canvas, a grey
+// nav rail that blends into it (broken up by slightly darker hairlines), and
+// white cards reserved for the content that matters. The account selector sits
+// at the top of the rail; TLE OS is a single item pinned at the bottom.
 
+// Icons are hand-drawn doodles from /public/icons/doodle (see DoodleIcon).
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: "M4 4h7v9H4zM13 4h7v5h-7zM13 13h7v7h-7zM4 17h7v3H4z" },
-  { href: "/dashboard/todos", label: "To-dos", icon: "M9 6h11M9 12h11M9 18h11M4 5.5l1 1 2-2M4 11.5l1 1 2-2M4 17.5l1 1 2-2" },
-  { href: "/dashboard/listings", label: "My Properties", icon: "M3 11l9-8 9 8M5 9.5V20a1 1 0 001 1h12a1 1 0 001-1V9.5M9.5 21v-6h5v6" },
-  { href: "/dashboard/applications", label: "Applications", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
-  { href: "/dashboard/compliance", label: "Compliance", icon: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 8.3-7 9-4-0.7-7-4.5-7-9V6l7-3z" },
-  { href: "/dashboard/portfolio", label: "My Portfolio", icon: "M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M4 7h16a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1zM3 12h18M12 11v2.5" },
-  { href: "/dashboard/ads", label: "My Ads", icon: "M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm2 11l4-5 3 3 2-2 3 4M9 9.5a.5.5 0 11-1 0 .5.5 0 011 0z" },
-  { href: "/dashboard/forecast", label: "Forecast", icon: "M3 17l6-6 4 4 8-8M21 7v6M21 7h-6" },
+  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+  { href: "/dashboard/todos", label: "To-dos", icon: "checklist" },
+  { href: "/dashboard/listings", label: "My Properties", icon: "home" },
+  { href: "/dashboard/applications", label: "Applications", icon: "file-contract" },
+  { href: "/dashboard/compliance", label: "Compliance", icon: "shield" },
+  { href: "/dashboard/portfolio", label: "My Portfolio", icon: "suitcase" },
+  { href: "/dashboard/ads", label: "My Ads", icon: "megaphone" },
+  { href: "/dashboard/forecast", label: "Forecast", icon: "trend-up" },
 ];
 
-const SIDEBAR_W = 240;
-const TOPBAR_H = 68;
-const SWOOP = 22;
+// Hairlines a shade darker than the grey canvas — the only thing that breaks
+// the rail up, exactly like the reference.
+const RAIL_LINE = "border-black/[0.08]";
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
@@ -45,35 +47,26 @@ function greeting(name: string): { hello: string; prompt: string } {
   return { hello: `Evening, ${first}`, prompt: "Late one? Here's the latest." };
 }
 
-// One seamless white L-shape (sidebar + top bar) with a concave corner swoop.
-function ChromeSurface({ vw, vh }: { vw: number; vh: number }) {
-  const sw = SIDEBAR_W;
-  const th = TOPBAR_H;
-  const r = SWOOP;
-  const d =
-    `M0 0 L${vw} 0 L${vw} ${th} L${sw + r} ${th} ` +
-    `A${r} ${r} 0 0 0 ${sw} ${th + r} L${sw} ${vh} L0 ${vh} Z`;
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none fixed inset-0 z-20 hidden bg-white lg:block"
-      style={{
-        clipPath: `path('${d}')`,
-        WebkitClipPath: `path('${d}')`,
-        filter: "drop-shadow(3px 0 12px rgba(0,0,0,0.05)) drop-shadow(0 4px 12px rgba(0,0,0,0.05))",
-      }}
-    />
-  );
-}
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [checking, setChecking] = useState(true);
-  const [vp, setVp] = useState({ w: 0, h: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // ⌘K / Ctrl+K opens the property search from anywhere in the shell.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Close the account menu on an outside click or Escape.
   useEffect(() => {
@@ -89,13 +82,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       document.removeEventListener("keydown", onKey);
     };
   }, [menuOpen]);
-
-  useEffect(() => {
-    const on = () => setVp({ w: window.innerWidth, h: window.innerHeight });
-    on();
-    window.addEventListener("resize", on);
-    return () => window.removeEventListener("resize", on);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,33 +121,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
   const { hello, prompt } = greeting(user.name);
 
-  // Nav items lean out a touch on hover so the rail feels alive under the cursor.
+  // Reference-style items with hand-drawn doodle icons — no tiles, no pills.
+  // The active one simply goes deeper black and a touch bolder; everything
+  // else sits back in grey until you're looking for it.
   const navItem =
-    "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium " +
-    "transition-all duration-150 ease-out hover:translate-x-1";
+    "flex items-center gap-3 rounded-md px-2.5 py-2 text-[14px] transition-colors";
 
-  // Each icon sits in its own little rounded tile — reads smaller and tidier
-  // than the bare 18px strokes, and the active one fills with brand colour.
-  const IconTile = ({ active, path }: { active: boolean; path: string }) => (
-    <span
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors ${
-        active ? "" : "bg-black/[0.04]"
-      }`}
-      style={active ? { background: `${BRAND.accent}1a` } : undefined}
-    >
-      <svg
-        className="h-3.5 w-3.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        viewBox="0 0 24 24"
-        style={active ? { color: BRAND.accent } : undefined}
-      >
-        <path d={path} />
-      </svg>
-    </span>
+  const NavIcon = ({ active, name }: { active: boolean; name: string }) => (
+    <DoodleIcon
+      name={name}
+      size={19}
+      className={`transition-colors ${active ? "text-ink" : "text-muted/80"}`}
+    />
   );
 
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
@@ -174,10 +145,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             href={item.href}
             onClick={onNavigate}
             className={`${navItem} ${
-              active ? "accent-soft-bg text-ink" : "text-muted hover:bg-black/[0.03] hover:text-ink"
+              active
+                ? "font-semibold text-ink"
+                : "text-muted hover:bg-black/[0.04] hover:text-ink"
             }`}
           >
-            <IconTile active={active} path={item.icon} />
+            <NavIcon active={active} name={item.icon} />
             {item.label}
           </Link>
         );
@@ -185,194 +158,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </>
   );
 
-  // The platforms the business runs on, straight in the rail — one hop to any of
-  // them. Ones we don't have a link for yet sit quiet rather than misleading.
-  const ToolLinks = ({
-    items,
-    onNavigate,
-  }: {
-    items: Platform[];
-    onNavigate?: () => void;
-  }) => (
-    <>
-      {items.map((p) => {
-        const chip = (
-          <span
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] font-bold text-white"
-            style={{ background: p.accent }}
-            aria-hidden
-          >
-            {p.name.slice(0, 1)}
-          </span>
-        );
-        if (!p.url) {
-          return (
-            <span
-              key={p.id}
-              title="Link coming"
-              className={`${navItem} cursor-default text-muted/50`}
-            >
-              {chip}
-              {p.name}
-            </span>
-          );
-        }
-        return (
-          <a
-            key={p.id}
-            href={p.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onNavigate}
-            className={`${navItem} group text-muted hover:bg-black/[0.03] hover:text-ink`}
-          >
-            {chip}
-            {p.name}
-            <svg
-              className="ml-auto h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              viewBox="0 0 24 24"
-              aria-hidden
-            >
-              <path d="M14 5h5v5M19 5l-7 7M18 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V7a1 1 0 011-1h5" />
-            </svg>
-          </a>
-        );
-      })}
-    </>
-  );
-
   return (
     <div className="relative min-h-screen" style={{ background: "var(--page)" }}>
-      {/* ambient glow */}
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div
-          className="absolute"
-          style={{
-            bottom: "-30%",
-            right: "-25%",
-            width: "120%",
-            height: "120%",
-            background: `radial-gradient(circle at 50% 52%, ${BRAND.accent}14, transparent 66%)`,
-          }}
-        />
-      </div>
-
-      {vp.w > 0 ? <ChromeSurface vw={vp.w} vh={vp.h} /> : null}
-
-      {/* ── Desktop sidebar ── */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col lg:flex">
-        <div className="flex items-center gap-2.5 px-5 pt-7">
-          <BrandMark size={30} />
-          <div className="leading-tight">
-            <div className="text-[14px] font-semibold tracking-tight">The Lettings Expert</div>
-            <div className="text-[9.5px] uppercase tracking-wide text-muted">Partner Portal</div>
-          </div>
-        </div>
-
-        {/* divider under the brand */}
-        <div className="mx-5 mt-5 border-t border-line" />
-
-        <nav className="mt-5 flex-1 space-y-0.5 px-3">
-          <NavLinks />
-          {user.isAdmin ? (
-            <Link
-              href="/admin"
-              className={`${navItem} mt-2 text-muted hover:bg-black/[0.03] hover:text-ink`}
-            >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-black/[0.04]">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                  <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
-                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.58.78.98 1.42 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-              Admin
-            </Link>
-          ) : null}
-
-          {/* ── TLE OS — the platforms the business runs on ── */}
-          <div className="my-3 border-t border-line" />
-          <Link
-            href="/dashboard/tools"
-            className={`${navItem} ${
-              pathname.startsWith("/dashboard/tools")
-                ? "accent-soft-bg text-ink"
-                : "text-muted hover:bg-black/[0.03] hover:text-ink"
-            }`}
-          >
-            <IconTile
-              active={pathname.startsWith("/dashboard/tools")}
-              path="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
-            />
-            TLE OS
-          </Link>
-          <div className="mt-1 space-y-0.5">
-            <ToolLinks items={platformsIn("platforms")} />
-          </div>
-
-          {/* ── Training — its own section, below its own line ── */}
-          <div className="my-3 border-t border-line" />
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-            Training
-          </p>
-          <div className="space-y-0.5">
-            <ToolLinks items={platformsIn("training")} />
-          </div>
-        </nav>
-
-        {/* The account lives at the bottom of the rail, where you'd look for it —
-            click through to Settings rather than giving Profile a nav slot. */}
-        <div className="relative p-3" ref={menuRef}>
-          {menuOpen ? (
-            <div className="menu-pop absolute bottom-[calc(100%-0.25rem)] left-4 right-4 z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl">
-              <Link
-                href="/dashboard/profile"
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink transition hover:bg-black/[0.04]"
-              >
-                <svg className="h-4 w-4 text-muted" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                  <circle cx={12} cy={12} r={3} />
-                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.58.78.98 1.42 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
-                </svg>
-                Settings
-              </Link>
-              <button
-                type="button"
-                onClick={() => void handleSignOut()}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-muted transition hover:bg-black/[0.04] hover:text-ink"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-                </svg>
-                Sign out
-              </button>
-            </div>
-          ) : null}
-
+      {/* ── Desktop sidebar — grey on grey, broken up by darker hairlines and
+          capped off by its own right-hand line ── */}
+      <aside className={`fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r ${RAIL_LINE} lg:flex`}>
+        {/* Account selector, top of the rail — photo, name, dropdown. Just an
+            outline in the same hairline grey; no fill. */}
+        <div className="relative mt-5 px-3" ref={menuRef}>
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className={`flex w-full items-center gap-3 rounded-xl p-2 text-left transition ${
-              menuOpen ? "bg-black/[0.04]" : "hover:bg-black/[0.03]"
+            className={`flex w-full items-center gap-2.5 rounded-lg border ${RAIL_LINE} px-3 py-2.5 text-left transition hover:bg-white/60 ${
+              menuOpen ? "bg-white/60" : ""
             }`}
           >
             {user.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={user.photo} alt={user.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+              <img src={user.photo} alt={user.name} className="h-6 w-6 shrink-0 rounded-full object-cover" />
             ) : (
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full accent-soft-bg text-[11px] font-semibold accent-text">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/[0.08] text-[10px] font-semibold text-ink">
                 {initials(user.name) || "?"}
               </span>
             )}
-            <div className="min-w-0 flex-1 leading-tight">
-              <p className="truncate text-[13px] font-medium">{user.name}</p>
-              <p className="truncate text-[11px] text-muted">{user.email}</p>
-            </div>
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{user.name}</span>
             <svg
               className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-150 ${menuOpen ? "rotate-180" : ""}`}
               fill="none"
@@ -383,21 +194,95 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               viewBox="0 0 24 24"
               aria-hidden
             >
-              <path d="M18 15l-6-6-6 6" />
+              <path d="M6 9l6 6 6-6" />
             </svg>
           </button>
-        </div>
-      </aside>
 
-      {/* ── Desktop top bar (sign out) ── */}
-      <header className="fixed right-0 top-0 z-40 hidden h-[68px] items-center justify-end gap-3 pr-8 lg:flex" style={{ left: SIDEBAR_W }}>
-        <button
-          onClick={() => void handleSignOut()}
-          className="btn-press shrink-0 rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-ink"
-        >
-          Sign out
-        </button>
-      </header>
+          {menuOpen ? (
+            <div className="menu-pop absolute left-3 right-3 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-xl border border-line bg-card p-1 shadow-xl">
+              <Link
+                href="/dashboard/profile"
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-ink transition hover:bg-black/[0.04]"
+              >
+                <svg className="h-4 w-4 text-muted" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <circle cx={12} cy={12} r={3} />
+                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.24.58.78.98 1.42 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                </svg>
+                Settings
+              </Link>
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] font-medium text-muted transition hover:bg-black/[0.04] hover:text-ink"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+                </svg>
+                Sign out
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Notifications + search, reference-style, above the first divider */}
+        <div className="mt-3 space-y-0.5 px-3">
+          <span
+            className={`${navItem} cursor-default text-muted/60`}
+            title="Notifications — coming soon"
+          >
+            <NavIcon active={false} name="bell" />
+            Notifications
+          </span>
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className={`${navItem} w-full text-muted hover:bg-black/[0.04] hover:text-ink`}
+          >
+            <NavIcon active={false} name="search" />
+            Search
+            <kbd className="ml-auto rounded border border-black/[0.08] px-1 py-px text-[9px] text-muted/70">⌘K</kbd>
+          </button>
+        </div>
+
+        <div className={`mx-4 mt-3 border-t ${RAIL_LINE}`} />
+
+        <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-3">
+          <NavLinks />
+          {user.isAdmin ? (
+            <Link
+              href="/admin"
+              className={`${navItem} mt-2 text-muted hover:bg-black/[0.04] hover:text-ink`}
+            >
+              <NavIcon active={false} name="setting" />
+              Admin
+            </Link>
+          ) : null}
+        </nav>
+
+        {/* ── TLE OS — one quiet item pinned at the bottom; the platforms
+            themselves live on its page now, not in the rail. ── */}
+        <div className={`mx-4 border-t ${RAIL_LINE}`} />
+        <div className="px-3 py-2">
+          <Link
+            href="/dashboard/tools"
+            className={`${navItem} ${
+              pathname.startsWith("/dashboard/tools")
+                ? "font-semibold text-ink"
+                : "text-muted hover:bg-black/[0.04] hover:text-ink"
+            }`}
+          >
+            <NavIcon active={pathname.startsWith("/dashboard/tools")} name="grid" />
+            TLE OS
+          </Link>
+        </div>
+
+        {/* Small print, reference-style */}
+        <p className="px-5 pb-5 pt-1 text-[9px] font-medium uppercase leading-relaxed tracking-[0.16em] text-muted/60">
+          Partner portal
+          <br />
+          2026
+        </p>
+      </aside>
 
       {/* ── Mobile top bar ── */}
       <header className="sticky top-0 z-40 border-b border-line bg-white lg:hidden">
@@ -419,7 +304,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             href="/dashboard/tools"
             className={`${navItem} whitespace-nowrap ${
               pathname.startsWith("/dashboard/tools")
-                ? "accent-soft-bg text-ink"
+                ? "bg-black/[0.05] font-semibold text-ink"
                 : "text-muted hover:bg-black/[0.03] hover:text-ink"
             }`}
           >
@@ -431,7 +316,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             href="/dashboard/profile"
             className={`${navItem} whitespace-nowrap ${
               pathname.startsWith("/dashboard/profile")
-                ? "accent-soft-bg text-ink"
+                ? "bg-black/[0.05] font-semibold text-ink"
                 : "text-muted hover:bg-black/[0.03] hover:text-ink"
             }`}
           >
@@ -440,24 +325,39 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
 
+      {/* Top hairline across the content area — sits a little above the
+          greeting, capping the page the way the rail's right line caps it. */}
+      <div
+        aria-hidden
+        className={`fixed left-[240px] right-0 top-[56px] z-20 hidden border-t ${RAIL_LINE} lg:block`}
+      />
+
       {/* ── Main ── */}
-      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-8 lg:pt-[96px]">
+      <main className="dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-[92px]">
         <div className="mx-auto max-w-[1600px]">
           {/* Welcome — lives in the dashboard content, big and roomy */}
           {pathname === "/dashboard" ? (
             <div
-              className="enter enter-pop mb-8 pt-4 lg:mb-10 lg:pt-8"
+              className="enter enter-pop mb-8 pt-4 lg:mb-10 lg:pt-0"
               style={{ "--enter-delay": "600ms" } as React.CSSProperties}
             >
-              <h1 className="font-semibold tracking-tight" style={{ fontSize: "clamp(30px, 3.8vw, 46px)", lineHeight: 1.08 }}>
-                {hello} <span className="inline-block align-baseline">👋</span>
+              {/* Light weight, Launch Pad-style — the size does the welcoming,
+                  the weight stays out of the way. */}
+              <h1 className="font-light tracking-tight" style={{ fontSize: "clamp(28px, 3.4vw, 42px)", lineHeight: 1.08 }}>
+                {hello}
               </h1>
-              <p className="mt-3 text-[15px] text-muted lg:text-[16px]">{prompt}</p>
+              <p className="mt-2.5 text-[14px] font-light text-muted lg:text-[15px]">{prompt}</p>
             </div>
           ) : null}
           {children}
         </div>
       </main>
+
+      {/* The assistant lives in a speech bubble bottom-right, on every page —
+          out of the way until it's wanted. */}
+      <AssistantBubble firstName={user.name.split(" ")[0]} />
+
+      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 }

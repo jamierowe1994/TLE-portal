@@ -26,10 +26,11 @@ function ExternalIcon() {
 }
 
 function PlatformCard({ p, delay }: { p: Platform; delay: number }) {
+  // Monochrome chip — the per-platform brand colours were the loudest thing on
+  // the page; ink-on-grey keeps the grid readable and on-theme.
   const chip = (
     <span
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[13px] font-semibold text-white"
-      style={{ background: p.accent }}
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black/[0.05] text-[13px] font-semibold text-ink"
       aria-hidden
     >
       {p.name.slice(0, 2).toUpperCase()}
@@ -54,7 +55,7 @@ function PlatformCard({ p, delay }: { p: Platform; delay: number }) {
       </div>
       <div className="mt-3 flex items-center gap-1.5 text-[12px] font-medium">
         {p.url ? (
-          <span className="accent-text inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 text-ink">
             Open <ExternalIcon />
           </span>
         ) : (

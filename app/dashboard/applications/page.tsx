@@ -11,6 +11,8 @@ import { useEffect, useMemo, useState } from "react";
 import { formatGBP } from "@/lib/format";
 import { BRAND } from "@/lib/brand";
 import { DealNotesPanel } from "@/components/DealNotes";
+import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
+import PhotoCarousel from "@/components/PhotoCarousel";
 import { CHECKLIST_ITEMS, PORTAL_STAGES, PROPOLY_APP_URL } from "@/lib/propoly-stages";
 import type { AgentApplication, ApplicationStage } from "@/lib/rex-stats";
 import type { DealMeta } from "@/lib/types";
@@ -119,55 +121,33 @@ function ApplicationTile({
 // pre-tenancy dashboard so both sides always show the same board.
 
 /** Click-into-a-deal dashboard: where the tenancy is, stage by stage. */
+// Two windows: the deal and its stages on the left; the tenants, checklist and
+// the running conversation with pre-tenancy (Kirstie's side) on the right.
 function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
   // Pre-tenancy meta (checklist ticks) arrives with the notes fetch.
   const [meta, setMeta] = useState<DealMeta | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const p = a.propoly!;
   const cancelled = p.statusKey === "cancelled";
   const currentIdx = PORTAL_STAGES.findIndex((s) => s.key === p.statusKey);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10"
-      onClick={onClose}
-    >
-      <div
-        className="modal-pop my-auto w-full max-w-xl rounded-2xl bg-card"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-5 sm:p-7">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
-                  {a.status.toUpperCase()}
-                </span>
-                {p.service ? (
-                  <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted">
-                    {p.service.toUpperCase()}
-                  </span>
-                ) : null}
-              </div>
-              <h2 className="mt-3 text-[17px] font-semibold leading-snug">{a.propertyName}</h2>
-              <p className="mt-0.5 text-[13px] text-muted">{a.locality}</p>
-            </div>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-full border border-line p-1.5 text-muted transition hover:text-ink"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-              </svg>
-            </button>
+    <SplitDrawer onClose={onClose}>
+      {/* ---- the deal & where it is ---- */}
+      <DrawerPanel className="lg:w-[26rem]">
+        <div className="p-5 sm:p-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
+              {a.status.toUpperCase()}
+            </span>
+            {p.service ? (
+              <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted">
+                {p.service.toUpperCase()}
+              </span>
+            ) : null}
           </div>
+          <h2 className="mt-3 text-[17px] font-semibold leading-snug">{a.propertyName}</h2>
+          <p className="mt-0.5 text-[13px] text-muted">{a.locality}</p>
 
           {cancelled ? (
             <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
@@ -253,7 +233,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
           </ol>
 
           {/* ---- the numbers ---- */}
-          <div className="mt-6 grid grid-cols-2 gap-3 border-y border-line py-5 text-[11px] text-muted sm:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-3 border-y border-line py-5 text-[11px] text-muted">
             <div>
               <div className="stat-value text-[18px] text-ink">{a.offer != null ? formatGBP(a.offer) : "—"}</div>
               Rent / month
@@ -272,8 +252,29 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
             </div>
           </div>
 
-          {/* ---- applicants ---- */}
-          <div className="mt-6">
+          {/* ---- go do it ---- */}
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <p className="text-[11px] text-muted">
+              Live from Propoly — updates within a minute of anything moving.
+            </p>
+            <a
+              href={PROPOLY_APP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-press shrink-0 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition"
+              style={{ background: BRAND.accent }}
+            >
+              Open in Propoly
+            </a>
+          </div>
+        </div>
+      </DrawerPanel>
+
+      {/* ---- the people & the pre-tenancy side ---- */}
+      <DrawerPanel className="lg:w-[26rem]">
+        <div className="p-5 sm:p-6">
+          {/* ---- tenants ---- */}
+          <div>
             <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
               {a.tenants.length === 1 ? "Tenant" : `Tenants (${a.tenants.length})`}
             </h3>
@@ -346,60 +347,23 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
               />
             </div>
           </div>
-
-          {/* ---- go do it ---- */}
-          <div className="mt-6 flex items-center justify-between gap-3">
-            <p className="text-[11px] text-muted">
-              Live from Propoly — updates within a minute of anything moving.
-            </p>
-            <a
-              href={PROPOLY_APP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-press shrink-0 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition"
-              style={{ background: BRAND.accent }}
-            >
-              Open in Propoly
-            </a>
-          </div>
         </div>
-      </div>
-    </div>
+      </DrawerPanel>
+    </SplitDrawer>
   );
 }
 
 /* -------------------------------- drawer -------------------------------- */
 
+// Two windows: the property and the offer on the left, the people on the right.
 function Drawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10"
-      onClick={onClose}
-    >
-      <div
-        className="modal-pop my-auto w-full max-w-xl rounded-2xl bg-card p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative h-52 w-full overflow-hidden rounded-xl bg-page">
-          <Photo a={a} />
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/70"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
+    <SplitDrawer onClose={onClose}>
+      {/* ---- the property & the offer ---- */}
+      <DrawerPanel className="p-3 lg:w-[26rem]">
+        <PhotoCarousel images={a.image ? [a.image] : []} alt={a.propertyName} />
 
-        <div className="p-5 sm:p-7">
+        <div className="p-5 sm:p-6">
           <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
             {a.status.toUpperCase()}
           </span>
@@ -425,37 +389,8 @@ function Drawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
             </div>
           </div>
 
-          {/* Applicants */}
-          <div className="mt-6">
-            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-              {a.tenants.length === 1 ? "Applicant" : `Applicants (${a.tenants.length})`}
-            </h3>
-            <div className="mt-3 space-y-2.5">
-              {a.tenants.length ? (
-                a.tenants.map((t, i) => (
-                  <div key={i} className="rounded-xl border border-line p-4">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[13px] font-medium">{t.name}</p>
-                      {t.isPrimary ? (
-                        <span className="rounded-full border border-line bg-page px-1.5 py-0.5 text-[9px] font-semibold text-muted">
-                          LEAD
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted">
-                      {t.email ? <a href={`mailto:${t.email}`} className="hover:text-ink">{t.email}</a> : null}
-                      {t.phone ? <a href={`tel:${t.phone}`} className="hover:text-ink">{t.phone}</a> : null}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-[13px] text-muted">No applicant details recorded.</p>
-              )}
-            </div>
-          </div>
-
           {/* The rest — only when REX actually has it */}
-          <div className="mt-6 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-muted">
+          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-muted">
             {a.affordability != null ? (
               <span>
                 Rent is{" "}
@@ -467,9 +402,40 @@ function Drawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
             {a.hasPets ? <span>Has pets</span> : null}
             {a.dateReceived ? <span>Received {fmtDate(a.dateReceived)}</span> : null}
           </div>
+        </div>
+      </DrawerPanel>
+
+      {/* ---- the people ---- */}
+      <DrawerPanel className="lg:w-[24rem]">
+        <div className="p-5 sm:p-6">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+            {a.tenants.length === 1 ? "Applicant" : `Applicants (${a.tenants.length})`}
+          </h3>
+          <div className="mt-3 space-y-2.5">
+            {a.tenants.length ? (
+              a.tenants.map((t, i) => (
+                <div key={i} className="rounded-xl border border-line p-4">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[13px] font-medium">{t.name}</p>
+                    {t.isPrimary ? (
+                      <span className="rounded-full border border-line bg-page px-1.5 py-0.5 text-[9px] font-semibold text-muted">
+                        LEAD
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted">
+                    {t.email ? <a href={`mailto:${t.email}`} className="hover:text-ink">{t.email}</a> : null}
+                    {t.phone ? <a href={`tel:${t.phone}`} className="hover:text-ink">{t.phone}</a> : null}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-[13px] text-muted">No applicant details recorded.</p>
+            )}
+          </div>
 
           {a.conditions ? (
-            <p className="mt-4 rounded-xl border border-line p-4 text-[12px] text-muted">
+            <p className="mt-5 rounded-xl border border-line p-4 text-[12px] text-muted">
               <span className="font-medium text-ink">Conditions: </span>
               {a.conditions}
             </p>
@@ -480,8 +446,8 @@ function Drawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
             </p>
           ) : null}
         </div>
-      </div>
-    </div>
+      </DrawerPanel>
+    </SplitDrawer>
   );
 }
 
