@@ -40,6 +40,90 @@ const PLATFORM_OPTIONS = PLATFORMS.filter((p) => p.section === "platforms").map(
   (p) => p.name
 );
 
+/** Bucket an open to-do for the summary strip and the All-tasks filter. */
+function bucketOf(t: Todo): "overdue" | "today" | "upcoming" | "nodate" {
+  if (!t.dueAt) return "nodate";
+  const d = new Date(t.dueAt);
+  if (Number.isNaN(d.getTime())) return "nodate";
+  const now = new Date();
+  if (d.getTime() < now.getTime()) return "overdue";
+  return d.toDateString() === now.toDateString() ? "today" : "upcoming";
+}
+
+/** Tiny swing-down dropdown in the period-pill style. */
+function PillMenu({
+  icon,
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  icon: string;
+  label: string;
+  options: { key: string; label: string }[];
+  value: string;
+  onChange: (k: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const close = () => {
+    setOpen(false);
+    setClosing(true);
+    window.setTimeout(() => setClosing(false), 240);
+  };
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const active = options.find((o) => o.key === value);
+  const off = value === options[0]?.key;
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => (open ? close() : setOpen(true))}
+        className={`inline-flex items-center gap-2 rounded-xl border-[1.5px] bg-transparent px-3 py-2 text-[13px] font-medium transition ${
+          off && !open ? "border-ink/30 text-muted hover:border-ink/60 hover:text-ink" : "border-ink/85 text-ink"
+        }`}
+      >
+        <DoodleIcon name={icon} size={15} />
+        {off ? label : (active?.label ?? label)}
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "none" }}>
+          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open || closing ? (
+        <div className={`${closing ? "shrink-up" : "swing-down"} absolute right-0 top-full z-30 mt-1.5 min-w-[180px] overflow-hidden rounded-xl border border-line bg-card p-1 shadow-lg`}>
+          {options.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => {
+                onChange(o.key);
+                close();
+              }}
+              className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-[13px] text-ink transition hover:bg-page"
+            >
+              {o.label}
+              {value === o.key ? (
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <path d="M3 8.5l3.5 3.5L13 5" stroke="#e31f36" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function fmtDue(iso: string | null): { label: string; overdue: boolean } | null {
   if (!iso) return null;
   const d = new Date(iso);
@@ -371,7 +455,23 @@ export default function TodosPage() {
     };
   }, []);
 
-  const open = useMemo(() => todos.filter((t) => !t.done), [todos]);
+  const [taskFilter, setTaskFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("due");
+
+  const open = useMemo(() => {
+    let list = todos.filter((t) => !t.done);
+    if (taskFilter !== "all") list = list.filter((t) => bucketOf(t) === taskFilter);
+    if (sortBy === "due") {
+      list = [...list].sort((a, b) => {
+        if (!a.dueAt && !b.dueAt) return 0;
+        if (!a.dueAt) return 1;
+        if (!b.dueAt) return -1;
+        return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+      });
+    }
+    return list;
+  }, [todos, taskFilter, sortBy]);
+  const allOpen = useMemo(() => todos.filter((t) => !t.done), [todos]);
   const done = useMemo(() => todos.filter((t) => t.done), [todos]);
 
   async function add() {
@@ -649,14 +749,34 @@ export default function TodosPage() {
     );
   };
 
+  const BUCKETS = [
+    { key: "overdue", label: "Overdue", icon: "clock", chip: "bg-red-100 text-red-700" },
+    { key: "today", label: "Due today", icon: "star", chip: "bg-amber-100 text-amber-700" },
+    { key: "upcoming", label: "Upcoming", icon: "calendar", chip: "bg-sky-100 text-sky-700" },
+    { key: "nodate", label: "No due date", icon: "target", chip: "bg-black/[0.06] text-muted" },
+  ] as const;
+
   return (
     <div className="outline-cards space-y-6">
-      <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="text-xl font-semibold tracking-tight">To-dos</h1>
-        <p className="mt-1 text-[13px] text-muted">
-          Your list, and the assistant&apos;s memory — ask it &ldquo;what do I need to
-          do?&rdquo; and it checks here, or tell it to add and tick things off for you.
-        </p>
+      {/* ---- hero: title + add form left, the list lady right ---- */}
+      <div className="relative">
+        <div className="enter enter-up" style={enterAt(60)}>
+          <h1 className="tracking-tight" style={{ fontSize: "clamp(30px, 3vw, 40px)", fontWeight: 500 }}>
+            To-dos
+          </h1>
+          <p className="mt-2 max-w-md text-[13px] leading-relaxed text-muted">
+            Your list, and the assistant&apos;s memory — ask it &ldquo;what do I need to
+            do?&rdquo; and it checks here, or tell it to add and tick things off for you.
+          </p>
+        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/illustrations/notioly/to-do-list.svg"
+          alt=""
+          aria-hidden
+          className="enter enter-up pointer-events-none absolute -top-2 right-6 hidden w-[240px] lg:block xl:right-16"
+          style={enterAt(200)}
+        />
       </div>
 
       {/* ---- add ---- */}
@@ -708,6 +828,64 @@ export default function TodosPage() {
         </div>
       </form>
 
+      {/* ---- filters, right-hand side like the reference ---- */}
+      <div className="enter enter-up flex justify-end gap-2" style={enterAt(180)}>
+        <PillMenu
+          icon="list"
+          label="All tasks"
+          options={[
+            { key: "all", label: "All tasks" },
+            { key: "overdue", label: "Overdue" },
+            { key: "today", label: "Due today" },
+            { key: "upcoming", label: "Upcoming" },
+            { key: "nodate", label: "No due date" },
+          ]}
+          value={taskFilter}
+          onChange={setTaskFilter}
+        />
+        <PillMenu
+          icon="calendar"
+          label="By due date"
+          options={[
+            { key: "due", label: "By due date" },
+            { key: "added", label: "Recently added" },
+          ]}
+          value={sortBy}
+          onChange={setSortBy}
+        />
+      </div>
+
+      {/* ---- summary strip: the four buckets ---- */}
+      <div className="enter enter-up card grid grid-cols-2 gap-y-5 p-5 lg:grid-cols-4 lg:divide-x lg:divide-line lg:gap-y-0" style={enterAt(200)}>
+        {BUCKETS.map((b) => {
+          const items = allOpen.filter((t) => bucketOf(t) === b.key);
+          return (
+            <div key={b.key} className="min-w-0 lg:px-5 lg:first:pl-0 lg:last:pr-0">
+              <div className="flex items-center gap-2">
+                <DoodleIcon name={b.icon} size={15} className="text-ink" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink">{b.label}</span>
+                <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold tnum ${b.chip}`}>
+                  {items.length}
+                </span>
+              </div>
+              <div className="mt-3 h-[3px] w-6 rounded-full bg-ink" />
+              <div className="mt-3 space-y-1 text-[12.5px] text-muted">
+                {items.length === 0 ? (
+                  <p>Nothing here (yet)</p>
+                ) : (
+                  <>
+                    {items.slice(0, 2).map((t) => (
+                      <p key={t.id} className="truncate text-ink">{t.note}</p>
+                    ))}
+                    {items.length > 2 ? <p>+{items.length - 2} more</p> : null}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* ---- list ---- */}
       {loading ? (
         <Loader label="Loading your list…" />
@@ -720,16 +898,35 @@ export default function TodosPage() {
         </div>
       ) : (
         <>
-          <ul className="enter enter-up grid gap-3 sm:grid-cols-2 xl:grid-cols-3" style={enterAt(220)}>
-            {open.map((t) => (
-              <TodoTile key={t.id} t={t} />
-            ))}
-            {open.length === 0 ? (
-              <li className="card col-span-full p-6 text-center text-[13px] text-muted">
-                All caught up — nothing open. 🎉
-              </li>
-            ) : null}
-          </ul>
+          <div className="enter enter-up card relative p-5 pb-8" style={enterAt(220)}>
+            {open.length === 0 && allOpen.length > 0 ? (
+              <div className="flex min-h-[180px] flex-col items-center justify-center py-8 text-center text-[13px] text-muted">
+                Nothing matches that filter.
+              </div>
+            ) : open.length === 0 ? (
+              <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 py-8 text-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/illustrations/confetti.png" alt="" aria-hidden className="w-[150px]" />
+                <p className="mt-3 text-[19px] font-semibold text-ink">All caught up — nothing open. 🎉</p>
+                <p className="text-[13px] text-muted">Nice work! Enjoy the calm.</p>
+              </div>
+            ) : (
+              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {open.map((t) => (
+                  <TodoTile key={t.id} t={t} />
+                ))}
+              </ul>
+            )}
+            {/* the dog inspects the bottom-right corner — his solid paper fill
+                hides the box line running behind him */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/illustrations/dog.png"
+              alt=""
+              aria-hidden
+              className="pointer-events-none absolute -bottom-9 right-10 z-10 hidden w-[130px] lg:block"
+            />
+          </div>
 
           {done.length > 0 ? (
             <div className="space-y-2">
@@ -751,20 +948,6 @@ export default function TodosPage() {
           ) : null}
         </>
       )}
-
-      {/* A little Notioly scene in the corner — sits behind the assistant
-          bubble, purely decorative. */}
-      <div
-        aria-hidden
-        className="corner-art pointer-events-none fixed -bottom-14 -right-10 -z-10 hidden w-[420px] opacity-90 lg:block"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/illustrations/notioly/to-do-list.svg"
-          alt=""
-          className="h-auto w-full -scale-x-100"
-        />
-      </div>
     </div>
   );
 }

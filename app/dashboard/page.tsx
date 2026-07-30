@@ -306,10 +306,10 @@ export default function MyDashboardPage() {
 
                   {/* The street across the top; the number stands on its own.
                       Hovering the number (or its little icon) pops the breakdown. */}
-                  <div className="mt-2 flex items-end justify-between gap-4">
-                    <div className="group relative w-fit shrink-0 cursor-default pb-1">
+                  <div className="relative mt-2 min-h-[150px] flex-1">
+                    <div className="group relative ml-5 w-fit cursor-default pt-3">
                       <div className="flex items-center gap-2">
-                        <span className="stat-value text-[44px] leading-none">{formatNum(totalProps)}</span>
+                        <span className="stat-value text-[44px] leading-none" style={{ fontWeight: 300 }}>{formatNum(totalProps)}</span>
                         <DoodleIcon name="info" size={15} className="mb-4 text-muted transition group-hover:text-ink" />
                       </div>
                       <div className="mt-1 text-[12px] text-muted">Properties</div>
@@ -326,23 +326,25 @@ export default function MyDashboardPage() {
                         </div>
                       </div>
                     </div>
+                    {/* the street stands on the divider — its drawn ground line
+                        lands on the border below (the crop leaves ~7px under it) */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src="/illustrations/buildings-street.png"
                       alt=""
                       aria-hidden
-                      className="pointer-events-none min-w-0 max-w-[62%] self-end"
+                      className="pointer-events-none absolute -bottom-[7px] right-0 max-w-[62%]"
                     />
                   </div>
 
                   {/* rent roll underneath, with the supporting stats */}
                   <div className="mt-auto grid grid-cols-2 gap-x-6 gap-y-3 border-t border-line pt-4">
                     <div>
-                      <div className="stat-value text-[17px]">{stats.portfolio.rentRoll.display ?? "—"}</div>
+                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>{stats.portfolio.rentRoll.display ?? "—"}</div>
                       <div className="mt-0.5 text-[11px] text-muted">Rent roll / month</div>
                     </div>
                     <div>
-                      <div className="stat-value text-[17px]">{estFees != null ? formatGBP(estFees) : "—"}</div>
+                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>{estFees != null ? formatGBP(estFees) : "—"}</div>
                       <div
                         className="mt-0.5 text-[11px] text-muted"
                         title="Estimated at ~9% of rent roll — the actual management fee and your share are confirmed with head office."
@@ -351,13 +353,13 @@ export default function MyDashboardPage() {
                       </div>
                     </div>
                     <div>
-                      <div className="stat-value text-[17px]">
+                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
                         {detail?.avgRent != null ? formatGBP(detail.avgRent) : "—"}
                       </div>
                       <div className="mt-0.5 text-[11px] text-muted">Avg rent</div>
                     </div>
                     <div>
-                      <div className="stat-value text-[17px]">
+                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
                         {detail ? `${formatNum(detail.rlpLec)}/${formatNum(detail.managed)}` : "—"}
                       </div>
                       <div className="mt-0.5 text-[11px] text-muted" title="Managed properties covered by Rent & Legal Protection (incl. LEC).">
