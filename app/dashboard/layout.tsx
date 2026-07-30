@@ -31,7 +31,7 @@ const NAV = [
 
 // Hairlines a shade darker than the grey canvas — the only thing that breaks
 // the rail up, exactly like the reference.
-const RAIL_LINE = "border-black/[0.08]";
+const RAIL_LINE = "border-black/[0.16]";
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
@@ -230,11 +230,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // else sits back in grey until you're looking for it.
   const navItem =
     "flex items-center gap-3 rounded-md px-2.5 py-2 text-[14px] transition-colors";
+  // The main destinations get more presence than the utility rows above them.
+  const navItemLg =
+    "flex items-center gap-3.5 rounded-md px-2.5 py-2.5 text-[15.5px] transition-colors";
 
-  const NavIcon = ({ active, name }: { active: boolean; name: string }) => (
+  const NavIcon = ({ active, name, size = 19 }: { active: boolean; name: string; size?: number }) => (
     <DoodleIcon
       name={name}
-      size={19}
+      size={size}
       className={`transition-colors ${active ? "text-ink" : "text-muted/80"}`}
     />
   );
@@ -253,13 +256,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               navTo(item.href);
             }}
             onMouseEnter={() => warm(item.href)}
-            className={`${navItem} ${
+            className={`${navItemLg} ${
               active
                 ? "font-semibold text-ink"
                 : "text-muted hover:bg-black/[0.04] hover:text-ink"
             }`}
           >
-            <NavIcon active={active} name={item.icon} />
+            <NavIcon active={active} name={item.icon} size={23} />
             {item.label}
           </Link>
         );
