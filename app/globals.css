@@ -755,3 +755,40 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .note-feather, .bubble-pop { animation: none; }
 }
+
+/* --- YNAB-style skewed progress chain (property drawer) ------------------ */
+/* Landscape parallelogram segments; selection bounces, caption pops in.    */
+.skew-seg {
+  transform: skewX(-14deg);
+  transition: border-color 0.2s, background-color 0.2s, transform 0.25s;
+}
+.skew-seg--sel {
+  animation: skew-bounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes skew-bounce {
+  0% { transform: skewX(-14deg) scale(1); }
+  40% { transform: skewX(-14deg) scale(1.12) translateY(-3px); }
+  100% { transform: skewX(-14deg) scale(1); }
+}
+.skew-caption {
+  animation: caption-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes caption-pop {
+  from { opacity: 0; transform: translateY(9px) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The search bubble knocking into the Filter pill: elastic shove + settle. */
+.filter-knock {
+  animation: filter-knock 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s;
+}
+@keyframes filter-knock {
+  0% { transform: translateX(0); }
+  35% { transform: translateX(-13px); }
+  62% { transform: translateX(5px); }
+  82% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skew-seg--sel, .skew-caption, .filter-knock { animation: none; }
+}

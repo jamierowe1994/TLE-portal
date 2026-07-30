@@ -54,6 +54,7 @@ export default function FilterBar({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuClosing, setMenuClosing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [knock, setKnock] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
   const closeTimer = useRef<number | null>(null);
@@ -86,6 +87,7 @@ export default function FilterBar({
 
   const openSearch = () => {
     setSearchOpen(true);
+    setKnock(true);
     // Focus once the spring has started moving.
     window.setTimeout(() => input.current?.focus(), 80);
   };
@@ -101,8 +103,8 @@ export default function FilterBar({
 
   return (
     <div ref={wrap} className="flex items-center gap-2">
-      {/* ---- Filter pill + swing-down menu ---- */}
-      <div className="relative">
+      {/* ---- Filter pill + swing-down menu (gets knocked by the search bubble) ---- */}
+      <div className={`relative ${knock ? "filter-knock" : ""}`} onAnimationEnd={() => setKnock(false)}>
         <button
           type="button"
           className={pillClass(filtering || menuOpen)}
@@ -137,11 +139,15 @@ export default function FilterBar({
         ) : null}
       </div>
 
-      {/* ---- Search: an icon that springs out into a box ---- */}
+      {/* ---- Search: a circle that morphs into a box and springs outwards ---- */}
       <div
-        className={`flex items-center overflow-hidden rounded-xl border-[1.5px] bg-transparent transition-colors ${
+        className={`flex items-center overflow-hidden border-[1.5px] bg-transparent transition-colors ${
           searchOpen || search ? "border-ink/85" : "border-ink/30 hover:border-ink/60"
         }`}
+        style={{
+          borderRadius: searchOpen || search ? 12 : 999,
+          transition: "border-radius 0.35s ease, border-color 0.2s",
+        }}
       >
         <button
           type="button"

@@ -36,11 +36,11 @@ function RailButton({ a }: { a: RailAction }) {
         a.onClick();
       }}
       aria-label={a.label}
-      className={`group/rail relative flex h-10 w-10 items-center justify-center ${shape} ${
+      className={`group/rail relative flex h-12 w-12 items-center justify-center ${shape} ${
         a.active ? "text-ink" : "text-muted hover:text-ink"
       }`}
     >
-      <DoodleIcon name={a.icon} size={19} />
+      <DoodleIcon name={a.icon} size={23} />
       {/* tooltip — sits to the left so it never leaves the viewport */}
       <span className="pointer-events-none absolute right-[calc(100%+10px)] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover/rail:opacity-100">
         {a.label}
@@ -55,7 +55,7 @@ export default function DrawerRail({ actions }: { actions: RailAction[] }) {
 
   return (
     <div
-      className="absolute left-full top-1/2 z-30 ml-5 flex -translate-y-1/2 flex-col items-center gap-1 rounded-full border border-line bg-card/95 p-1.5 shadow-lg backdrop-blur-sm max-lg:hidden"
+      className="absolute left-full top-1/2 z-30 ml-5 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-full border border-line bg-page/95 p-2 shadow-lg backdrop-blur-sm max-lg:hidden"
       onClick={(e) => e.stopPropagation()}
     >
       {/* the little line tying the rail back to the drawer */}
@@ -63,7 +63,7 @@ export default function DrawerRail({ actions }: { actions: RailAction[] }) {
       {top.map((a) => (
         <RailButton key={a.id} a={a} />
       ))}
-      {top.length && rest.length ? <span className="my-0.5 h-px w-5 bg-line" /> : null}
+      {top.length && rest.length ? <span className="my-0.5 h-px w-6 bg-line" /> : null}
       {rest.map((a) => (
         <RailButton key={a.id} a={a} />
       ))}

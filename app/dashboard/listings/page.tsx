@@ -7,7 +7,7 @@
 // let is up to, what's outstanding, which platform does the next bit — lives
 // behind the click, so the grid stays scannable.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Loader from "@/components/Loader";
 import { formatGBP } from "@/lib/format";
 import { platformById } from "@/lib/platforms";
@@ -15,7 +15,8 @@ import { rexListingUrl } from "@/lib/rex-links";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import DrawerRail, { type RailAction } from "@/components/DrawerRail";
 import DoodleIcon from "@/components/DoodleIcon";
-import MilestoneBars, { type Milestone } from "@/components/charts/MilestoneBars";
+import SkewProgress, { type SkewStep } from "@/components/charts/SkewProgress";
+import FilterBar from "@/components/FilterBar";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import NoPhoto from "@/components/NoPhoto";
 import type { AgentListing } from "@/lib/rex-stats";
@@ -245,12 +246,13 @@ function StepRow({ s }: { s: Step }) {
 // the action rail down the drawer's right edge.
 type PanelId = "next" | "note" | "contacts" | "chat" | "details" | "files";
 
-function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: Milestone[] } {
+function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: SkewStep[] } {
   const epc = epcState(l);
-  const epcBar: Milestone = {
+  const epcBar: SkewStep = {
     label: "EPC in date",
     progress: epc.state === "valid" || epc.state === "not-required" ? 1 : epc.state === "expiring" ? 0.6 : 0,
     note: epc.label,
+    icon: "shield",
   };
 
   // Only the process the property is actually IN — the bars change as it
@@ -263,9 +265,10 @@ function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: Mi
           label: "Photos on file",
           progress: l.imageCount > 0 ? 1 : 0,
           note: l.imageCount > 0 ? `${l.imageCount} uploaded` : "None yet",
+          icon: "grid",
         },
         epcBar,
-        { label: "Published to the portals", progress: 0, note: "Still a draft" },
+        { label: "Published to the portals", progress: 0, note: "Still a draft", icon: "megaphone" },
       ],
     };
   }
@@ -273,20 +276,20 @@ function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: Mi
     return {
       title: "Finding a tenant",
       bars: [
-        { label: "Live on the portals", progress: 1, note: l.publicationStatus ?? "Published" },
+        { label: "Live on the portals", progress: 1, note: l.publicationStatus ?? "Published", icon: "megaphone" },
         epcBar,
-        { label: "Let agreed", progress: 0.35, note: "On the market" },
+        { label: "Let agreed", progress: 0.35, note: "On the market", icon: "key" },
       ],
     };
   }
   return {
     title: "Tenancy set-up",
     bars: [
-      { label: "Let agreed", progress: 1, note: "Agreed" },
+      { label: "Let agreed", progress: 1, note: "Agreed", icon: "key" },
       epcBar,
-      { label: "Deposit / flatbond", progress: 0, note: "Tracked once Flatfair is live" },
-      { label: "Inventory booked", progress: 0, note: "Tracked once InventoryBase is live" },
-      { label: "Rent collection", progress: 0, note: "Tracked once PayProp is live" },
+      { label: "Deposit / flatbond", progress: 0, note: "Tracked once Flatfair is live", icon: "wallet" },
+      { label: "Inventory booked", progress: 0, note: "Tracked once InventoryBase is live", icon: "checklist" },
+      { label: "Rent collection", progress: 0, note: "Tracked once PayProp is live", icon: "coin" },
     ],
   };
 }
@@ -485,7 +488,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
                   {proc.title}
                 </h3>
                 <div className="mt-3">
-                  <MilestoneBars milestones={proc.bars} />
+                  <SkewProgress steps={proc.bars} />
                 </div>
               </div>
             );
@@ -495,7 +498,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
 
         {/* ---- the active box: whatever the rail summons lands here, at the
              bottom, with a bounce; the outgoing panel falls off first ---- */}
-        <div className="mt-6 flex min-h-[300px] flex-col justify-end overflow-hidden border-t border-line pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+        <div className="mt-6 flex min-h-[300px] flex-col justify-end overflow-hidden border-t border-line pt-5 lg:mt-0 lg:border-l-[1.5px] lg:border-l-ink/85 lg:border-t-0 lg:pl-8 lg:pt-0">
           <div key={leaving ? `${panel}-out` : panel} className={leaving ? "panel-fall" : "panel-bounce"}>
           {panel === "next" ? (
             steps.length ? (
@@ -804,8 +807,8 @@ function PropertyChat({ listing }: { listing: AgentListing }) {
 // didn't survive its export — too slow and full of compression dots.)
 function ThumbsUp() {
   return (
-    <div className="flex h-full min-h-[220px] items-center justify-center">
-      <p className="text-center font-light leading-tight tracking-tight text-ink" style={{ fontSize: "clamp(26px, 2.6vw, 34px)" }}>
+    <div className="flex h-full min-h-[220px] items-center justify-start">
+      <p className="text-left font-light leading-tight tracking-tight text-ink" style={{ fontSize: "clamp(34px, 3.4vw, 46px)" }}>
         Nothing
         <br />
         outstanding
@@ -943,6 +946,8 @@ export default function ListingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<AgentListing | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -974,6 +979,19 @@ export default function ListingsPage() {
   const all = listings ?? [];
   const needs = all.filter((l) => stepsFor(l, stageOf(l)).length > 0).length;
 
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return all.filter((l) => {
+      const stage = stageOf(l);
+      if (filter === "draft" && stage !== "draft") return false;
+      if (filter === "on-market" && stage !== "on-market") return false;
+      if (filter === "let-agreed" && stage !== "let-agreed") return false;
+      if (filter === "attention" && stepsFor(l, stage).length === 0) return false;
+      if (q && !`${l.name} ${l.locality}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [all, filter, search]);
+
   return (
     // Same outline treatment as the dashboard — boxes as hairline outlines on
     // the grey, photos and property details inside.
@@ -1003,20 +1021,46 @@ export default function ListingsPage() {
         </div>
       ) : all.length > 0 ? (
         <>
-          {needs > 0 ? (
-            <div className="enter enter-up card border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800" style={enterAt(140)}>
-              <span className="font-semibold">
-                {needs} {needs === 1 ? "property has" : "properties have"} something outstanding
-              </span>{" "}
-              — tap through to see what.
-            </div>
-          ) : null}
-
-          <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
-            {all.map((l, i) => (
-              <ListingTile key={l.id} l={l} delay={200 + i * 50} onOpen={() => setOpen(l)} />
-            ))}
+          <div
+            className="enter enter-up flex min-h-[40px] flex-wrap items-center justify-between gap-3"
+            style={enterAt(140)}
+          >
+            <p className="text-[13px] text-muted">
+              {needs > 0 ? (
+                <>
+                  <span className="font-semibold text-ink">
+                    {needs} {needs === 1 ? "property has" : "properties have"} something outstanding
+                  </span>{" "}
+                  — tap through to see what.
+                </>
+              ) : null}
+            </p>
+            <FilterBar
+              options={[
+                { key: "all", label: "All properties" },
+                { key: "attention", label: "Something outstanding" },
+                { key: "draft", label: "Draft" },
+                { key: "on-market", label: "On the market" },
+                { key: "let-agreed", label: "Let agreed" },
+              ]}
+              value={filter}
+              onChange={setFilter}
+              search={search}
+              onSearch={setSearch}
+            />
           </div>
+
+          {shown.length === 0 ? (
+            <p className="py-10 text-center text-[13px] text-muted">
+              Nothing matches — clear the filter or search.
+            </p>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
+              {shown.map((l, i) => (
+                <ListingTile key={l.id} l={l} delay={200 + i * 50} onOpen={() => setOpen(l)} />
+              ))}
+            </div>
+          )}
         </>
       ) : null}
 
