@@ -340,6 +340,31 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [live, setLive] = useState<LivePayload | null>(null);
   const [liveLoading, setLiveLoading] = useState(true);
+  // Each partner's managed book and commission, live from PayProp.
+  const [book, setBook] = useState<{
+    byAgent: Record<string, { names: string[]; properties: number; rentRoll: number; activeTenancies: number }>;
+  } | null>(null);
+  const [earnings, setEarnings] = useState<Array<{ name: string; amount: number; payments: number }> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+    const ask = () => {
+      fetch(`/api/admin/payprop-live?month=${encodeURIComponent(month)}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { portfolio?: { byAgent: Record<string, { names: string[]; properties: number; rentRoll: number; activeTenancies: number }> } | null; income?: { byPartner?: Array<{ name: string; amount: number; payments: number }> } | null }) => {
+          if (cancelled) return;
+          if (d.portfolio) setBook(d.portfolio);
+          if (d.income?.byPartner) setEarnings(d.income.byPartner);
+          if ((!d.portfolio || !d.income) && tries++ < 40) setTimeout(ask, 5000);
+        })
+        .catch(() => {});
+    };
+    ask();
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
 
   // Live REX totals across linked agents — separate from the fast seed render
   // because it fans out several REX calls (cached server-side for 3 min).
@@ -465,6 +490,62 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
   return (
     <div>
       {/* ----------------------- live REX totals ----------------------- */}
+      {/* ---- live from PayProp: each partner's book and commission ---- */}
+      {book ? (
+        <>
+          <SectionTitle>Live from PayProp</SectionTitle>
+          <div className="card mb-6 p-5">
+            <p className="text-[12.5px] text-muted">
+              Managed properties and rent under management come from PayProp&rsquo;s
+              own responsible-agent field; commission is what each partner was
+              actually paid this month.
+            </p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-muted">
+                    <th className="pb-2 font-semibold">Partner</th>
+                    <th className="pb-2 text-right font-semibold">Properties</th>
+                    <th className="pb-2 text-right font-semibold">Tenancies</th>
+                    <th className="pb-2 text-right font-semibold">Rent / month</th>
+                    <th className="pb-2 text-right font-semibold">Earned this month</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.values(book.byAgent)
+                    .sort((a, b) => b.properties - a.properties)
+                    .map((a) => {
+                      const label = a.names.join(" / ");
+                      // Commission is keyed by the beneficiary name PayProp
+                      // pays, which may differ from the property's agent name.
+                      const paid = (earnings ?? []).find((e) =>
+                        a.names.some(
+                          (n) => n.toLowerCase().trim() === e.name.toLowerCase().trim()
+                        )
+                      );
+                      return (
+                        <tr key={label} className="border-t border-line">
+                          <td className="py-2">{label}</td>
+                          <td className="py-2 text-right tnum">{a.properties}</td>
+                          <td className="py-2 text-right tnum">{a.activeTenancies}</td>
+                          <td className="py-2 text-right tnum">
+                            £{Math.round(a.rentRoll).toLocaleString("en-GB")}
+                          </td>
+                          <td className="py-2 text-right tnum">
+                            {paid
+                              ? `£${Math.round(paid.amount).toLocaleString("en-GB")}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : null}
+
       <SectionTitle>Live from REX</SectionTitle>
       {liveLoading && !live ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

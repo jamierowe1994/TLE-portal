@@ -39,6 +39,8 @@ export interface AgencyIncome {
   unclassified: number;
   /** Agency income split by fee type, biggest first. */
   byCategory: Array<{ category: string; amount: number }>;
+  /** What each partner earned this month, biggest first. */
+  byPartner: Array<{ name: string; amount: number; payments: number }>;
   paymentCount: number;
   accounts: PayPropAccountId[];
 }
@@ -140,6 +142,7 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
   const cats = new Map<string, number>();
   // Distinct partners who took a fee, for the per-agent figure.
   const earners = new Set<string>();
+  const partners = new Map<string, { amount: number; payments: number }>();
 
   for (const r of rows) {
     const amount = money(r.amount);
@@ -159,6 +162,13 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
       // The partners' share of the same fees.
       paidToBeneficiaries += amount;
       if (r.beneficiary?.id) earners.add(r.beneficiary.id);
+      const who = r.beneficiary?.name?.trim();
+      if (who) {
+        const p = partners.get(who) ?? { amount: 0, payments: 0 };
+        p.amount += amount;
+        p.payments++;
+        partners.set(who, p);
+      }
     }
   }
 
@@ -172,6 +182,9 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
     unclassified,
     byCategory: [...cats.entries()]
       .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount),
+    byPartner: [...partners.entries()]
+      .map(([name, v]) => ({ name, amount: v.amount, payments: v.payments }))
       .sort((a, b) => b.amount - a.amount),
     paymentCount: rows.length,
     accounts,
