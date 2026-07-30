@@ -323,3 +323,69 @@ async function computeAgentEarnings(
     matched: true,
   };
 }
+
+/* --------------------------------- move-ins ------------------------------- */
+
+interface InvoiceRow {
+  invoice_type?: string;
+  from_date?: string;
+  gross_amount?: number;
+  property?: { property_name?: string; address?: { first_line?: string; city?: string } };
+  tenant?: { display_name?: string };
+}
+
+export interface MoveIns {
+  month: string;
+  /** Tenancies whose rent schedule starts this month. */
+  count: number;
+  /** Their combined monthly rent — the rent roll being added. */
+  rentAdded: number;
+  properties: Array<{ property: string; tenant: string; rent: number; from: string }>;
+}
+
+/**
+ * Move-ins for a month, business-wide. A tenancy going live in PayProp means
+ * a rent schedule starting, so that's what's counted — not a fee, which can
+ * be raised before or after the tenant is in.
+ *
+ * Business-wide only: PayProp holds no agent against a property, so this
+ * can't be split by partner. The agent dashboard keeps its REX figure.
+ */
+export function getMoveIns(month: string): MoveIns | null {
+  return cachedAsync(`movein:${month}`, () => computeMoveIns(month));
+}
+
+async function computeMoveIns(month: string): Promise<MoveIns | null> {
+  const accounts = payPropAccounts();
+  if (accounts.length === 0) return null;
+
+  const rows = (
+    await Promise.all(
+      accounts.map((a) =>
+        payPropGetAll<InvoiceRow>(a, "export/invoices").catch(() => [] as InvoiceRow[])
+      )
+    )
+  ).flat();
+  if (rows.length === 0) return null;
+
+  const starting = rows.filter(
+    (r) => r.invoice_type === "Rent" && (r.from_date ?? "").slice(0, 7) === month
+  );
+
+  return {
+    month,
+    count: starting.length,
+    rentAdded: starting.reduce((t, r) => t + (Number(r.gross_amount) || 0), 0),
+    properties: starting.map((r) => ({
+      property:
+        r.property?.property_name ??
+        [r.property?.address?.first_line, r.property?.address?.city]
+          .filter(Boolean)
+          .join(", ") ??
+        "—",
+      tenant: r.tenant?.display_name ?? "—",
+      rent: Number(r.gross_amount) || 0,
+      from: r.from_date ?? "",
+    })),
+  };
+}

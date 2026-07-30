@@ -108,8 +108,48 @@ function YoyChips({ label, data }: { label: string; data: Record<string, number>
 // with actuals when connected.
 const AVG_GCI_PER_MOVE_IN = 1200;
 
+interface LiveIncome {
+  agencyIncome: number;
+  paidToBeneficiaries: number;
+  ownerPayments: number;
+  byCategory: Array<{ category: string; amount: number }>;
+  paymentCount: number;
+}
+interface LiveMoveIns {
+  count: number;
+  rentAdded: number;
+}
+
 export default function IncomeTab({ month, seed }: { month: string; seed: SeedData }) {
   const inc = seed.income;
+
+  // Live money from PayProp — gathered in the background, so poll for it.
+  const [live, setLive] = useState<LiveIncome | null>(null);
+  const [moveIns, setMoveIns] = useState<LiveMoveIns | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+    setLive(null);
+    setMoveIns(null);
+    const ask = () => {
+      fetch(`/api/admin/payprop-live?month=${month}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { income?: LiveIncome | null; moveIns?: LiveMoveIns | null; refreshing?: boolean }) => {
+          if (cancelled) return;
+          if (d.income) setLive(d.income);
+          if (d.moveIns) setMoveIns(d.moveIns);
+          if (!d.income && d.refreshing && tries++ < 10) setTimeout(ask, 5000);
+        })
+        .catch(() => {});
+    };
+    ask();
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  const gbp = (n: number) =>
+    `£${n.toLocaleString("en-GB", { maximumFractionDigits: 0 })}`;
   const isSnapshotMonth = month === "2026-07";
 
   // Live estimate input: this month's completed move-ins from Propoly.
@@ -161,11 +201,73 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
   return (
     <div className="space-y-6">
       {/* Source banner */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-        <span className="font-semibold">PayProp pending</span> — GCI actuals
-        come from E&amp;W &amp; Glasgow PayProp reports; API access not yet
-        granted, so figures are from the 11 Jul 2026 dashboard snapshot.
-      </div>
+      {live ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-800">
+          <span className="font-semibold">Live from PayProp</span> — {monthLabel(month)}{" "}
+          agency income across {live.paymentCount.toLocaleString("en-GB")} payments.
+          Derived from the all-payments report (the agency&rsquo;s own share), since
+          the dedicated agency-income report needs a scope we weren&rsquo;t granted.
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          <span className="font-semibold">Fetching live figures from PayProp…</span>{" "}
+          Showing the 11 Jul 2026 snapshot until they land.
+        </div>
+      )}
+
+      {live ? (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold">{monthLabel(month)} — live from PayProp</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="card p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Agency income (GCI)
+              </div>
+              <div className="stat-value mt-1 text-[28px]">{gbp(live.agencyIncome)}</div>
+            </div>
+            <div className="card p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Paid to partners
+              </div>
+              <div className="stat-value mt-1 text-[28px]">{gbp(live.paidToBeneficiaries)}</div>
+            </div>
+            <div className="card p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Rent to landlords
+              </div>
+              <div className="stat-value mt-1 text-[28px]">{gbp(live.ownerPayments)}</div>
+              <div className="mt-0.5 text-[11px] text-muted">Passed through, not income</div>
+            </div>
+            <div className="card p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Move-ins
+              </div>
+              <div className="stat-value mt-1 text-[28px]">{moveIns?.count ?? "—"}</div>
+              <div className="mt-0.5 text-[11px] text-muted">
+                {moveIns ? `${gbp(moveIns.rentAdded)} rent added` : "Tenancies starting"}
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-5">
+            <h3 className="text-[13px] font-semibold">Agency income by fee type</h3>
+            <div className="mt-3 space-y-1.5">
+              {live.byCategory.map((c) => (
+                <div key={c.category} className="flex items-center gap-3">
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">
+                    {c.category}
+                  </span>
+                  <span className="h-1.5 rounded-full bg-accent/70"
+                    style={{ width: `${Math.max(4, (c.amount / live.agencyIncome) * 160)}px` }} />
+                  <span className="shrink-0 text-[12.5px] font-semibold text-ink tnum">
+                    {gbp(c.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {!isSnapshotMonth ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">

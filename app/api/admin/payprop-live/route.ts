@@ -3,7 +3,12 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { isAdminEmail } from "@/lib/brand";
 import { payPropConfigured } from "@/lib/payprop";
-import { getAgencyIncome, getArrears, payPropRefreshing } from "@/lib/payprop-income";
+import {
+  getAgencyIncome,
+  getArrears,
+  getMoveIns,
+  payPropRefreshing,
+} from "@/lib/payprop-income";
 import { currentMonth } from "@/lib/format";
 
 // Live PayProp money for the admin centre — the figures that used to come off
@@ -27,12 +32,14 @@ export async function GET(req: NextRequest) {
   // Never blocks: returns what's cached and kicks off a refresh if it's stale.
   const income = getAgencyIncome(month);
   const arrears = getArrears();
+  const moveIns = getMoveIns(month);
 
   return NextResponse.json({
     connected: true,
     month,
     income,
     arrears,
+    moveIns,
     refreshing: payPropRefreshing(),
   });
 }
