@@ -735,17 +735,6 @@ body.presenting .source-badge[class*="border"] {
 
 /* Feather-float: a saved note drifts up into the stack like a bubble rising —
    swaying left and right on the way before settling into place. */
-.note-feather {
-  animation: note-feather 1.15s cubic-bezier(0.25, 0.6, 0.35, 1) both;
-}
-@keyframes note-feather {
-  0%   { opacity: 0; transform: translate(0, 140px) rotate(0.5deg); }
-  20%  { opacity: 1; transform: translate(-14px, 96px) rotate(-2deg); }
-  40%  { transform: translate(11px, 58px) rotate(1.6deg); }
-  60%  { transform: translate(-8px, 28px) rotate(-1.2deg); }
-  80%  { transform: translate(5px, 8px) rotate(0.8deg); }
-  100% { opacity: 1; transform: none; }
-}
 
 /* The thumbs-up speech bubble pops in near the end of the clip */
 .bubble-pop {
@@ -757,7 +746,7 @@ body.presenting .source-badge[class*="border"] {
   100% { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .note-feather, .bubble-pop { animation: none; }
+  .bubble-pop { animation: none; }
 }
 
 /* --- Progress circles + metaball blob (property drawer) ------------------ */
@@ -800,4 +789,23 @@ body.presenting .source-badge[class*="border"] {
 }
 @media (prefers-reduced-motion: reduce) {
   .blob, .blob-pop, .skew-caption, .filter-knock { animation: none; }
+}
+
+/* --- Saving a note: it folds shut, skips across to where it belongs, then
+   opens out to full size. Replaces the old feather drift. ------------------ */
+.note-fly {
+  animation: note-fly 0.85s cubic-bezier(0.34, 1.4, 0.5, 1) both;
+  transform-origin: right bottom;
+}
+@keyframes note-fly {
+  /* folded shut, still down by the composer */
+  0% { opacity: 0; transform: translate(6%, 130%) scaleX(0.42) scaleY(0.3); }
+  /* skips up and overshoots the landing */
+  45% { opacity: 1; transform: translate(-2%, -14%) scaleX(0.5) scaleY(0.36); }
+  65% { transform: translate(0, 3%) scaleX(0.62) scaleY(0.48); }
+  /* opens out */
+  100% { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .note-fly { animation: none; }
 }

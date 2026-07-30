@@ -15,7 +15,6 @@ import { rexListingUrl } from "@/lib/rex-links";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import DrawerRail, { type RailAction } from "@/components/DrawerRail";
 import DoodleIcon from "@/components/DoodleIcon";
-import SkewProgress, { type SkewStep } from "@/components/charts/SkewProgress";
 import FilterBar from "@/components/FilterBar";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import NoPhoto from "@/components/NoPhoto";
@@ -220,54 +219,6 @@ function ListingTile({
 // the action rail down the drawer's right edge.
 type PanelId = "activity" | "note" | "contacts" | "chat" | "details" | "files";
 
-function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: SkewStep[] } {
-  const epc = epcState(l);
-  const epcBar: SkewStep = {
-    label: "EPC in date",
-    progress: epc.state === "valid" || epc.state === "not-required" ? 1 : epc.state === "expiring" ? 0.6 : 0,
-    note: epc.label,
-    icon: "shield",
-  };
-
-  // Only the process the property is actually IN — the bars change as it
-  // moves through draft → market → tenancy set-up.
-  if (stage === "draft") {
-    return {
-      title: "Getting it to market",
-      bars: [
-        {
-          label: "Photos on file",
-          progress: l.imageCount > 0 ? 1 : 0,
-          note: l.imageCount > 0 ? `${l.imageCount} uploaded` : "None yet",
-          icon: "grid",
-        },
-        epcBar,
-        { label: "Published to the portals", progress: 0, note: "Still a draft", icon: "megaphone" },
-      ],
-    };
-  }
-  if (stage === "on-market") {
-    return {
-      title: "Finding a tenant",
-      bars: [
-        { label: "Live on the portals", progress: 1, note: l.publicationStatus ?? "Published", icon: "megaphone" },
-        epcBar,
-        { label: "Let agreed", progress: 0.35, note: "On the market", icon: "key" },
-      ],
-    };
-  }
-  return {
-    title: "Tenancy set-up",
-    bars: [
-      { label: "Let agreed", progress: 1, note: "Agreed", icon: "key" },
-      epcBar,
-      { label: "Deposit / flatbond", progress: 0, note: "Tracked once Flatfair is live", icon: "wallet" },
-      { label: "Inventory booked", progress: 0, note: "Tracked once InventoryBase is live", icon: "checklist" },
-      { label: "Rent collection", progress: 0, note: "Tracked once PayProp is live", icon: "coin" },
-    ],
-  };
-}
-
 function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   const stage = stageOf(l);
   const epc = epcState(l);
@@ -442,8 +393,8 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   return (
     <SplitDrawer onClose={onClose} hideClose>
       <DrawerPanel
-        className="relative shrink-0 grow-0 p-5 sm:p-7"
-        style={{ width: "min(66rem, calc(100vw - 2rem))" }}
+        className="relative shrink-0 grow-0 p-5 sm:p-7 lg:pr-24"
+        style={{ width: "min(74rem, calc(100vw - 2rem))" }}
       >
         <DrawerRail actions={actions} />
 
@@ -516,25 +467,11 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
               </div>
             ) : null}
 
-            {/* Only the process the property is IN right now. */}
-            {(() => {
-              const proc = milestonesFor(l, stage);
-              return (
-                <div className="mt-6">
-                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                    {proc.title}
-                  </h3>
-                  <div className="mt-3">
-                    <SkewProgress steps={proc.bars} />
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         </div>
 
         {/* ---- the write-up and the facts table, one box split down the middle ---- */}
-        <div className="card mt-6 grid lg:grid-cols-[1.15fr_1fr]">
+        <div className="card mt-5 grid lg:grid-cols-[1.15fr_1fr]">
           <div className="min-w-0 p-5 sm:p-6">
             <h3 className="text-[15px]" style={{ fontWeight: 500 }}>About this property</h3>
             {detail === undefined ? (
@@ -597,7 +534,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
 
         {/* ---- the active box: activity lives here until the rail summons
              something else, which drops in over the top ---- */}
-        <div className="card mt-6 flex min-h-[168px] flex-col justify-end overflow-hidden p-5 sm:p-6">
+        <div className="card mt-5 flex min-h-[230px] flex-col justify-end overflow-hidden p-5 sm:p-6">
           <div key={leaving ? `${panel}-out` : panel} className={leaving ? "panel-fall" : "panel-bounce"}>
           {panel === "activity" ? (
             <div key="activity">
@@ -635,7 +572,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
                       <div
                         key={n.id}
                         className={`flex ${mine ? "justify-start" : "justify-end"} ${
-                          floating === n.id ? "note-feather" : ""
+                          floating === n.id ? "note-fly" : ""
                         }`}
                       >
                         <div
@@ -660,13 +597,21 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
 
               {/* the composer — folds down on save, folds back out fresh */}
               <div className={folding ? "note-fold" : floating ? "note-unfold" : ""}>
-                <textarea
+                <input
+                  type="text"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && note.trim()) {
+                      e.preventDefault();
+                      void saveNote();
+                    }
+                  }}
                   placeholder={`Add a note about ${l.name}…`}
-                  className="mt-3 h-20 w-full resize-none rounded-xl border border-line bg-white p-3 text-[13px] outline-none transition focus:border-black/25"
+                  // A ruled line to write on, like the To-dos composer.
+                  className="mt-3 w-full border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2.5 text-[13px] outline-none transition focus:border-ink/70"
                 />
-                <div className="mt-2 flex gap-2">
+                <div className="mt-2.5 flex gap-2">
                   <button
                     type="button"
                     onClick={() => void saveNote()}
@@ -783,15 +728,9 @@ function RoomIcon({ name }: { name: string }) {
     className: "h-6 w-6 text-ink",
     "aria-hidden": true,
   };
-  if (name === "bed") {
-    return (
-      <svg {...common}>
-        <path d="M3 18v-7.5c0-.6.5-1 1-1h16c.6 0 1 .4 1 1V18" />
-        <path d="M3 15h18M3 18h18M6.5 9.5V7.2c0-.6.5-1 1-1h9c.6 0 1 .4 1 1v2.3" />
-        <path d="M8 12.6h3M13 12.6h3" />
-      </svg>
-    );
-  }
+  // Bed and sofa are James's own icons (PNG masks); bath is drawn to match.
+  if (name === "bed") return <DoodleIcon name="bed.png" size={26} className="text-ink" />;
+  if (name === "sofa") return <DoodleIcon name="sofa.png" size={26} className="text-ink" />;
   if (name === "bath") {
     return (
       <svg {...common}>
@@ -801,13 +740,7 @@ function RoomIcon({ name }: { name: string }) {
       </svg>
     );
   }
-  return (
-    <svg {...common}>
-      <path d="M4 17v-5.4A2.6 2.6 0 0 1 6.6 9h10.8A2.6 2.6 0 0 1 20 11.6V17" />
-      <path d="M4 13.4A1.7 1.7 0 0 0 2.6 15v2.4h18.8V15A1.7 1.7 0 0 0 20 13.4" />
-      <path d="M6.5 17.4V19M17.5 17.4V19M8.5 9V7.4h7V9" />
-    </svg>
-  );
+  return null;
 }
 
 /* ----------------------------- activity strip ----------------------------- */

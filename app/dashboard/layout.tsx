@@ -467,13 +467,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* Welcome — lives in the dashboard content, big and roomy */}
           {pathname === "/dashboard" ? (
             <div
-              className="enter enter-pop mb-8 pt-4 lg:mb-10 lg:pt-0"
+              className="enter enter-pop mb-6 pt-4 lg:mb-6 lg:pt-0"
               style={{ "--enter-delay": "600ms" } as React.CSSProperties}
             >
               {/* The greeting keeps the room the artwork used to fill — the
                   block height is deliberate white space, not a leftover. */}
-              <div className="flex items-end gap-4 pt-2 lg:min-h-[292px]">
-                <div className="min-w-0 pb-5 lg:pb-24">
+              <div className="flex items-end gap-4 pt-2 lg:min-h-[236px]">
+                <div className="min-w-0 pb-5 lg:pb-14">
                   <h1 className="w-fit tracking-tight" style={{ fontSize: "clamp(32px, 4vw, 52px)", lineHeight: 1.08, fontWeight: 300 }}>
                     {hello}
                   </h1>

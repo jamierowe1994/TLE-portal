@@ -9,12 +9,13 @@ export default function DoodleIcon({
   size = 18,
   className = "",
 }: {
-  /** Filename in /public/icons/doodle without the .svg */
+  /** Filename in /public/icons/doodle. Omit the extension for the SVG set;
+   * pass it in full (e.g. "bed.png") for the PNG masks. */
   name: string;
   size?: number;
   className?: string;
 }) {
-  const url = `url(/icons/doodle/${name}.svg)`;
+  const url = `url(/icons/doodle/${name.includes(".") ? name : `${name}.svg`})`;
   return (
     <span
       aria-hidden

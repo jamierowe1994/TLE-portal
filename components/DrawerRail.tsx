@@ -23,11 +23,10 @@ export interface RailAction {
 }
 
 function RailButton({ a }: { a: RailAction }) {
-  // Only the close key keeps its circle; the rest are bare hand-drawn icons
-  // that simply press in.
+  // A filled circle marks wherever you are; the close key keeps its own.
   const shape = a.top
     ? `rail-key rounded-full ${a.active ? "rail-key--on" : ""}`
-    : `transition active:scale-[0.82] ${a.active ? "scale-[0.86] text-ink" : ""}`;
+    : `rounded-full transition active:scale-[0.88] ${a.active ? "bg-black/[0.07]" : ""}`;
   return (
     <button
       type="button"
@@ -36,11 +35,11 @@ function RailButton({ a }: { a: RailAction }) {
         a.onClick();
       }}
       aria-label={a.label}
-      className={`group/rail relative flex h-12 w-12 items-center justify-center ${shape} ${
+      className={`group/rail relative flex h-11 w-11 items-center justify-center ${shape} ${
         a.active ? "text-ink" : "text-muted hover:text-ink"
       }`}
     >
-      <DoodleIcon name={a.icon} size={23} />
+      <DoodleIcon name={a.icon} size={22} />
       {/* tooltip — sits to the left so it never leaves the viewport */}
       <span className="pointer-events-none absolute right-[calc(100%+10px)] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover/rail:opacity-100">
         {a.label}
@@ -54,16 +53,16 @@ export default function DrawerRail({ actions }: { actions: RailAction[] }) {
   const rest = actions.filter((a) => !a.top);
 
   return (
+    // Inside the drawer now, hard against its right edge: a squared-off pill
+    // in the same paper colour, outlined rather than floated.
     <div
-      className="absolute left-full top-1/2 z-30 ml-5 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-full border border-line bg-page/95 p-2 shadow-lg backdrop-blur-sm max-lg:hidden"
+      className="absolute right-4 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-[26px] border border-ink/25 bg-page p-1.5 max-lg:hidden"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* the little line tying the rail back to the drawer */}
-      <span aria-hidden className="absolute right-full top-1/2 h-px w-5 bg-black/20" />
       {top.map((a) => (
         <RailButton key={a.id} a={a} />
       ))}
-      {top.length && rest.length ? <span className="my-0.5 h-px w-6 bg-line" /> : null}
+      {top.length && rest.length ? <span className="my-1 h-px w-5 bg-ink/15" /> : null}
       {rest.map((a) => (
         <RailButton key={a.id} a={a} />
       ))}
