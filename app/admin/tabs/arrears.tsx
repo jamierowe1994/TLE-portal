@@ -34,7 +34,12 @@ interface LiveArrears {
   tenants: Array<{ tenant: string; property: string; owed: number; lastInvoice: string | null }>;
   totalOwed: number;
   checked: number;
+  byAccount: Array<{ account: string; label: string; tenants: number; owed: number }>;
+  largest: number;
+  average: number;
 }
+
+const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
 
 export default function ArrearsTab({ month, seed }: { month: string; seed: SeedData }) {
   const a = seed.arrears;
@@ -44,17 +49,25 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
   // PayProp gathers in the background, so poll until it lands rather than
   // sitting on the snapshot for the whole session.
   const [live, setLive] = useState<LiveArrears | null>(null);
+  // Rent roll comes from the portfolio walk — needed for "% of rent roll".
+  const [rentRoll, setRentRoll] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
     let tries = 0;
     const ask = () => {
       fetch("/api/admin/payprop-live", { cache: "no-store" })
         .then((r) => r.json())
-        .then((d: { arrears?: LiveArrears | null; refreshing?: boolean }) => {
-          if (cancelled) return;
-          if (d.arrears) setLive(d.arrears);
-          else if (tries++ < 40) setTimeout(ask, 5000);
-        })
+        .then(
+          (d: {
+            arrears?: LiveArrears | null;
+            portfolio?: { totalRentRoll: number } | null;
+          }) => {
+            if (cancelled) return;
+            if (d.arrears) setLive(d.arrears);
+            if (d.portfolio) setRentRoll(d.portfolio.totalRentRoll);
+            if ((!d.arrears || !d.portfolio) && tries++ < 40) setTimeout(ask, 5000);
+          }
+        )
         .catch(() => {});
     };
     ask();
@@ -164,12 +177,41 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
         </section>
       ) : null}
 
-      {/* Summary cards — the 11 Jul snapshot, kept for the regional split */}
+      {/* Summary cards — live where PayProp can answer, snapshot otherwise */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="Tenants in arrears" stat={s.totalInArrears} big />
-        <StatCard label="Total arrears" stat={s.totalValue} big />
-        <StatCard label="E&W" stat={s.eAndWCount} sub={s.eAndWValue.display} />
-        <StatCard label="Glasgow" stat={s.glasgowCount} sub={s.glasgowValue.display} />
+        <StatCard
+          label="Tenants in arrears"
+          stat={
+            live
+              ? { value: live.tenants.length, source: "live-payprop", note: `Of ${live.checked} tenancies across both agencies — live from PayProp.` }
+              : s.totalInArrears
+          }
+          big
+        />
+        <StatCard
+          label="Total arrears"
+          stat={
+            live
+              ? { value: Math.round(live.totalOwed), display: gbp(live.totalOwed), source: "live-payprop", note: `Largest single debt ${gbp(live.largest)}; average ${gbp(live.average)}.` }
+              : s.totalValue
+          }
+          big
+        />
+        {live
+          ? live.byAccount.map((acc) => (
+              <StatCard
+                key={acc.account}
+                label={acc.label}
+                stat={{ value: acc.tenants, source: "live-payprop", note: `${gbp(acc.owed)} owed across ${acc.tenants} tenancies.` }}
+                sub={gbp(acc.owed)}
+              />
+            ))
+          : (
+            <>
+              <StatCard label="E&W" stat={s.eAndWCount} sub={s.eAndWValue.display} />
+              <StatCard label="Glasgow" stat={s.glasgowCount} sub={s.glasgowValue.display} />
+            </>
+          )}
         <StatCard
           label="Protected (RLP/LEC)"
           stat={s.protectedCount}
@@ -179,8 +221,21 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
         />
         <StatCard
           label="% of rent roll"
-          stat={s.pctOfRentRoll}
-          sub={`${s.totalValue.display ?? ""} of ${seed.portfolio.overview.rentRollTotal.display ?? "rent roll"}`}
+          stat={
+            live && rentRoll
+              ? {
+                  value: Math.round((live.totalOwed / rentRoll) * 1000) / 10,
+                  display: `${((live.totalOwed / rentRoll) * 100).toFixed(1)}%`,
+                  source: "live-payprop",
+                  note: `${gbp(live.totalOwed)} owed against ${gbp(rentRoll)} of monthly rent under management.`,
+                }
+              : s.pctOfRentRoll
+          }
+          sub={
+            live && rentRoll
+              ? `${gbp(live.totalOwed)} of ${gbp(rentRoll)} rent roll`
+              : `${s.totalValue.display ?? ""} of ${seed.portfolio.overview.rentRollTotal.display ?? "rent roll"}`
+          }
         />
       </div>
 

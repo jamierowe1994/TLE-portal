@@ -1435,3 +1435,106 @@ export async function getListingDocuments(listingId: string): Promise<RexDocumen
   docsCache.set(listingId, { at: Date.now(), data: docs });
   return docs;
 }
+
+/* ----------------------- business-wide compliance ------------------------ */
+
+export interface BusinessCompliance {
+  totalItems: number;
+  overdue: number;
+  upcoming: number;
+  valid: number;
+  byType: Array<{ type: string; total: number; overdue: number; upcoming: number }>;
+}
+
+const businessComplianceCache = { at: 0, data: null as BusinessCompliance | null };
+const BUSINESS_COMPLIANCE_TTL_MS = 10 * 60_000;
+
+/**
+ * Every compliance entry in REX, classified. Queried across the account in one
+ * paged sweep rather than per agent: ComplianceEntries is superlinearly slow
+ * on large id sets, so thirty per-agent fetches would take minutes.
+ *
+ * The expiry date sits inside `details` under a key named after the entry type
+ * (details.epc.expiry_date, details.gas_safety.expiry_date, …), so it's read
+ * generically rather than by listing every type we know about today.
+ */
+export async function getBusinessCompliance(): Promise<BusinessCompliance | null> {
+  if (
+    businessComplianceCache.data &&
+    Date.now() - businessComplianceCache.at < BUSINESS_COMPLIANCE_TTL_MS
+  ) {
+    return businessComplianceCache.data;
+  }
+  if (!rexConfigured()) return null;
+
+  // 60 pages returned exactly 6,000 rows on the first run — i.e. the cap, not
+  // the end of the data. Raised well clear of the real total, and a run that
+  // still hits it returns null rather than reporting a truncated count as
+  // though it were the whole account.
+  const MAX_PAGES = 400;
+  const rows: Array<Record<string, unknown>> = [];
+  let capped = true;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await rexCall("ComplianceEntries", "search", {
+      criteria: [{ name: "system_record_state", type: "=", value: "active" }],
+      limit: 100,
+      offset: (page - 1) * 100,
+    }).catch(() => null);
+    if (!res || !res.ok) break;
+    const batch = rexRows(res.result);
+    rows.push(...batch);
+    if (batch.length < 100) {
+      capped = false;
+      break;
+    }
+  }
+  if (rows.length === 0 || capped) return null;
+
+  const UPCOMING_DAYS = 60;
+  const now = Date.now();
+  const byType = new Map<string, { total: number; overdue: number; upcoming: number }>();
+  let overdue = 0;
+  let upcoming = 0;
+  let valid = 0;
+
+  for (const r of rows) {
+    const type = String(r.type_id ?? "unknown");
+    // details is keyed by the entry type; pull whichever block is there.
+    const details = (r.details ?? {}) as Record<string, { expiry_date?: string | null }>;
+    const block = Object.values(details)[0] ?? {};
+    const expiry = block.expiry_date ? Date.parse(block.expiry_date) : NaN;
+
+    const bucket = byType.get(type) ?? { total: 0, overdue: 0, upcoming: 0 };
+    bucket.total++;
+
+    if (Number.isFinite(expiry)) {
+      const days = (expiry - now) / 86_400_000;
+      if (days < 0) {
+        overdue++;
+        bucket.overdue++;
+      } else if (days <= UPCOMING_DAYS) {
+        upcoming++;
+        bucket.upcoming++;
+      } else {
+        valid++;
+      }
+    } else {
+      // No expiry recorded — counted but not flagged either way.
+      valid++;
+    }
+    byType.set(type, bucket);
+  }
+
+  const data: BusinessCompliance = {
+    totalItems: rows.length,
+    overdue,
+    upcoming,
+    valid,
+    byType: [...byType.entries()]
+      .map(([type, v]) => ({ type, ...v }))
+      .sort((a, b) => b.overdue - a.overdue || b.total - a.total),
+  };
+  businessComplianceCache.at = Date.now();
+  businessComplianceCache.data = data;
+  return data;
+}
