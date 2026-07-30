@@ -321,7 +321,7 @@ const EMPTY_DETAILS: Details = { dueAt: "", platform: "", property: "", tenant: 
 
 // How long the completion celebration runs before the tile leaves the list.
 // Deliberately unhurried — this is the one moment the page gets to be silly.
-const CELEBRATION_MS = 3750;
+const CELEBRATION_MS = 5500;
 
 
 /** ISO from the store → value a datetime-local input accepts. */
@@ -626,14 +626,16 @@ export default function TodosPage() {
         {/* ---- the Fast Worker scoots through on his chair, clipped to the
              tile and facing the way he's travelling ---- */}
         {party ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/illustrations/notioly/fast-worker.svg"
-              alt=""
-              aria-hidden
-              className="done-scoot h-32 w-auto -scale-x-100"
-            />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-32 overflow-hidden">
+            <div className="done-scoot absolute bottom-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/illustrations/notioly/fast-worker.svg"
+                alt=""
+                aria-hidden
+                className="h-32 w-auto -scale-x-100"
+              />
+            </div>
           </div>
         ) : null}
       </li>
