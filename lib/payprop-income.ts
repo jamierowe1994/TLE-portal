@@ -34,6 +34,9 @@ export interface AgencyIncome {
   paidToBeneficiaries: number;
   /** Rent passed through to landlords — not income, but the volume behind it. */
   ownerPayments: number;
+  /** Money moved that isn't rent and isn't a fee: contractor costs, deposits,
+   *  refunds, uncategorised. Reported so the total is accounted for. */
+  unclassified: number;
   /** Agency income split by fee type, biggest first. */
   byCategory: Array<{ category: string; amount: number }>;
   paymentCount: number;
@@ -73,7 +76,24 @@ export function payPropRefreshing(): boolean {
   return running.size > 0;
 }
 
-// Money that only passes through a recipient — never commission.
+/**
+ * The fee categories that ARE commission. Deliberately an allowlist: naming
+ * what to exclude let real money through that isn't income at all. Checked
+ * against July 2026, where a denylist counted a £1,850 "Tenant Refund" and
+ * £11,241 of ambiguous "Other" (admin fees) as GCI, inflating it from
+ * £46,705 to £60,073 and pushing GCI per move-in to £2,612 against a
+ * historical £2,201. On the allowlist it lands at £2,031.
+ */
+const FEE_CATEGORIES = new Set([
+  "Management Fee",
+  "First Month Management Fee",
+  "Set Up Fee",
+  "Management Fee - Investor Services",
+  "Rent and Legal Protection",
+]);
+
+// Money that only passes through a recipient — never commission. Still used
+// to separate an agent's pass-through from their earnings.
 const NOT_EARNINGS = new Set(["Contractor", "Deposit (Custodial)", "Property account"]);
 
 const money = (v: unknown) => {
@@ -116,6 +136,7 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
   let agencyIncome = 0;
   let paidToBeneficiaries = 0;
   let ownerPayments = 0;
+  let unclassified = 0;
   const cats = new Map<string, number>();
   // Distinct partners who took a fee, for the per-agent figure.
   const earners = new Set<string>();
@@ -125,17 +146,19 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
     const type = r.beneficiary?.type;
     const category = r.category?.name ?? "Other";
 
-    if (type === "agency") {
+    if (category === "Owner") {
+      ownerPayments += amount;
+    } else if (!FEE_CATEGORIES.has(category)) {
+      // Contractor costs, deposits, refunds, uncategorised — real money, but
+      // not commission. Kept visible so the total is accounted for.
+      unclassified += amount;
+    } else if (type === "agency") {
       agencyIncome += amount;
       cats.set(category, (cats.get(category) ?? 0) + amount);
-    } else if (category === "Owner") {
-      ownerPayments += amount;
     } else if (type === "beneficiary" || type === "global_beneficiary") {
-      // Fees that went to someone other than the agency — the associate split.
-      if (!NOT_EARNINGS.has(category)) {
-        paidToBeneficiaries += amount;
-        if (r.beneficiary?.id) earners.add(r.beneficiary.id);
-      }
+      // The partners' share of the same fees.
+      paidToBeneficiaries += amount;
+      if (r.beneficiary?.id) earners.add(r.beneficiary.id);
     }
   }
 
@@ -146,6 +169,7 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
     agentsEarning: earners.size,
     paidToBeneficiaries,
     ownerPayments,
+    unclassified,
     byCategory: [...cats.entries()]
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount),
@@ -281,7 +305,14 @@ async function computeAgentEarnings(
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const ids = (await beneficiaryIdsByEmail()).get(email.trim().toLowerCase());
+  const byEmail = await beneficiaryIdsByEmail();
+  // An empty directory means the fetch failed, not that nobody matched.
+  // Returning a "no match" here would cache £0 as though it were the answer,
+  // and the card would sit on zero for the whole TTL. Null means "unknown",
+  // so the caller falls back and we try again.
+  if (byEmail.size === 0) return null;
+
+  const ids = byEmail.get(email.trim().toLowerCase());
   if (!ids?.size) {
     return {
       month,
@@ -306,6 +337,8 @@ async function computeAgentEarnings(
     )
   ).flat();
 
+  if (rows.length === 0) return null; // couldn't reach PayProp — not "earned nothing"
+
   let earned = 0;
   let passedThrough = 0;
   let paymentCount = 0;
@@ -317,11 +350,11 @@ async function computeAgentEarnings(
     const amount = money(r.amount);
     const category = r.category?.name ?? "Other";
     paymentCount++;
-    if (NOT_EARNINGS.has(category)) {
-      passedThrough += amount;
-    } else {
+    if (FEE_CATEGORIES.has(category)) {
       earned += amount;
       cats.set(category, (cats.get(category) ?? 0) + amount);
+    } else {
+      passedThrough += amount;
     }
   }
 
