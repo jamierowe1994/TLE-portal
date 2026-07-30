@@ -446,17 +446,6 @@ export default function Overview({ month }: { month: string }) {
     };
   }, []);
 
-  if (error) {
-    return <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">{error}</p>;
-  }
-  if (!data) {
-    return <p className="text-sm text-muted">Loading overview…</p>;
-  }
-  const d = data;
-
-  // Per-period figures (from Susan's dashboard, all the way back to January).
-  const kpiPeriod = d.periods[kpiKey] ?? d.periods.jul;
-
   // Live commission from PayProp. Only the current month is meaningful here,
   // so the tiles fall back to the snapshot for any historic period.
   const [liveMoney, setLiveMoney] = useState<{
@@ -513,6 +502,18 @@ export default function Overview({ month }: { month: string }) {
           note: `${gbp(liveForThisPeriod.combinedGci)} commission ÷ ${liveForThisPeriod.agentsEarning} partners who earned a fee this month — live from PayProp.`,
         }
       : null;
+
+  if (error) {
+    return <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">{error}</p>;
+  }
+  if (!data) {
+    return <p className="text-sm text-muted">Loading overview…</p>;
+  }
+  const d = data;
+
+  // Per-period figures (from Susan's dashboard, all the way back to January).
+  const kpiPeriod = d.periods[kpiKey] ?? d.periods.jul;
+
   const rampPeriod = d.periods[rampKey] ?? d.periods.jul;
 
   // Upgrade a snapshot stat to live when the live layer carries the same
