@@ -15,12 +15,13 @@
   --accent-dark: #c11a2e;
   --accent-soft: #fef2f2;
 
-  /* Neutrals — flat, very light grey canvas (CompanyOS reference); soft
-     against the white cards rather than fighting them. */
+  /* Neutrals — warm eggshell canvas, sampled from the Notioly artwork
+     (#F2F0EB) so the illustrations sit on their native colour; white stays
+     reserved for cards. */
   --ink: #101014;
   --muted: #6b6b70;
-  --line: #e9e9e7;
-  --page: #f4f4f3;
+  --line: #e6e3db;
+  --page: #f2f0eb;
   --card: #ffffff;
 
   --radius-card: 16px;
