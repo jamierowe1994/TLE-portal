@@ -24,9 +24,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
-  const account = (req.nextUrl.searchParams.get("account") ?? "uk") as PayPropAccountId;
+  // Forgiving: no param, an empty one, odd casing or stray spaces all land on
+  // the UK account rather than a dead end.
+  const raw = (req.nextUrl.searchParams.get("account") ?? "").trim().toLowerCase();
+  const account = (raw === "" ? "uk" : raw) as PayPropAccountId;
   if (account !== "uk" && account !== "scotland") {
-    return NextResponse.json({ error: "account must be uk or scotland." }, { status: 400 });
+    return NextResponse.json(
+      { error: `account must be uk or scotland — received "${raw}".` },
+      { status: 400 }
+    );
   }
 
   const creds = payPropClient(account);
