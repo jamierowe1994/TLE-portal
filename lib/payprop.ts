@@ -11,8 +11,12 @@ import "server-only";
 //
 // Notes from the spec (uk.payprop.com):
 //   • Base: https://uk.payprop.com/api/agency/v1.1
-//   • Auth is NOT Bearer — PayProp uses its own scheme:
-//        Authorization: APIkey <key>
+//   • Two auth schemes are supported, OAuth first:
+//       - OAuth2 client credentials → Authorization: Bearer <token>
+//         (PAYPROP_CLIENT_ID[_ACCOUNT] + PAYPROP_CLIENT_SECRET[_ACCOUNT])
+//       - PayProp's original scheme  → Authorization: APIkey <key>
+//     An account uses OAuth when it has a client id/secret, and falls back to
+//     its API key otherwise, so the two accounts can migrate independently.
 //
 // Three behaviours found by probing the live API — none are in the published
 // spec, and each silently loses data if you miss it:
@@ -40,27 +44,113 @@ interface AccountDef {
   label: string;
   /** Env vars tried in order — the first non-empty one wins. */
   envKeys: string[];
+  /** OAuth2 client credentials, same first-match-wins rule. */
+  clientIdKeys: string[];
+  clientSecretKeys: string[];
 }
 
 const ACCOUNTS: AccountDef[] = [
   // PAYPROP_API_KEY is the original single-account name, kept as a fallback so a
   // half-finished rename can't take Scotland offline.
-  { id: "scotland", label: "Scotland", envKeys: ["PAYPROP_API_KEY_SCOTLAND", "PAYPROP_API_KEY"] },
-  { id: "uk", label: "Rest of UK", envKeys: ["PAYPROP_API_KEY_UK"] },
+  {
+    id: "scotland",
+    label: "Scotland",
+    envKeys: ["PAYPROP_API_KEY_SCOTLAND", "PAYPROP_API_KEY"],
+    clientIdKeys: ["PAYPROP_CLIENT_ID_SCOTLAND", "PAYPROP_CLIENT_ID"],
+    clientSecretKeys: ["PAYPROP_CLIENT_SECRET_SCOTLAND", "PAYPROP_CLIENT_SECRET"],
+  },
+  {
+    id: "uk",
+    label: "Rest of UK",
+    envKeys: ["PAYPROP_API_KEY_UK"],
+    clientIdKeys: ["PAYPROP_CLIENT_ID_UK", "PAYPROP_CLIENT_ID"],
+    clientSecretKeys: ["PAYPROP_CLIENT_SECRET_UK", "PAYPROP_CLIENT_SECRET"],
+  },
 ];
 
 function base(): string {
   return (process.env.PAYPROP_API_BASE ?? DEFAULT_BASE).replace(/\/$/, "");
 }
 
-function keyFor(id: PayPropAccountId): string | null {
-  const def = ACCOUNTS.find((a) => a.id === id);
-  if (!def) return null;
-  for (const env of def.envKeys) {
-    const v = process.env[env];
+function firstEnv(names: string[]): string | null {
+  for (const name of names) {
+    const v = process.env[name];
     if (v) return v;
   }
   return null;
+}
+
+function keyFor(id: PayPropAccountId): string | null {
+  const def = ACCOUNTS.find((a) => a.id === id);
+  return def ? firstEnv(def.envKeys) : null;
+}
+
+function oauthFor(id: PayPropAccountId): { id: string; secret: string } | null {
+  const def = ACCOUNTS.find((a) => a.id === id);
+  if (!def) return null;
+  const clientId = firstEnv(def.clientIdKeys);
+  const secret = firstEnv(def.clientSecretKeys);
+  return clientId && secret ? { id: clientId, secret } : null;
+}
+
+/* ------------------------------ OAuth tokens ------------------------------ */
+
+function tokenUrl(): string {
+  return process.env.PAYPROP_TOKEN_URL ?? `${base()}/oauth/access_token`;
+}
+
+const tokens = new Map<PayPropAccountId, { token: string; expiresAt: number }>();
+const pending = new Map<PayPropAccountId, Promise<string | null>>();
+
+async function fetchToken(account: PayPropAccountId): Promise<string | null> {
+  const creds = oauthFor(account);
+  if (!creds) return null;
+  try {
+    const res = await fetch(tokenUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: creds.id,
+        client_secret: creds.secret,
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string; expires_in?: number };
+    if (!data.access_token) return null;
+    // Retire it a minute early so no call starts with a token about to die.
+    const ttl = Math.max((data.expires_in ?? 3600) * 1000 - 60_000, 30_000);
+    tokens.set(account, { token: data.access_token, expiresAt: Date.now() + ttl });
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
+async function accessToken(account: PayPropAccountId): Promise<string | null> {
+  const held = tokens.get(account);
+  if (held && Date.now() < held.expiresAt) return held.token;
+  // Collapse concurrent renders onto a single token request per account.
+  let job = pending.get(account);
+  if (!job) {
+    job = fetchToken(account).finally(() => pending.delete(account));
+    pending.set(account, job);
+  }
+  return job;
+}
+
+/** OAuth when the account has client credentials, its API key otherwise. */
+async function authHeader(account: PayPropAccountId): Promise<string | null> {
+  if (oauthFor(account)) {
+    const t = await accessToken(account);
+    if (t) return `Bearer ${t}`;
+    // Fall through: a token failure shouldn't take the account offline if it
+    // still has a working API key.
+  }
+  const key = keyFor(account);
+  return key ? `APIkey ${key}` : null;
 }
 
 export function payPropLabel(id: PayPropAccountId): string {
@@ -69,7 +159,13 @@ export function payPropLabel(id: PayPropAccountId): string {
 
 /** Accounts we actually hold a key for. Business-wide figures sum over these. */
 export function payPropAccounts(): PayPropAccountId[] {
-  return ACCOUNTS.filter((a) => keyFor(a.id)).map((a) => a.id);
+  return ACCOUNTS.filter((a) => keyFor(a.id) || oauthFor(a.id)).map((a) => a.id);
+}
+
+/** Which scheme an account will use — for the admin probe. */
+export function payPropAuthMode(id: PayPropAccountId): "oauth" | "apikey" | null {
+  if (oauthFor(id)) return "oauth";
+  return keyFor(id) ? "apikey" : null;
 }
 
 /** True when at least one PayProp account is wired up. */
@@ -98,8 +194,8 @@ export async function payPropGet<T = Record<string, unknown>>(
   path: string,
   params: Record<string, string | number | boolean | undefined> = {}
 ): Promise<PayPropPage<T> | null> {
-  const key = keyFor(account);
-  if (!key) return null;
+  const auth = await authHeader(account);
+  if (!auth) return null;
 
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -111,14 +207,13 @@ export async function payPropGet<T = Record<string, unknown>>(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      headers: {
-        // PayProp's own scheme — "APIkey", not "Bearer".
-        Authorization: `APIkey ${key}`,
-        Accept: "application/json",
-      },
+      headers: { Authorization: auth, Accept: "application/json" },
       cache: "no-store",
       signal: controller.signal,
     });
+    // A rejected token is usually one revoked early — drop it so the next
+    // call re-authenticates instead of repeating the failure.
+    if (res.status === 401) tokens.delete(account);
     if (!res.ok) return null;
     const json = (await res.json()) as unknown;
     if (Array.isArray(json)) return { items: json as T[] };

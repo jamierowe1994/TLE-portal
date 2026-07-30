@@ -3,6 +3,7 @@ import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import {
   payPropAccounts,
+  payPropAuthMode,
   payPropConfigured,
   payPropGet,
   payPropLabel,
@@ -32,11 +33,19 @@ export async function GET(req: NextRequest) {
   if (!payPropConfigured()) {
     return NextResponse.json({
       configured: false,
-      hint: "Add PAYPROP_API_KEY_SCOTLAND and/or PAYPROP_API_KEY_UK in Railway, then redeploy.",
+      hint:
+        "Add credentials in Railway, then redeploy. OAuth: PAYPROP_CLIENT_ID + " +
+        "PAYPROP_CLIENT_SECRET (or the _SCOTLAND / _UK variants). Legacy: " +
+        "PAYPROP_API_KEY_SCOTLAND / PAYPROP_API_KEY_UK.",
     });
   }
 
   const ping = await payPropPing();
+  // Which scheme each account resolved to — the first thing to check when a
+  // migrated account starts failing.
+  const auth = Object.fromEntries(
+    payPropAccounts().map((a) => [a, payPropAuthMode(a)])
+  );
 
   const sample = async (
     account: PayPropAccountId,
@@ -79,5 +88,5 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  return NextResponse.json({ configured: true, ping, accounts });
+  return NextResponse.json({ configured: true, auth, ping, accounts });
 }
