@@ -127,7 +127,7 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
       payPropGetAll<PaymentRow>(a, "report/all-payments", {
         from_date: from,
         to_date: to,
-      }).catch(() => [] as PaymentRow[])
+      })
     )
   );
   const rows = perAccount.flat();
@@ -217,9 +217,7 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
 
   const perAccount = await Promise.all(
     accounts.map((a) =>
-      payPropGetAll<TenantBalanceRow>(a, "report/tenant/balances").catch(
-        () => [] as TenantBalanceRow[]
-      )
+      payPropGetAll<TenantBalanceRow>(a, "report/tenant/balances")
     )
   );
   const rows = perAccount.flat();
@@ -278,9 +276,7 @@ async function beneficiaryIdsByEmail(): Promise<Map<string, Set<string>>> {
   const rows = (
     await Promise.all(
       accounts.map((a) =>
-        payPropGetAll<BeneficiaryRow>(a, "export/beneficiaries").catch(
-          () => [] as BeneficiaryRow[]
-        )
+        payPropGetAll<BeneficiaryRow>(a, "export/beneficiaries")
       )
     )
   ).flat();
@@ -336,7 +332,7 @@ async function computeAgentEarnings(
           a,
           "report/all-payments",
           { from_date: from, to_date: to }
-        ).catch(() => [])
+        )
       )
     )
   ).flat();
@@ -412,7 +408,7 @@ async function computeMoveIns(month: string): Promise<MoveIns | null> {
   const rows = (
     await Promise.all(
       accounts.map((a) =>
-        payPropGetAll<InvoiceRow>(a, "export/invoices").catch(() => [] as InvoiceRow[])
+        payPropGetAll<InvoiceRow>(a, "export/invoices")
       )
     )
   ).flat();

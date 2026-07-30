@@ -114,7 +114,7 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
         include_active_tenancies: "true",
         include_commission: "true",
         include_contract_amount: "true",
-      }).catch(() => [] as PropertyRow[]),
+      }),
     }))
   );
   if (perAccount.every((p) => p.rows.length === 0)) return null;

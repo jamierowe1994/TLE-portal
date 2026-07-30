@@ -243,6 +243,36 @@ export function payPropConfigured(): boolean {
   return payPropAccounts().length > 0;
 }
 
+/* --------------------------- request throttling --------------------------- */
+
+// PayProp rate-limits hard: three concurrent requests are fine, sustained
+// parallelism starts returning 429s. Several background walks now run at once
+// (payments, balances, invoices, properties), and between them they were
+// tripping the limiter and losing whole pages — which surfaces as a plausible
+// but wrong figure rather than an error. Everything therefore goes through one
+// queue: a single request in flight at a time, with a small gap between.
+const MIN_GAP_MS = 120;
+let chain: Promise<unknown> = Promise.resolve();
+let lastAt = 0;
+
+function enqueue<T>(job: () => Promise<T>): Promise<T> {
+  const run = chain.then(async () => {
+    const wait = MIN_GAP_MS - (Date.now() - lastAt);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    try {
+      return await job();
+    } finally {
+      lastAt = Date.now();
+    }
+  });
+  // Keep the chain alive even when a job rejects.
+  chain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run as Promise<T>;
+}
+
 export interface PayPropPagination {
   page?: number;
   rows?: number;
@@ -273,6 +303,7 @@ export async function payPropGet<T = Record<string, unknown>>(
   }
   const url = `${base()}/${path.replace(/^\//, "")}${qs.size ? `?${qs}` : ""}`;
 
+  return enqueue(async () => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -284,6 +315,13 @@ export async function payPropGet<T = Record<string, unknown>>(
     // A rejected token is usually one revoked early — drop it so the next
     // call re-authenticates instead of repeating the failure.
     if (res.status === 401) tokens.delete(account);
+    // Throttled: wait out the limiter and let the caller retry, rather than
+    // returning null and having the page silently drop.
+    if (res.status === 429) {
+      const retryAfter = Number(res.headers.get("retry-after")) || 2;
+      await new Promise((r) => setTimeout(r, Math.min(retryAfter, 10) * 1000));
+      return null;
+    }
     if (!res.ok) return null;
     const json = (await res.json()) as unknown;
     if (Array.isArray(json)) return { items: json as T[] };
@@ -299,6 +337,7 @@ export async function payPropGet<T = Record<string, unknown>>(
   } finally {
     clearTimeout(timer);
   }
+  });
 }
 
 /**
@@ -315,17 +354,25 @@ export async function payPropGetAll<T = Record<string, unknown>>(
   // fine, but sustained parallel batches start returning 429 and pages get
   // dropped — silent data loss, which is exactly what the caller can't detect.
   // The cost is paid once and cached by the callers (see payprop-income.ts).
+  // No credentials for this account at all — nothing to walk, and not an error.
+  if (!(await authHeader(account))) return [];
+
   const all: T[] = [];
   let expected: number | null = null;
+  let short = false;
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     let res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
-    // One retry with a breath, in case that page hit the limiter.
-    if (!res) {
-      await new Promise((r) => setTimeout(r, 600));
+    // Retry a few times with growing pauses — a dropped page is invisible
+    // data loss, so it's worth being patient before giving up on one.
+    for (let attempt = 1; !res && attempt <= 4; attempt++) {
+      await new Promise((r) => setTimeout(r, 500 * attempt));
       res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
     }
-    if (!res) break; // still failing — return what we have, flagged below
+    if (!res) {
+      short = true;
+      break;
+    }
     all.push(...res.items);
     if (expected == null) expected = res.pagination?.total_rows ?? null;
 
@@ -337,10 +384,12 @@ export async function payPropGetAll<T = Record<string, unknown>>(
     }
   }
 
-  // Say so rather than quietly returning a fraction of the data.
-  if (expected != null && all.length < expected) {
-    console.warn(
-      `[payprop] ${path}: got ${all.length}/${expected} rows — figures will be low.`
+  // A partial walk is worse than no walk: it renders as a smaller but entirely
+  // plausible number that nobody can tell is wrong. Throw so the caller's
+  // cache stays empty and it retries, rather than caching a lie.
+  if (short || (expected != null && all.length < expected)) {
+    throw new Error(
+      `[payprop] ${path}: got ${all.length}/${expected ?? "?"} rows — refusing to report a partial figure.`
     );
   }
   return all;
