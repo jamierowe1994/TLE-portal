@@ -184,6 +184,7 @@ export interface TenantBalanceRow {
   balance?: string;
   tenant?: { id?: string; name?: string; is_active?: boolean };
   property?: { id?: string; name?: string; is_active?: boolean };
+  last_payment?: { date?: string };
   last_invoice?: { amount?: string; date?: string };
 }
 
@@ -192,6 +193,8 @@ export interface ArrearsSummary {
   tenants: Array<{
     tenant: string;
     property: string;
+    /** PayProp property id — lets arrears be attributed to a partner. */
+    propertyId: string | null;
     owed: number;
     lastInvoice: string | null;
   }>;
@@ -226,6 +229,7 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
     .map((r) => ({
       tenant: r.tenant?.name ?? "Unknown",
       property: r.property?.name ?? "—",
+      propertyId: r.property?.id ?? null,
       owed: -money(r.balance), // negative balance = in arrears
       lastInvoice: r.last_invoice?.date ?? null,
     }))

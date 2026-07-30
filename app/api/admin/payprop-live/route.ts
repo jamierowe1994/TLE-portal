@@ -9,6 +9,7 @@ import {
   getMoveIns,
   payPropRefreshing,
 } from "@/lib/payprop-income";
+import { getPortfolioBook } from "@/lib/payprop-portfolio";
 import { currentMonth } from "@/lib/format";
 
 // Live PayProp money for the admin centre — the figures that used to come off
@@ -33,6 +34,7 @@ export async function GET(req: NextRequest) {
   const income = getAgencyIncome(month);
   const arrears = getArrears();
   const moveIns = getMoveIns(month);
+  const portfolio = getPortfolioBook();
 
   return NextResponse.json({
     connected: true,
@@ -40,6 +42,7 @@ export async function GET(req: NextRequest) {
     income,
     arrears,
     moveIns,
+    portfolio,
     refreshing: payPropRefreshing(),
   });
 }
