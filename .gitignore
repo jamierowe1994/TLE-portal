@@ -19,3 +19,6 @@ data/*.json
 
 # misc
 .DS_Store
+data/property-files/
+data/property-files.json
+data/property-notes.json
