@@ -456,6 +456,63 @@ export default function Overview({ month }: { month: string }) {
 
   // Per-period figures (from Susan's dashboard, all the way back to January).
   const kpiPeriod = d.periods[kpiKey] ?? d.periods.jul;
+
+  // Live commission from PayProp. Only the current month is meaningful here,
+  // so the tiles fall back to the snapshot for any historic period.
+  const [liveMoney, setLiveMoney] = useState<{
+    combinedGci: number;
+    agencyIncome: number;
+    agentsEarning: number;
+    moveIns: number | null;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+    const ask = () => {
+      fetch("/api/admin/payprop-live", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((res: { income?: { combinedGci: number; agencyIncome: number; agentsEarning: number } | null; moveIns?: { count: number } | null }) => {
+          if (cancelled) return;
+          if (res.income) {
+            setLiveMoney({
+              combinedGci: res.income.combinedGci,
+              agencyIncome: res.income.agencyIncome,
+              agentsEarning: res.income.agentsEarning,
+              moveIns: res.moveIns?.count ?? null,
+            });
+          } else if (tries++ < 40) setTimeout(ask, 5000);
+        })
+        .catch(() => {});
+    };
+    ask();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
+  // Live only makes sense against the current month's figures.
+  const liveForThisPeriod = kpiKey === "jul" ? liveMoney : null;
+
+  const liveGciPerMoveIn: StatValue | null =
+    liveForThisPeriod && liveForThisPeriod.moveIns
+      ? {
+          value: Math.round(liveForThisPeriod.combinedGci / liveForThisPeriod.moveIns),
+          display: gbp(liveForThisPeriod.combinedGci / liveForThisPeriod.moveIns),
+          source: "live-payprop",
+          note: `${gbp(liveForThisPeriod.combinedGci)} commission ÷ ${liveForThisPeriod.moveIns} tenancies starting this month — live from PayProp.`,
+        }
+      : null;
+
+  const liveGciPerAgent: StatValue | null =
+    liveForThisPeriod && liveForThisPeriod.agentsEarning
+      ? {
+          value: Math.round(liveForThisPeriod.combinedGci / liveForThisPeriod.agentsEarning),
+          display: gbp(liveForThisPeriod.combinedGci / liveForThisPeriod.agentsEarning),
+          source: "live-payprop",
+          note: `${gbp(liveForThisPeriod.combinedGci)} commission ÷ ${liveForThisPeriod.agentsEarning} partners who earned a fee this month — live from PayProp.`,
+        }
+      : null;
   const rampPeriod = d.periods[rampKey] ?? d.periods.jul;
 
   // Upgrade a snapshot stat to live when the live layer carries the same
@@ -905,8 +962,16 @@ export default function Overview({ month }: { month: string }) {
           <Tile label="MA → Listing" stat={convMaToListing} sub={subNote(convMaToListing)} />
           <Tile label="Listing → Move-in" stat={convListingToMoveIn} sub={subNote(convListingToMoveIn)} />
           <Tile label="RLP Conversion" stat={convRlp} sub={subNote(convRlp)} />
-          <Tile label="GCI per Move-in" stat={kpiPeriod.conversions.gciPerMoveIn} sub={subNote(kpiPeriod.conversions.gciPerMoveIn)} />
-          <Tile label="GCI per Agent" stat={kpiPeriod.conversions.gciPerAgent} sub={subNote(kpiPeriod.conversions.gciPerAgent)} />
+          <Tile
+            label="GCI per Move-in"
+            stat={liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn}
+            sub={subNote(liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn)}
+          />
+          <Tile
+            label="GCI per Agent"
+            stat={liveGciPerAgent ?? kpiPeriod.conversions.gciPerAgent}
+            sub={subNote(liveGciPerAgent ?? kpiPeriod.conversions.gciPerAgent)}
+          />
         </div>
       </Section>
 

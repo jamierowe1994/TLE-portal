@@ -22,8 +22,14 @@ export interface PaymentRow {
 
 export interface AgencyIncome {
   month: string;
-  /** Commission the agency itself took — the GCI figure. */
+  /** Commission the agency itself kept — TLE's net share. */
   agencyIncome: number;
+  /** Every fee charged, whoever received it: the agency's share plus the
+   *  partners'. This is the business's gross commission income. */
+  combinedGci: number;
+  /** Partners who earned a fee this month — the honest denominator for
+   *  "per agent", rather than everyone on the roster. */
+  agentsEarning: number;
   /** Fees paid out to associates/partners rather than kept by the agency. */
   paidToBeneficiaries: number;
   /** Rent passed through to landlords — not income, but the volume behind it. */
@@ -67,6 +73,9 @@ export function payPropRefreshing(): boolean {
   return running.size > 0;
 }
 
+// Money that only passes through a recipient — never commission.
+const NOT_EARNINGS = new Set(["Contractor", "Deposit (Custodial)", "Property account"]);
+
 const money = (v: unknown) => {
   const n = parseFloat(String(v ?? ""));
   return Number.isFinite(n) ? n : 0;
@@ -108,6 +117,8 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
   let paidToBeneficiaries = 0;
   let ownerPayments = 0;
   const cats = new Map<string, number>();
+  // Distinct partners who took a fee, for the per-agent figure.
+  const earners = new Set<string>();
 
   for (const r of rows) {
     const amount = money(r.amount);
@@ -121,8 +132,9 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
       ownerPayments += amount;
     } else if (type === "beneficiary" || type === "global_beneficiary") {
       // Fees that went to someone other than the agency — the associate split.
-      if (category !== "Contractor" && category !== "Deposit (Custodial)") {
+      if (!NOT_EARNINGS.has(category)) {
         paidToBeneficiaries += amount;
+        if (r.beneficiary?.id) earners.add(r.beneficiary.id);
       }
     }
   }
@@ -130,6 +142,8 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
   return {
     month,
     agencyIncome,
+    combinedGci: agencyIncome + paidToBeneficiaries,
+    agentsEarning: earners.size,
     paidToBeneficiaries,
     ownerPayments,
     byCategory: [...cats.entries()]
@@ -209,7 +223,6 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
 // payments made to them, minus the categories that aren't earnings
 // (contractor reimbursements and deposit movements pass through them).
 
-const NOT_EARNINGS = new Set(["Contractor", "Deposit (Custodial)", "Property account"]);
 
 export interface AgentEarnings {
   month: string;
