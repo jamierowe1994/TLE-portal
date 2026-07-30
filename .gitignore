@@ -21,4 +21,6 @@ data/*.json
 .DS_Store
 data/property-files/
 data/property-files.json
+data/agent-compliance/
+data/agent-compliance.json
 data/property-notes.json

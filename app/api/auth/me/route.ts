@@ -13,7 +13,7 @@ import {
 } from "@/lib/users-store";
 
 // GET  /api/auth/me   — current session user (isAdmin derived via toPublic).
-// PATCH /api/auth/me  — name / mobile / photo, plus password change with
+// PATCH /api/auth/me  — name / mobile / photo / bio, plus password change with
 //                       { currentPassword, newPassword } (current verified).
 
 async function currentUserId(req: NextRequest): Promise<string | null> {
@@ -46,6 +46,7 @@ export async function PATCH(req: NextRequest) {
     name?: unknown;
     mobile?: unknown;
     photo?: unknown;
+    bio?: unknown;
     currentPassword?: unknown;
     newPassword?: unknown;
   };
@@ -65,6 +66,10 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof body?.photo === "string" || body?.photo === null) {
     patch.photo = body.photo;
+  }
+  if (typeof body?.bio === "string" || body?.bio === null) {
+    // Kept short enough to sit in a card without becoming an essay.
+    patch.bio = typeof body.bio === "string" ? body.bio.trim().slice(0, 600) : null;
   }
 
   // Password change — requires the current password to be verified first.

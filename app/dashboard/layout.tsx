@@ -282,7 +282,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-ink transition hover:bg-black/[0.04]"
               >
                 <DoodleIcon name="setting" size={17} className="text-muted" />
-                Settings
+                Profile
               </Link>
               <button
                 type="button"
@@ -450,7 +450,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 : "text-muted hover:bg-black/[0.03] hover:text-ink"
             }`}
           >
-            Settings
+            Profile
           </Link>
         </nav>
       </header>

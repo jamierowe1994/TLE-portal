@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import AgentCompliancePanel from "@/components/AgentCompliancePanel";
 import { useRouter } from "next/navigation";
 import PasswordInput from "@/components/PasswordInput";
 import { getUser, refreshUser, updateProfile, signOut } from "@/lib/session";
@@ -36,6 +37,7 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
+  const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -54,6 +56,7 @@ export default function ProfilePage() {
       setName(cached.name);
       setMobile(cached.mobile);
       setPhoto(cached.photo);
+      setBio(cached.bio ?? "");
     }
     refreshUser().then((u) => {
       if (cancelled || !u) return;
@@ -61,6 +64,7 @@ export default function ProfilePage() {
       setName(u.name);
       setMobile(u.mobile);
       setPhoto(u.photo);
+      setBio(u.bio ?? "");
     });
     return () => {
       cancelled = true;
@@ -90,6 +94,7 @@ export default function ProfilePage() {
         name: name.trim(),
         mobile: mobile.trim(),
         photo,
+        bio: bio.trim(),
       });
       setUser(updated);
       setProfileMsg({ ok: true, text: "Profile saved." });
@@ -146,10 +151,12 @@ export default function ProfilePage() {
   if (!user) return null; // layout guard is redirecting
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Profile</h1>
-        <p className="mt-0.5 text-[13px] text-muted">{user.email}</p>
+    <div className="mx-auto max-w-3xl space-y-5">
+      <div className="pt-2">
+        <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>
+          Profile
+        </h1>
+        <p className="mt-2.5 text-[13px] text-muted">{user.email}</p>
       </div>
 
       {/* Details */}
@@ -174,7 +181,7 @@ export default function ProfilePage() {
           <div className="flex gap-2">
             <button
               onClick={() => fileRef.current?.click()}
-              className="btn-press rounded-lg border border-line px-3 py-1.5 text-[13px] font-medium transition hover:bg-gray-50"
+              className="btn-press rounded-lg border border-line px-3 py-1.5 text-[13px] font-medium transition hover:border-black/30"
             >
               {photo ? "Change photo" : "Add photo"}
             </button>
@@ -218,6 +225,19 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        <div>
+          <label className="mb-1 block text-[12px] font-medium text-muted">
+            About you
+          </label>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value.slice(0, 600))}
+            placeholder="A line or two about you — landlords see this when head office shares your profile."
+            className="h-24 w-full resize-none rounded-xl border border-line bg-transparent p-3 text-[13px] outline-none transition focus:border-black/30"
+          />
+          <p className="mt-1 text-[11px] text-muted">{bio.length}/600</p>
+        </div>
+
         <div className="flex items-center gap-3">
           <button
             onClick={saveProfile}
@@ -236,13 +256,16 @@ export default function ProfilePage() {
         </div>
       </section>
 
+      {/* Their own compliance certificates */}
+      <AgentCompliancePanel />
+
       {/* Admin-managed links */}
       <section className="card space-y-3 p-5">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
             Linked stats profile
           </h2>
-          <span className="rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-gray-500">
+          <span className="rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted">
             MANAGED BY ADMIN
           </span>
         </div>

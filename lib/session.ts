@@ -123,6 +123,7 @@ export async function updateProfile(patch: {
   name?: string;
   mobile?: string;
   photo?: string | null;
+  bio?: string | null;
 }): Promise<UserProfile> {
   const res = await fetch("/api/auth/me", {
     method: "PATCH",
