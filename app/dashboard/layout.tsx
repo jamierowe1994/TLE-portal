@@ -43,6 +43,8 @@ function initials(name: string): string {
 // scribble jitters, the night Zs bob. Overlay positions are percentages of
 // the base image, emitted by the split-layers script that cut them apart.
 interface ArtSpec {
+  /** Display-height override — the window scene runs taller than the busts. */
+  h?: string;
   base: string;
   /** Animation class applied to the whole figure. */
   anim?: string;
@@ -53,7 +55,9 @@ interface ArtSpec {
   headroom?: string;
 }
 
-const ART: Record<"morning" | "wave" | "evening" | "night", ArtSpec> = {
+const ART: Record<"window" | "morning" | "wave" | "evening" | "night", ArtSpec> = {
+  // The hero from James's reference sheet — lounging by the window.
+  window: { base: "/illustrations/lady-window.png", h: "h-40 lg:h-[238px]" },
   morning: { base: "/illustrations/tle-morning.png", anim: "art-wave" },
   wave: { base: "/illustrations/tle-wave.png", anim: "art-wave" },
   evening: {
@@ -69,17 +73,17 @@ const ART: Record<"morning" | "wave" | "evening" | "night", ArtSpec> = {
 };
 
 type ArtKey = keyof typeof ART;
-const ART_ORDER: ArtKey[] = ["morning", "wave", "evening", "night"];
+const ART_ORDER: ArtKey[] = ["window", "morning", "wave", "evening", "night"];
 
 function greeting(name: string): { hello: string; prompt: string; artKey: ArtKey } {
   const first = name.split(" ")[0] || name;
   const h = new Date().getHours();
-  if (h < 5) return { hello: `Still up, ${first}?`, prompt: "Burning the midnight oil — don't work too hard.", artKey: "night" };
-  if (h < 7) return { hello: `Morning, ${first}`, prompt: "You're an early riser — let's make it count.", artKey: "morning" };
-  if (h < 12) return { hello: `Good morning, ${first}`, prompt: "Here's where you're at today.", artKey: "morning" };
-  if (h < 17) return { hello: `Good afternoon, ${first}`, prompt: "Hope the day's going your way.", artKey: "wave" };
-  if (h < 21) return { hello: `Good evening, ${first}`, prompt: "Winding down — here's your day.", artKey: "evening" };
-  return { hello: `Evening, ${first}`, prompt: "Late one? Here's the latest.", artKey: "night" };
+  if (h < 5) return { hello: `Still up, ${first}?`, prompt: "Burning the midnight oil — don't work too hard.", artKey: "window" };
+  if (h < 7) return { hello: `Morning, ${first}`, prompt: "You're an early riser — let's make it count.", artKey: "window" };
+  if (h < 12) return { hello: `Good morning, ${first}`, prompt: "Here's where you're at today.", artKey: "window" };
+  if (h < 17) return { hello: `Good afternoon, ${first}`, prompt: "Hope the day's going your way.", artKey: "window" };
+  if (h < 21) return { hello: `Good evening, ${first}`, prompt: "Winding down — here's your day.", artKey: "window" };
+  return { hello: `Evening, ${first}`, prompt: "Late one? Here's the latest.", artKey: "window" };
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -274,7 +278,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="relative min-h-screen" style={{ background: "var(--page)" }}>
       {/* ── Desktop sidebar — grey on grey, broken up by darker hairlines and
           capped off by its own right-hand line ── */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r-[1.5px] border-ink/85 lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r border-ink/40 lg:flex">
         {/* Account selector, top of the rail — photo, name, dropdown. Just an
             outline in the same hairline grey; no fill. */}
         <div className="relative mt-5 px-3" ref={menuRef}>
@@ -283,7 +287,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className={`flex w-full items-center gap-2.5 rounded-lg border ${RAIL_LINE} px-3 py-2.5 text-left transition hover:bg-white/60 ${
+            className={`flex w-full items-center gap-3 rounded-lg border ${RAIL_LINE} px-4 py-3 text-left transition hover:bg-white/60 ${
               menuOpen ? "bg-white/60" : ""
             }`}
           >
@@ -490,21 +494,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
 
-      {/* Solid top band, page-coloured, capped by the line — content scrolls
-          in underneath and is cut off cleanly instead of sliding through the
-          line. Only the assistant bubble lives up here. */}
-      <div
-        aria-hidden
-        className="fixed left-[240px] right-0 top-0 z-[5] hidden h-[56px] border-b-[1.5px] border-ink/85 lg:block"
-        style={{ background: "var(--page)" }}
-      />
-
       {/* ── Main ── */}
       {/* relative z-0 makes main its own stacking context, so negative-z page
           furniture (the corner illustrations) sits behind the cards but in
           front of the page background. */}
       <main
-        className={`dash-cards relative z-0 px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-[92px] ${
+        className={`dash-cards relative z-0 px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-12 ${
           dropping ? "page-drop" : ""
         }`}
       >
@@ -555,7 +550,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <img
                       src={art.base}
                       alt=""
-                      className={`w-auto ${art.wide ? "h-16 lg:h-24" : "h-32 lg:h-[172px]"} ${art.anim ?? ""}`}
+                      className={`w-auto ${art.h ?? (art.wide ? "h-16 lg:h-24" : "h-32 lg:h-[172px]")} ${art.anim ?? ""}`}
                     />
                     {art.overlay ? (
                       // eslint-disable-next-line @next/next/no-img-element

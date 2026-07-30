@@ -8,7 +8,6 @@ import Collapsible from "@/components/Collapsible";
 import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
 import DoodleIcon from "@/components/DoodleIcon";
-import HatchPie from "@/components/charts/HatchPie";
 import Loader from "@/components/Loader";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
@@ -231,10 +230,10 @@ export default function MyDashboardPage() {
               <div className="mt-1 flex items-center gap-5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="/illustrations/notioly/piggy-bank.svg"
+                  src="/illustrations/piggy.png"
                   alt=""
                   aria-hidden
-                  className="w-[120px] shrink-0 -scale-x-100"
+                  className="w-[130px] shrink-0"
                 />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
@@ -305,32 +304,35 @@ export default function MyDashboardPage() {
                     />
                   </div>
 
-                  {/* Clean pie, hand-shaded — white slices with diagonal
-                      hatch lines in each segment's colour. */}
-                  <div className="mt-3 flex flex-wrap items-center gap-5">
-                    <HatchPie
-                      segments={segments}
-                      centerLabel={formatNum(totalProps)}
-                      centerSub="properties"
-                    />
+                  {/* The street across the top; the number stands on its own.
+                      Hovering the number (or its little icon) pops the breakdown. */}
+                  <div className="mt-2 flex items-end justify-between gap-4">
+                    <div className="group relative w-fit shrink-0 cursor-default pb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="stat-value text-[44px] leading-none">{formatNum(totalProps)}</span>
+                        <DoodleIcon name="info" size={15} className="mb-4 text-muted transition group-hover:text-ink" />
+                      </div>
+                      <div className="mt-1 text-[12px] text-muted">Properties</div>
+                      {/* the hover pop-out with the mix */}
+                      <div className="pointer-events-none absolute left-0 top-[calc(100%+6px)] z-20 min-w-[190px] scale-95 rounded-xl border border-line bg-card p-3 opacity-0 shadow-lg transition-all duration-200 group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100">
+                        <div className="grid gap-1.5">
+                          {segments.map((seg) => (
+                            <span key={seg.label} className="flex items-center gap-2 text-[12px] text-muted">
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: seg.color }} />
+                              <span className="flex-1 text-ink">{seg.label}</span>
+                              <span className="tnum">{formatNum(seg.value)}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src="/illustrations/notioly/buildings.svg"
+                      src="/illustrations/buildings-street.png"
                       alt=""
                       aria-hidden
-                      className="pointer-events-none absolute right-4 top-10 hidden w-[130px] opacity-90 xl:block"
+                      className="pointer-events-none min-w-0 max-w-[62%] self-end"
                     />
-                    <div className="grid gap-2">
-                      {segments.map((s) => (
-                        <span key={s.label} className="inline-flex items-center gap-2 text-[12px] text-muted">
-                          <span style={{ color: s.color }}>
-                            <DoodleIcon name="home" size={14} />
-                          </span>
-                          <span className="text-ink">{s.label}</span>
-                          <span className="tnum">{formatNum(s.value)}</span>
-                        </span>
-                      ))}
-                    </div>
                   </div>
 
                   {/* rent roll underneath, with the supporting stats */}
