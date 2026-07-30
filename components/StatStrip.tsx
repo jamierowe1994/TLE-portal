@@ -40,11 +40,11 @@ export default function StatStrip({ items }: { items: StatStripItem[] }) {
             i > 0 ? "lg:border-l lg:border-line" : "lg:pl-0"
           } ${i === items.length - 1 ? "lg:pr-0" : ""}`}
         >
-          {/* nudged down a hair so its optical centre lands on the figure */}
+          {/* halfway between block-centred and figure-top — sits on the numeral */}
           <DoodleIcon
             name={s.icon}
             size={24}
-            className={`mt-[3px] shrink-0 ${TONE[s.tone ?? "ink"]}`}
+            className={`mt-[6px] shrink-0 ${TONE[s.tone ?? "ink"]}`}
           />
           <div className="min-w-0">
             <div className="stat-value text-[21px] leading-none" style={{ fontWeight: 400 }}>

@@ -1378,3 +1378,60 @@ export function matchListingPhoto(
   // the building photo beats no photo at all.
   return best ?? bucket[0];
 }
+
+/* --------------------------- documents in REX ---------------------------- */
+
+/**
+ * Files attached to a listing in REX — the tenancy agreements, certificates
+ * and signed paperwork staff have uploaded there.
+ *
+ * Names and metadata only: the API exposes `search` on Documents and nothing
+ * else. There is no download/read method and no REST file endpoint, and
+ * Upload is one-way, so the bytes can't be fetched — the portal links back
+ * to the REX record to open them. (Compliance entries carry a `file` field
+ * too, but it's null across the whole account: nobody attaches the
+ * certificate to the compliance record itself.)
+ */
+export interface RexDocument {
+  id: string;
+  name: string;
+  /** REX's own category, e.g. "other", "agreement". */
+  type: string | null;
+  sizeMb: number | null;
+  uploadedAt: string | null;
+  uploadedBy: string | null;
+}
+
+const docsCache = new Map<string, { at: number; data: RexDocument[] }>();
+const DOCS_TTL_MS = 5 * 60_000;
+
+export async function getListingDocuments(listingId: string): Promise<RexDocument[]> {
+  if (!rexConfigured() || !listingId) return [];
+
+  const cached = docsCache.get(listingId);
+  if (cached && Date.now() - cached.at < DOCS_TTL_MS) return cached.data;
+
+  const res = await rexCall("Documents", "search", {
+    criteria: [
+      { name: "primary_record_type", type: "=", value: "listing" },
+      { name: "listing_id", type: "=", value: listingId },
+    ],
+    limit: 50,
+  }).catch(() => null);
+  if (!res || !res.ok) return [];
+
+  const docs = rexRows(res.result).map((r) => {
+    const by = (r.system_created_user ?? {}) as { name?: string };
+    return {
+      id: String(r.id ?? ""),
+      name: typeof r.description === "string" ? r.description : "Document",
+      type: label(r.type_id),
+      sizeMb: num(r.system_size_mb),
+      uploadedAt: stamp(r.system_ctime),
+      uploadedBy: by.name ?? null,
+    };
+  });
+
+  docsCache.set(listingId, { at: Date.now(), data: docs });
+  return docs;
+}

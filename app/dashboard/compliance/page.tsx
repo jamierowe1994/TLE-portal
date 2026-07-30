@@ -13,6 +13,7 @@ import DoodleIcon from "@/components/DoodleIcon";
 import CollapsePanel, { PANEL_STAGGER } from "@/components/CollapsePanel";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import PropertyNotes from "@/components/PropertyNotes";
+import PropertyDocuments from "@/components/PropertyDocuments";
 import { rexListingUrl } from "@/lib/rex-links";
 import FilterBar from "@/components/FilterBar";
 import StatStrip from "@/components/StatStrip";
@@ -140,7 +141,7 @@ function ComplianceTile({
 
 function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) {
   // Which panel is opened out; null = the resting arrangement.
-  type Expanded = null | "indate" | "notes";
+  type Expanded = null | "indate" | "docs" | "notes";
   const [expanded, setExpanded] = useState<Expanded>(null);
 
   useEffect(() => {
@@ -308,7 +309,7 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
               open={expanded === null}
               delay={expanded === null ? PANEL_STAGGER : 0}
             >
-              <div className="grid gap-5 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => setExpanded("indate")}
@@ -322,6 +323,23 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                     {settled.length
                       ? `${settled.length} item${settled.length === 1 ? "" : "s"} on file`
                       : "Nothing recorded yet"}
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExpanded("docs")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="doc" size={16} className="text-accent" />
+                    Documents
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    Certificates and paperwork on file
                   </p>
                   <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
                     View all
@@ -386,6 +404,26 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                     Nothing on file for this property yet.
                   </p>
                 )}
+              </div>
+            </CollapsePanel>
+
+            {/* ---- documents on file, ours and REX's ---- */}
+            <CollapsePanel
+              open={expanded === "docs"}
+              delay={expanded === "docs" ? PANEL_STAGGER : 0}
+              grow={expanded === "docs"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="doc" size={17} className="text-accent" />
+                    Documents
+                  </h3>
+                  {collapse}
+                </div>
+                <div className="mt-4 flex-1">
+                  <PropertyDocuments listingId={p.listingId} />
+                </div>
               </div>
             </CollapsePanel>
 
