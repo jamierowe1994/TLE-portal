@@ -15,9 +15,14 @@ export async function GET(req: NextRequest) {
   }
 
   const params = req.nextUrl.searchParams;
+  // Send them back to the configured public URL, not the request's own origin.
+  // Behind a proxy — or when PayProp returns to a host we didn't ask for —
+  // the origin can be something the browser can't reach, which strands the
+  // user on a dead page even though the connection succeeded.
+  const home = (process.env.PAYPROP_REDIRECT_ORIGIN ?? req.nextUrl.origin).replace(/\/+$/, "");
   const done = (msg: string, ok = false) =>
     NextResponse.redirect(
-      `${req.nextUrl.origin}/admin?payprop=${ok ? "connected" : "failed"}&detail=${encodeURIComponent(msg)}`
+      `${home}/admin?payprop=${ok ? "connected" : "failed"}&detail=${encodeURIComponent(msg)}`
     );
 
   const error = params.get("error");
