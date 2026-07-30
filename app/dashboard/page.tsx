@@ -189,12 +189,15 @@ export default function MyDashboardPage() {
       </div>
 
       {!loading && stats && !stats.agentKey ? (
-        <div className="card accent-soft-bg border-red-100 p-4 text-[13px]">
-          <span className="font-semibold accent-text">Your stats profile isn&apos;t linked yet.</span>{" "}
-          <span className="text-ink">
-            Ask the admin to link your account to your agent profile — your earnings, funnel and
-            pipeline will appear here as soon as that&apos;s done.
-          </span>
+        <div className="card flex items-center gap-3 p-4 text-[13px]">
+          <DoodleIcon name="bell" size={18} className="shrink-0 text-accent" />
+          <p>
+            <span className="font-semibold accent-text">Your stats profile isn&apos;t linked yet.</span>{" "}
+            <span className="text-ink">
+              Ask the admin to link your account to your agent profile — your earnings, funnel and
+              pipeline will appear here as soon as that&apos;s done.
+            </span>
+          </p>
         </div>
       ) : null}
 
@@ -225,18 +228,29 @@ export default function MyDashboardPage() {
                 </div>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
               </div>
-              <div className="mt-1 flex flex-wrap items-end gap-x-4 gap-y-1">
-                <div className="stat-value text-[30px]">{periodEarnings != null ? formatGBP(periodEarnings) : "—"}</div>
-                <div className="pb-1">
-                  <Sparkline values={periodValues} />
+              <div className="mt-1 flex items-center gap-5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/illustrations/notioly/piggy-bank.svg"
+                  alt=""
+                  aria-hidden
+                  className="w-[120px] shrink-0 -scale-x-100"
+                />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+                    <div className="stat-value text-[30px]">{periodEarnings != null ? formatGBP(periodEarnings) : "—"}</div>
+                    <div className="pb-1">
+                      <Sparkline values={periodValues} />
+                    </div>
+                  </div>
+                  {periodEarnings == null && period.key === "this-month" ? (
+                    <p className="mt-1.5 text-[12px] text-muted">
+                      {monthLabel(ANCHOR).split(" ")[0]} is still in progress — your earned figure lands at
+                      month-end.
+                    </p>
+                  ) : null}
                 </div>
               </div>
-              {periodEarnings == null && period.key === "this-month" ? (
-                <p className="mt-1.5 text-[12px] text-muted">
-                  {monthLabel(ANCHOR).split(" ")[0]} is still in progress — your earned figure lands at
-                  month-end.
-                </p>
-              ) : null}
               <div className="mt-auto flex flex-wrap gap-2 pt-3 text-[12px]">
                 {avgPerMonth != null ? (
                   <span className="rounded-full bg-page px-2.5 py-1 text-muted">
@@ -299,6 +313,13 @@ export default function MyDashboardPage() {
                       centerLabel={formatNum(totalProps)}
                       centerSub="properties"
                     />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/illustrations/notioly/buildings.svg"
+                      alt=""
+                      aria-hidden
+                      className="pointer-events-none absolute right-4 top-10 hidden w-[130px] opacity-90 xl:block"
+                    />
                     <div className="grid gap-2">
                       {segments.map((s) => (
                         <span key={s.label} className="inline-flex items-center gap-2 text-[12px] text-muted">
@@ -354,7 +375,14 @@ export default function MyDashboardPage() {
                 <DoodleIcon name="calendar" size={16} />
                 This month · {monthLabel(ANCHOR)}
               </h2>
-              <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
+              <div className="relative mt-4 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/illustrations/notioly/moving.svg"
+                  alt=""
+                  aria-hidden
+                  className="pointer-events-none absolute -top-9 right-0 hidden h-[105px] lg:block"
+                />
                 {(
                   [
                     ["Market appraisals", stats.funnel.marketAppraisals],

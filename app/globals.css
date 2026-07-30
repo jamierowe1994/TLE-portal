@@ -7,8 +7,8 @@
 --------------------------------------------------------------------------- */
 
 :root {
-  --font-body: var(--font-montserrat), system-ui, -apple-system, sans-serif;
-  --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+  --font-body: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+  --font-heading: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
 
   /* Brand — The Lettings Expert */
   --accent: #e31f36;
@@ -756,19 +756,24 @@ body.presenting .source-badge[class*="border"] {
   .note-feather, .bubble-pop { animation: none; }
 }
 
-/* --- YNAB-style skewed progress chain (property drawer) ------------------ */
-/* Landscape parallelogram segments; selection bounces, caption pops in.    */
-.skew-seg {
-  transform: skewX(-14deg);
-  transition: border-color 0.2s, background-color 0.2s, transform 0.25s;
+/* --- Progress circles + metaball blob (property drawer) ------------------ */
+/* The blob squashes as it travels between circles; the picked circle pops. */
+.blob {
+  animation: blob-squash 0.55s cubic-bezier(0.3, 1.5, 0.5, 1);
 }
-.skew-seg--sel {
-  animation: skew-bounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+@keyframes blob-squash {
+  0% { transform: scale(1, 1); }
+  35% { transform: scale(1.35, 0.75); }
+  70% { transform: scale(0.9, 1.1); }
+  100% { transform: scale(1, 1); }
 }
-@keyframes skew-bounce {
-  0% { transform: skewX(-14deg) scale(1); }
-  40% { transform: skewX(-14deg) scale(1.12) translateY(-3px); }
-  100% { transform: skewX(-14deg) scale(1); }
+.blob-pop {
+  animation: blob-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes blob-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.14); }
+  100% { transform: scale(1); }
 }
 .skew-caption {
   animation: caption-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
@@ -790,5 +795,5 @@ body.presenting .source-badge[class*="border"] {
   100% { transform: translateX(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .skew-seg--sel, .skew-caption, .filter-knock { animation: none; }
+  .blob, .blob-pop, .skew-caption, .filter-knock { animation: none; }
 }

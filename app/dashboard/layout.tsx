@@ -523,9 +523,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   and her bottom edge tucked past the border so the artwork's
                   cut-off is never visible: the line does the cropping. */}
               <div className="flex items-end gap-4 overflow-hidden border-b border-black/[0.08] pt-2">
-                <div className="min-w-0 pb-5">
-                  <h1 className="font-light tracking-tight" style={{ fontSize: "clamp(28px, 3.4vw, 42px)", lineHeight: 1.08 }}>
+                <div className="min-w-0 pb-5 pl-8">
+                  <h1 className="relative w-fit font-light tracking-tight" style={{ fontSize: "clamp(28px, 3.4vw, 42px)", lineHeight: 1.08 }}>
+                    {/* little ink flicks either side, like the sketch */}
+                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -left-7 top-0 h-5 w-5 text-ink/70" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                      <path d="M4 14l6-3M8 20l4-4M3 8l5 1" />
+                    </svg>
                     {hello}
+                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -right-7 bottom-1 h-5 w-5 text-ink/70" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                      <path d="M20 10l-6 3M16 4l-4 4M21 16l-5-1" />
+                    </svg>
                   </h1>
                   <p className="mt-2.5 text-[14px] font-light text-muted lg:text-[15px]">{prompt}</p>
                 </div>

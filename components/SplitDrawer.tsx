@@ -22,7 +22,7 @@ export function DrawerPanel({
 }) {
   return (
     <div
-      className={`modal-pop w-full rounded-2xl bg-card ${className}`}
+      className={`modal-pop w-full rounded-2xl bg-page ${className}`}
       style={style}
       onClick={(e) => e.stopPropagation()}
     >

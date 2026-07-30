@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
-import { Montserrat } from "next/font/google";
+import { Montserrat, Shantell_Sans } from "next/font/google";
 import "./globals.css";
 
 const montserrat = Montserrat({
   subsets: ["latin"],
   variable: "--font-montserrat",
+  display: "swap",
+});
+
+// The portal's voice: a neat handwritten sans to match the ink illustrations.
+const shantell = Shantell_Sans({
+  subsets: ["latin"],
+  variable: "--font-shantell",
   display: "swap",
 });
 
@@ -18,7 +25,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={montserrat.variable}>
+    <html lang="en" className={`${montserrat.variable} ${shantell.variable}`}>
       <body>{children}</body>
     </html>
   );
