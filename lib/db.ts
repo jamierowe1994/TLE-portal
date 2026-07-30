@@ -126,6 +126,16 @@ CREATE TABLE IF NOT EXISTS property_notes (
 );
 CREATE INDEX IF NOT EXISTS property_notes_listing_idx ON property_notes (listing_id);
 
+-- PayProp OAuth. Railway's filesystem is wiped on every deploy, so a token
+-- kept on disk survives exactly until the next one — it has to live here.
+CREATE TABLE IF NOT EXISTS payprop_tokens (
+  account          TEXT PRIMARY KEY,
+  refresh_token    TEXT NOT NULL,
+  connected_by     TEXT NOT NULL DEFAULT '',
+  connected_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  scopes           TEXT
+);
+
 -- Follow-ups Kirstie sets herself against a deal ("Tasks" tab + Tasks today).
 CREATE TABLE IF NOT EXISTS deal_tasks (
   id               TEXT PRIMARY KEY,
