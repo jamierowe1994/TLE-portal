@@ -321,7 +321,7 @@ const EMPTY_DETAILS: Details = { dueAt: "", platform: "", property: "", tenant: 
 
 // How long the completion celebration runs before the tile leaves the list.
 // Deliberately unhurried — this is the one moment the page gets to be silly.
-const CELEBRATION_MS = 5500;
+const CELEBRATION_MS = 4900;
 
 
 /** ISO from the store → value a datetime-local input accepts. */
@@ -543,12 +543,17 @@ export default function TodosPage() {
     const party = celebrating === t.id;
 
     return (
+      // A one-row grid so the completion animation can collapse it smoothly
+      // (grid-template-rows 1fr → 0fr); the card padding lives on the inner
+      // wrapper so it shrinks away with everything else.
       <li
-        className={`group card relative flex cursor-pointer flex-col overflow-hidden p-4 text-left transition hover:border-black/20 ${
+        className={`group card relative grid min-h-0 cursor-pointer grid-rows-[1fr] overflow-hidden text-left transition hover:border-black/20 ${
           party ? "done-collapse" : ""
         }`}
         onClick={() => !party && startEdit(t)}
       >
+        <div className="overflow-hidden">
+        <div className="flex h-full flex-col p-4">
         {/* everything that flies away when the job's done */}
         <div className={party ? "done-liftoff" : ""}>
           {/* the title, on its own line */}
@@ -622,18 +627,20 @@ export default function TodosPage() {
             {t.done ? "Done" : party ? "Nice one!" : "Mark as done"}
           </button>
         </div>
+        </div>
+        </div>
 
         {/* ---- the Fast Worker scoots through on his chair, clipped to the
              tile and facing the way he's travelling ---- */}
         {party ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-32 overflow-hidden">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 overflow-hidden">
             <div className="done-scoot absolute bottom-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/illustrations/notioly/fast-worker.svg"
                 alt=""
                 aria-hidden
-                className="h-32 w-auto -scale-x-100"
+                className="h-24 w-auto -scale-x-100"
               />
             </div>
           </div>
