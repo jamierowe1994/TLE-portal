@@ -200,3 +200,126 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
     checked: rows.length,
   };
 }
+
+/* ---------------------------- one agent's money --------------------------- */
+
+// TLE's partners are beneficiaries in PayProp, carrying their
+// @thelettingexperts.co.uk address — the same address they sign into the
+// portal with, which makes email the join key. Their commission is simply the
+// payments made to them, minus the categories that aren't earnings
+// (contractor reimbursements and deposit movements pass through them).
+
+const NOT_EARNINGS = new Set(["Contractor", "Deposit (Custodial)", "Property account"]);
+
+export interface AgentEarnings {
+  month: string;
+  /** What they earned — fees only. */
+  earned: number;
+  /** Money that merely passed through them, kept separate so it can be shown. */
+  passedThrough: number;
+  byCategory: Array<{ category: string; amount: number }>;
+  paymentCount: number;
+  /** False when no PayProp beneficiary carries this address. */
+  matched: boolean;
+}
+
+interface BeneficiaryRow {
+  id?: string;
+  first_name?: string;
+  last_name?: string;
+  business_name?: string;
+  email_address?: string;
+}
+
+/** email (lowercased) → PayProp beneficiary id, for every connected account. */
+async function beneficiaryIdsByEmail(): Promise<Map<string, Set<string>>> {
+  const accounts = payPropAccounts();
+  const rows = (
+    await Promise.all(
+      accounts.map((a) =>
+        payPropGetAll<BeneficiaryRow>(a, "export/beneficiaries").catch(
+          () => [] as BeneficiaryRow[]
+        )
+      )
+    )
+  ).flat();
+
+  const map = new Map<string, Set<string>>();
+  for (const b of rows) {
+    const email = b.email_address?.trim().toLowerCase();
+    if (!email || !b.id) continue;
+    // One person can hold more than one beneficiary record.
+    const set = map.get(email) ?? new Set<string>();
+    set.add(b.id);
+    map.set(email, set);
+  }
+  return map;
+}
+
+export function getAgentEarnings(email: string, month: string): AgentEarnings | null {
+  const key = `agent:${email.toLowerCase()}:${month}`;
+  return cachedAsync(key, () => computeAgentEarnings(email, month));
+}
+
+async function computeAgentEarnings(
+  email: string,
+  month: string
+): Promise<AgentEarnings | null> {
+  const accounts = payPropAccounts();
+  if (accounts.length === 0) return null;
+
+  const ids = (await beneficiaryIdsByEmail()).get(email.trim().toLowerCase());
+  if (!ids?.size) {
+    return {
+      month,
+      earned: 0,
+      passedThrough: 0,
+      byCategory: [],
+      paymentCount: 0,
+      matched: false,
+    };
+  }
+
+  const { from, to } = monthRange(month);
+  const rows = (
+    await Promise.all(
+      accounts.map((a) =>
+        payPropGetAll<PaymentRow & { beneficiary?: { id?: string } }>(
+          a,
+          "report/all-payments",
+          { from_date: from, to_date: to }
+        ).catch(() => [])
+      )
+    )
+  ).flat();
+
+  let earned = 0;
+  let passedThrough = 0;
+  let paymentCount = 0;
+  const cats = new Map<string, number>();
+
+  for (const r of rows) {
+    const bid = r.beneficiary?.id;
+    if (!bid || !ids.has(bid)) continue;
+    const amount = money(r.amount);
+    const category = r.category?.name ?? "Other";
+    paymentCount++;
+    if (NOT_EARNINGS.has(category)) {
+      passedThrough += amount;
+    } else {
+      earned += amount;
+      cats.set(category, (cats.get(category) ?? 0) + amount);
+    }
+  }
+
+  return {
+    month,
+    earned,
+    passedThrough,
+    byCategory: [...cats.entries()]
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount),
+    paymentCount,
+    matched: true,
+  };
+}

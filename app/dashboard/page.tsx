@@ -78,6 +78,13 @@ const enterAt = (ms: number) =>
 
 export default function MyDashboardPage() {
   const [period, setPeriod] = useState<ResolvedPeriod>(() => resolvePreset("this-month"));
+  // Live commission from PayProp for the current month — the snapshot's
+  // stand-in until it lands, since the walk runs in the background.
+  const [liveEarnings, setLiveEarnings] = useState<{
+    earned: number;
+    matched: boolean;
+    byCategory: Array<{ category: string; amount: number }>;
+  } | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [actuals, setActuals] = useState<Record<string, number | null>>({});
   const [forecastHistory, setForecastHistory] = useState<Record<string, SavedForecast>>({});
@@ -136,11 +143,36 @@ export default function MyDashboardPage() {
   const rentRoll = stats?.portfolio.rentRoll.value ?? 0;
   const avgFeePerProperty = managed > 0 ? (rentRoll * MGMT_FEE_RATE) / managed : 0;
 
+  // PayProp gathers in the background, so ask again shortly after the first
+  // miss rather than leaving the card on the snapshot for the whole session.
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+    const ask = () => {
+      fetch(`/api/my/earnings?month=${ANCHOR}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { earnings?: { earned: number; matched: boolean; byCategory: Array<{ category: string; amount: number }> } | null; refreshing?: boolean }) => {
+          if (cancelled) return;
+          if (d.earnings) setLiveEarnings(d.earnings);
+          else if (d.refreshing && tries++ < 8) setTimeout(ask, 5000);
+        })
+        .catch(() => {});
+    };
+    ask();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Earnings aggregated over the selected period's months.
   const periodIdx = period.months.map(monthIdx);
   const periodValues = periodIdx.map((i) => actualsArr[i]);
   const periodActuals = periodValues.filter((v): v is number => v != null);
-  const periodEarnings = periodActuals.length ? periodActuals.reduce((a, b) => a + b, 0) : null;
+  const snapshotEarnings = periodActuals.length ? periodActuals.reduce((a, b) => a + b, 0) : null;
+  // This month comes straight from PayProp once it's there; other periods
+  // still read the snapshot's monthly actuals.
+  const useLive = period.key === "this-month" && liveEarnings?.matched === true;
+  const periodEarnings = useLive ? liveEarnings!.earned : snapshotEarnings;
   const avgPerMonth = periodActuals.length ? Math.round(periodEarnings! / periodActuals.length) : null;
   const bestVal = periodActuals.length ? Math.max(...periodActuals) : null;
   const bestLabel = bestVal != null ? MONTH_LABELS[actualsArr.findIndex((v) => v === bestVal)] : null;
@@ -225,7 +257,14 @@ export default function MyDashboardPage() {
                   <DoodleIcon name="wallet" size={16} className="text-accent" />
                   Earnings · {period.label}
                 </div>
-                <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
+                {useLive ? (
+                  <SourceBadge
+                    source="live-payprop"
+                    note="Your commission this month, live from PayProp — management and set-up fees paid to you."
+                  />
+                ) : (
+                  <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
+                )}
               </div>
               <div className="my-auto flex items-center gap-5 py-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
