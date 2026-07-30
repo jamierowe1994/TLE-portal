@@ -285,17 +285,54 @@ export async function payPropGetAll<T = Record<string, unknown>>(
   path: string,
   params: Record<string, string | number | boolean | undefined> = {}
 ): Promise<T[]> {
+  // Sequential on purpose. PayProp rate-limits: three concurrent requests are
+  // fine, but sustained parallel batches start returning 429 and pages get
+  // dropped — silent data loss, which is exactly what the caller can't detect.
+  // The cost is paid once and cached by the callers (see payprop-income.ts).
   const all: T[] = [];
+  let expected: number | null = null;
+
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
-    if (!res) break; // failed mid-way — return what we have
+    let res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
+    // One retry with a breath, in case that page hit the limiter.
+    if (!res) {
+      await new Promise((r) => setTimeout(r, 600));
+      res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
+    }
+    if (!res) break; // still failing — return what we have, flagged below
     all.push(...res.items);
+    if (expected == null) expected = res.pagination?.total_rows ?? null;
+
     const totalPages = res.pagination?.total_pages;
     if (totalPages != null) {
       if (page >= totalPages) break;
     } else if (res.items.length < PAGE_ROWS) {
       break; // no pagination block to trust — fall back to the short page
     }
+  }
+
+  // Say so rather than quietly returning a fraction of the data.
+  if (expected != null && all.length < expected) {
+    console.warn(
+      `[payprop] ${path}: got ${all.length}/${expected} rows — figures will be low.`
+    );
+  }
+  return all;
+}
+
+/** Fallback for endpoints that don't report total_pages — walk until short. */
+async function sequentialRest<T>(
+  account: PayPropAccountId,
+  path: string,
+  params: Record<string, string | number | boolean | undefined>,
+  firstPage: T[]
+): Promise<T[]> {
+  const all = [...firstPage];
+  for (let page = 2; page <= MAX_PAGES; page++) {
+    const res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
+    if (!res) break;
+    all.push(...res.items);
+    if (res.items.length < PAGE_ROWS) break;
   }
   return all;
 }
