@@ -242,7 +242,7 @@ function StepRow({ s }: { s: Step }) {
 // One box: the photos run full-width across the top, then the property
 // details on the left; the right-hand column is a live panel area driven by
 // the action rail down the drawer's right edge.
-type PanelId = "next" | "note" | "contacts" | "chat";
+type PanelId = "next" | "note" | "contacts" | "chat" | "details";
 
 function milestonesFor(l: AgentListing, stage: Stage): Milestone[] {
   const epc = epcState(l);
@@ -283,7 +283,20 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   const epc = epcState(l);
   const steps = stepsFor(l, stage);
   const [panel, setPanel] = useState<PanelId>("next");
-  const [showDetails, setShowDetails] = useState(false);
+  // Switching panels is a two-beat move: the old one falls off the bottom,
+  // then the new one bounces up into place.
+  const [leaving, setLeaving] = useState(false);
+  const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const switchPanel = (next: PanelId) => {
+    const target = panel === next ? "next" : next;
+    if (target === panel || leaving) return;
+    setLeaving(true);
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+    switchTimer.current = setTimeout(() => {
+      setPanel(target);
+      setLeaving(false);
+    }, 290);
+  };
   const [note, setNote] = useState("");
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -295,28 +308,28 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
       icon: "note",
       label: "Add a note",
       active: panel === "note",
-      onClick: () => setPanel((p) => (p === "note" ? "next" : "note")),
+      onClick: () => switchPanel("note"),
     },
     {
       id: "contacts",
       icon: "call",
       label: "Contact details",
       active: panel === "contacts",
-      onClick: () => setPanel((p) => (p === "contacts" ? "next" : "contacts")),
+      onClick: () => switchPanel("contacts"),
     },
     {
       id: "chat",
       icon: "message-2",
       label: "Ask a question",
       active: panel === "chat",
-      onClick: () => setPanel((p) => (p === "chat" ? "next" : "chat")),
+      onClick: () => switchPanel("chat"),
     },
     {
       id: "details",
       icon: "info",
-      label: showDetails ? "Hide details" : "More details",
-      active: showDetails,
-      onClick: () => setShowDetails((v) => !v),
+      label: "More details",
+      active: panel === "details",
+      onClick: () => switchPanel("details"),
     },
     {
       id: "rex",
@@ -405,51 +418,14 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
             </div>
           </div>
 
-          {/* The long tail — toggled from the rail rather than a dropdown. */}
-          {showDetails ? (
-            <dl className="panel-up mt-5 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border border-line px-4 py-4 text-[12px]">
-              {l.category ? (
-                <div>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Category</dt>
-                  <dd className="mt-0.5 font-medium">{l.category}</dd>
-                </div>
-              ) : null}
-              {l.letType ? (
-                <div>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Let type</dt>
-                  <dd className="mt-0.5 font-medium">{l.letType}</dd>
-                </div>
-              ) : null}
-              {l.publicationStatus ? (
-                <div>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Publication</dt>
-                  <dd className="mt-0.5 font-medium">{l.publicationStatus}</dd>
-                </div>
-              ) : null}
-              {l.advertisedAs ? (
-                <div>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Advertised as</dt>
-                  <dd className="mt-0.5 font-medium">{l.advertisedAs}</dd>
-                </div>
-              ) : null}
-              <div>
-                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX listing ID</dt>
-                <dd className="mt-0.5 font-medium tabular-nums">{l.id}</dd>
-              </div>
-              {l.propertyId ? (
-                <div>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX property ID</dt>
-                  <dd className="mt-0.5 font-medium tabular-nums">{l.propertyId}</dd>
-                </div>
-              ) : null}
-            </dl>
-          ) : null}
         </div>
 
-        {/* ---- the active panel: whatever the rail last asked for ---- */}
-        <div className="mt-6 min-h-[280px] border-t border-line pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+        {/* ---- the active box: whatever the rail summons lands here, at the
+             bottom, with a bounce; the outgoing panel falls off first ---- */}
+        <div className="mt-6 flex min-h-[300px] flex-col justify-end overflow-hidden border-t border-line pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          <div key={leaving ? `${panel}-out` : panel} className={leaving ? "panel-fall" : "panel-bounce"}>
           {panel === "next" ? (
-            <div key="next" className="panel-up">
+            <div key="next">
               <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
                 {steps.length ? "What's next" : "Nothing outstanding"}
               </h3>
@@ -476,7 +452,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           ) : null}
 
           {panel === "note" ? (
-            <div key="note" className="panel-up flex h-full flex-col">
+            <div key="note" className="flex h-full flex-col">
               <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
                 <DoodleIcon name="note" size={15} />
                 Add a note
@@ -513,7 +489,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           ) : null}
 
           {panel === "contacts" ? (
-            <div key="contacts" className="panel-up">
+            <div key="contacts">
               <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
                 <DoodleIcon name="call" size={15} />
                 Contact details
@@ -543,10 +519,56 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           ) : null}
 
           {panel === "chat" ? (
-            <div key="chat" className="panel-up">
+            <div key="chat">
               <PropertyChat listing={l} />
             </div>
           ) : null}
+
+          {panel === "details" ? (
+            <div key="details">
+              <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                <DoodleIcon name="info" size={15} />
+                More details
+              </h3>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border border-line px-4 py-4 text-[12px]">
+              {l.category ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Category</dt>
+                  <dd className="mt-0.5 font-medium">{l.category}</dd>
+                </div>
+              ) : null}
+              {l.letType ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Let type</dt>
+                  <dd className="mt-0.5 font-medium">{l.letType}</dd>
+                </div>
+              ) : null}
+              {l.publicationStatus ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Publication</dt>
+                  <dd className="mt-0.5 font-medium">{l.publicationStatus}</dd>
+                </div>
+              ) : null}
+              {l.advertisedAs ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Advertised as</dt>
+                  <dd className="mt-0.5 font-medium">{l.advertisedAs}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX listing ID</dt>
+                <dd className="mt-0.5 font-medium tabular-nums">{l.id}</dd>
+              </div>
+              {l.propertyId ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX property ID</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums">{l.propertyId}</dd>
+                </div>
+              ) : null}
+            </dl>
+            </div>
+          ) : null}
+          </div>
         </div>
         </div>
       </DrawerPanel>

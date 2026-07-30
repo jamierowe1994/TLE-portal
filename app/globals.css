@@ -635,7 +635,10 @@ body.presenting .source-badge[class*="border"] {
   box-shadow: inset 0 1px 3px rgba(16, 16, 20, 0.16);
 }
 
-/* Right-hand panels slide up from the bottom of the drawer and drop back out */
+/* The drawer's active box: whatever the rail summons BOUNCES up from the
+   bottom and settles; whatever was there before falls off the bottom first.
+   Exaggerated on purpose — this corner of the drawer is meant to feel like a
+   little stage. */
 .panel-up {
   animation: panel-up 0.4s cubic-bezier(0.22, 1.1, 0.36, 1) both;
 }
@@ -643,12 +646,22 @@ body.presenting .source-badge[class*="border"] {
   0% { opacity: 0; transform: translateY(28px); }
   100% { opacity: 1; transform: none; }
 }
-.panel-down {
-  animation: panel-down 0.28s cubic-bezier(0.5, 0, 0.75, 0.4) both;
+.panel-bounce {
+  animation: panel-bounce 0.7s cubic-bezier(0.3, 0.1, 0.3, 1) both;
 }
-@keyframes panel-down {
+@keyframes panel-bounce {
+  0% { opacity: 0; transform: translateY(110px); }
+  45% { opacity: 1; transform: translateY(-16px); }
+  65% { transform: translateY(7px); }
+  82% { transform: translateY(-3px); }
+  100% { opacity: 1; transform: none; }
+}
+.panel-fall {
+  animation: panel-fall 0.3s cubic-bezier(0.5, 0, 0.8, 0.4) both;
+}
+@keyframes panel-fall {
   0% { opacity: 1; transform: none; }
-  100% { opacity: 0; transform: translateY(28px); }
+  100% { opacity: 0; transform: translateY(110px); }
 }
 
 /* Milestone bars draw themselves in, like a pen filling the bar */
@@ -666,6 +679,6 @@ body.presenting .source-badge[class*="border"] {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel-up, .panel-down, .bar-fill { animation: none; }
+  .panel-up, .panel-bounce, .panel-fall, .bar-fill { animation: none; }
   .rail-key { transition: none; }
 }

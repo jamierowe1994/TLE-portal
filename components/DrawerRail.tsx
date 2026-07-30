@@ -50,9 +50,11 @@ export default function DrawerRail({ actions }: { actions: RailAction[] }) {
 
   return (
     <div
-      className="absolute right-0 top-6 z-30 flex translate-x-1/2 flex-col items-center gap-1 rounded-full border border-line bg-card/95 p-1.5 shadow-lg backdrop-blur-sm"
+      className="absolute left-full top-1/2 z-30 ml-5 flex -translate-y-1/2 flex-col items-center gap-1 rounded-full border border-line bg-card/95 p-1.5 shadow-lg backdrop-blur-sm max-lg:hidden"
       onClick={(e) => e.stopPropagation()}
     >
+      {/* the little line tying the rail back to the drawer */}
+      <span aria-hidden className="absolute right-full top-1/2 h-px w-5 bg-black/20" />
       {top.map((a) => (
         <RailButton key={a.id} a={a} />
       ))}
