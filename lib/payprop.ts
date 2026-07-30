@@ -330,7 +330,8 @@ export async function payPropPing(): Promise<
 > {
   return Promise.all(
     ACCOUNTS.map(async (a) => {
-      if (!keyFor(a.id)) {
+      // Configured means "has some way to authenticate" — OAuth or a key.
+      if (!keyFor(a.id) && !oauthFor(a.id)) {
         return { account: a.id, label: a.label, configured: false, ok: false };
       }
       const res = await payPropGet(a.id, "export/properties", { rows: 1, page: 1 });
@@ -340,7 +341,7 @@ export async function payPropPing(): Promise<
           label: a.label,
           configured: true,
           ok: false,
-          error: "PayProp rejected the key or couldn't be reached.",
+          error: "PayProp rejected the credentials, or the account isn't connected yet.",
         };
       }
       return {
