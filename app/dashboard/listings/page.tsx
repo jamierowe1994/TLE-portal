@@ -801,20 +801,58 @@ function PropertyChat({ listing }: { listing: AgentListing }) {
 /* ------------------------------- thumbs up -------------------------------- */
 
 // Nothing outstanding → the thumbs-up clip plays big, and the speech bubble
-// pops in over the final beat. (Current export is H.264 on a flat grey
-// background — swap in a transparent WebM when one lands and it'll sit
-// straight on the white.)
+// pops in over the final beat. The current export is H.264, which can't hold
+// transparency — the tool baked its checkerboard preview into the pixels — so
+// the clip is drawn through a canvas that keys the checker greys out on the
+// fly. (A real WebM/VP9-alpha export can replace all of this.)
 function ThumbsUp() {
   const [bubble, setBubble] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    let raf = 0;
+    const W = 256; // process at display size, not the source 720p
+    const H = 455;
+    canvas.width = W;
+    canvas.height = H;
+
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      if (video.readyState < 2) return;
+      ctx.drawImage(video, 0, 0, W, H);
+      const frame = ctx.getImageData(0, 0, W, H);
+      const px = frame.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        // The checkerboard is two near-neutral light greys (~200/~210).
+        // The artwork's whites are ~250+, its ink near-black — both safe.
+        if (r > 180 && r < 228 && Math.abs(r - g) < 8 && Math.abs(g - b) < 8) {
+          px[i + 3] = 0;
+        }
+      }
+      ctx.putImageData(frame, 0, 0);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   return (
     <div className="flex justify-center">
       <div className="relative inline-block">
         <video
+          ref={videoRef}
           src="/illustrations/thumbs.mp4"
           muted
           autoPlay
           playsInline
+          className="hidden"
           onTimeUpdate={(e) => {
             if (e.currentTarget.currentTime >= 7.2 && !bubble) setBubble(true);
           }}
@@ -822,8 +860,8 @@ function ThumbsUp() {
             // Hold the final thumbs-up frame rather than going black.
             e.currentTarget.currentTime = Math.max(0, e.currentTarget.duration - 0.05);
           }}
-          className="h-64 w-auto rounded-2xl"
         />
+        <canvas ref={canvasRef} className="h-64 w-auto" aria-hidden />
         {/* lands on the clip's own drawn (empty) bubble, top-left */}
         {bubble ? (
           <div className="bubble-pop absolute -left-6 top-4 rounded-2xl rounded-br-sm border-2 border-ink bg-white px-3 py-1.5 shadow-sm">
