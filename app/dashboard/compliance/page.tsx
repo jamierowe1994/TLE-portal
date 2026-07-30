@@ -9,6 +9,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import FilterBar from "@/components/FilterBar";
+import StatStrip from "@/components/StatStrip";
+import QuickTabs from "@/components/QuickTabs";
 import Loader from "@/components/Loader";
 import NoPhoto from "@/components/NoPhoto";
 import type { ComplianceItem, ComplianceState, PropertyCompliance } from "@/lib/rex-stats";
@@ -255,6 +257,7 @@ export default function CompliancePage() {
   const [open, setOpen] = useState<PropertyCompliance | null>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("worst");
 
   useEffect(() => {
     let cancelled = false;
@@ -277,16 +280,37 @@ export default function CompliancePage() {
   const flagged = all.filter((p) => p.outstanding > 0);
   const totalOutstanding = all.reduce((t, p) => t + p.outstanding, 0);
 
+  // The slices both the quick tabs and the Filter dropdown drive.
+  const expiringSoon = (p: PropertyCompliance) =>
+    p.items.some((i) => i.state === "expiring");
+  const expired = (p: PropertyCompliance) => p.items.some((i) => i.state === "expired");
+  const matches = (p: PropertyCompliance, key: string) => {
+    if (key === "outstanding") return p.outstanding > 0;
+    if (key === "expired") return expired(p);
+    if (key === "expiring") return expiringSoon(p);
+    if (key === "clear") return p.items.length > 0 && p.outstanding === 0;
+    if (key === "none") return p.items.length === 0;
+    return true;
+  };
+
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return all.filter((p) => {
-      if (filter === "outstanding" && !(p.outstanding > 0)) return false;
-      if (filter === "clear" && !(p.items.length > 0 && p.outstanding === 0)) return false;
-      if (filter === "none" && p.items.length !== 0) return false;
+    const list = all.filter((p) => {
+      if (!matches(p, filter)) return false;
       if (q && !`${p.name} ${p.locality}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [all, filter, search]);
+    if (sort === "address") return [...list].sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === "most") return [...list].sort((a, b) => b.outstanding - a.outstanding);
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, filter, search, sort]);
+
+  const clearCount = all.filter((p) => p.items.length > 0 && p.outstanding === 0).length;
+  const withItems = all.filter((p) => p.items.length > 0).length;
+  const complianceRate = withItems ? Math.round((clearCount / withItems) * 100) : 100;
+  const expiredCount = all.filter(expired).length;
+  const expiringCount = all.filter(expiringSoon).length;
 
   return (
     // Same outline treatment as the rest of the portal.
@@ -336,6 +360,8 @@ export default function CompliancePage() {
               options={[
                 { key: "all", label: "All properties" },
                 { key: "outstanding", label: "Outstanding" },
+                { key: "expired", label: "Expired" },
+                { key: "expiring", label: "Expiring soon" },
                 { key: "clear", label: "All clear" },
                 { key: "none", label: "Nothing recorded" },
               ]}
@@ -343,6 +369,57 @@ export default function CompliancePage() {
               onChange={setFilter}
               search={search}
               onSearch={setSearch}
+            />
+          </div>
+
+          {/* ---- the overview bar ---- */}
+          <div className="enter enter-up" style={enterAt(170)}>
+            <StatStrip
+              items={[
+                { icon: "home", value: String(all.length), label: "Total properties" },
+                {
+                  icon: "shield",
+                  value: String(totalOutstanding),
+                  label: "Items outstanding",
+                  dot: totalOutstanding > 0 ? "amber" : undefined,
+                },
+                {
+                  icon: "clock",
+                  value: String(expiredCount),
+                  label: "Properties with an expiry",
+                  dot: expiredCount > 0 ? "red" : undefined,
+                },
+                { icon: "checklist", value: String(clearCount), label: "All clear" },
+                {
+                  icon: "star",
+                  value: `${complianceRate}%`,
+                  label: "Compliance rate",
+                  tone: complianceRate >= 90 ? "green" : "red",
+                },
+              ]}
+            />
+          </div>
+
+          {/* ---- quick cuts + sort ---- */}
+          <div className="enter enter-up" style={enterAt(190)}>
+            <QuickTabs
+              tabs={[
+                { key: "all", label: "All properties", count: all.length },
+                { key: "outstanding", label: "Outstanding", count: flagged.length, dot: "amber" },
+                { key: "expired", label: "Expired", count: expiredCount, dot: "red" },
+                { key: "expiring", label: "Expiring soon", count: expiringCount, dot: "amber" },
+                { key: "clear", label: "All clear", count: clearCount, dot: "green" },
+                { key: "none", label: "Nothing recorded", count: all.filter((p) => p.items.length === 0).length },
+              ]}
+              value={filter}
+              onChange={setFilter}
+              sort={sort}
+              onSort={setSort}
+              sortOptions={[
+                { key: "worst", label: "Worst first" },
+                { key: "most", label: "Most outstanding" },
+                { key: "address", label: "Address A–Z" },
+              ]}
             />
           </div>
 

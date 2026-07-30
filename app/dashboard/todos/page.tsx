@@ -40,6 +40,12 @@ const PLATFORM_OPTIONS = PLATFORMS.filter((p) => p.section === "platforms").map(
   (p) => p.name
 );
 
+interface Suggestion {
+  note: string;
+  property?: string | null;
+  why?: string | null;
+}
+
 /** Bucket an open to-do for the summary strip and the All-tasks filter. */
 function bucketOf(t: Todo): "overdue" | "today" | "upcoming" | "nodate" {
   if (!t.dueAt) return "nodate";
@@ -455,6 +461,10 @@ export default function TodosPage() {
     };
   }, []);
 
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
   const [taskFilter, setTaskFilter] = useState("all");
   const [sortBy, setSortBy] = useState("due");
 
@@ -473,6 +483,39 @@ export default function TodosPage() {
   }, [todos, taskFilter, sortBy]);
   const allOpen = useMemo(() => todos.filter((t) => !t.done), [todos]);
   const done = useMemo(() => todos.filter((t) => t.done), [todos]);
+
+  async function loadSuggestions() {
+    if (suggesting) return;
+    setSuggesting(true);
+    setSuggestOpen(true);
+    setSuggestError(null);
+    try {
+      const res = await fetch("/api/my/todo-suggestions", { cache: "no-store" });
+      const data = (await res.json()) as { suggestions?: Suggestion[]; error?: string };
+      if (!res.ok) setSuggestError(data.error ?? "Couldn't put suggestions together.");
+      else setSuggestions(data.suggestions ?? []);
+    } catch {
+      setSuggestError("Couldn't put suggestions together.");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  /** Accept one suggestion straight onto the list. */
+  async function addSuggestion(s: Suggestion) {
+    setSuggestions((prev) => prev.filter((x) => x.note !== s.note));
+    try {
+      const res = await fetch("/api/my/todos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: s.note, property: s.property || null }),
+      });
+      const data = (await res.json()) as { todo?: Todo };
+      if (res.ok && data.todo) setTodos((prev) => [data.todo!, ...prev]);
+    } catch {
+      /* it stays off the list; they can hit Suggest again */
+    }
+  }
 
   async function add() {
     if (!note.trim() || saving) return;
@@ -769,19 +812,11 @@ export default function TodosPage() {
             do?&rdquo; and it checks here, or tell it to add and tick things off for you.
           </p>
         </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/illustrations/notioly/to-do-list.svg"
-          alt=""
-          aria-hidden
-          className="enter enter-up pointer-events-none absolute -top-2 right-6 hidden w-[240px] lg:block xl:right-16"
-          style={enterAt(200)}
-        />
       </div>
 
       {/* ---- add ---- */}
       <form
-        className="enter enter-up card max-w-2xl space-y-3 p-4"
+        className="enter enter-up max-w-2xl space-y-3"
         style={enterAt(140)}
         onSubmit={(e) => {
           e.preventDefault();
@@ -794,8 +829,19 @@ export default function TodosPage() {
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="What needs doing? e.g. Chase EPC booking for Flat 3, 15 Marine Parade"
-            className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-[14px] outline-none transition focus:border-black/25"
+            // Just a ruled line to write on, like a pad.
+            className="w-full border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2.5 text-[14px] outline-none transition focus:border-ink/70"
           />
+          <button
+            type="button"
+            onClick={() => (suggestOpen ? setSuggestOpen(false) : void loadSuggestions())}
+            className={`btn-press inline-flex shrink-0 items-center gap-1.5 rounded-lg border-[1.5px] px-3.5 py-2.5 text-[13px] font-medium transition ${
+              suggestOpen ? "border-ink text-ink" : "border-ink/30 text-muted hover:border-ink/60 hover:text-ink"
+            }`}
+          >
+            <DoodleIcon name="magic-wand" size={15} className="text-accent" />
+            Suggest
+          </button>
           <button
             type="submit"
             disabled={saving || !note.trim()}
@@ -805,6 +851,44 @@ export default function TodosPage() {
             Add
           </button>
         </div>
+
+        {/* What the assistant reckons is outstanding — accept the ones you want. */}
+        {suggestOpen ? (
+          <div className="swing-down rounded-2xl border border-line bg-card p-3">
+            {suggesting ? (
+              <p className="px-1 py-2 text-[12.5px] text-muted">
+                Reading your compliance and properties…
+              </p>
+            ) : suggestError ? (
+              <p className="px-1 py-2 text-[12.5px] text-muted">{suggestError}</p>
+            ) : suggestions.length === 0 ? (
+              <p className="px-1 py-2 text-[12.5px] text-muted">
+                Nothing outstanding worth chasing — you&rsquo;re on top of it.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {suggestions.map((s) => (
+                  <li
+                    key={s.note}
+                    className="flex items-start gap-3 rounded-xl px-2 py-2 transition hover:bg-page"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] text-ink">{s.note}</p>
+                      {s.why ? <p className="mt-0.5 text-[11.5px] text-muted">{s.why}</p> : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void addSuggestion(s)}
+                      className="btn-press shrink-0 rounded-full border border-line px-3 py-1 text-[12px] font-semibold text-ink transition hover:border-black/30"
+                    >
+                      Add
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
 
         <button
           type="button"

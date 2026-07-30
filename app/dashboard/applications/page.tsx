@@ -8,6 +8,9 @@
 // appears on the click.
 
 import { useEffect, useMemo, useState } from "react";
+import FilterBar from "@/components/FilterBar";
+import StatStrip from "@/components/StatStrip";
+import QuickTabs from "@/components/QuickTabs";
 import Loader from "@/components/Loader";
 import { formatGBP } from "@/lib/format";
 import { BRAND } from "@/lib/brand";
@@ -454,6 +457,9 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<AgentApplication | null>(null);
   const [showClosed, setShowClosed] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("default");
   const [fromPropoly, setFromPropoly] = useState(false);
 
   useEffect(() => {
@@ -484,9 +490,46 @@ export default function ApplicationsPage() {
   const all = useMemo(() => applications ?? [], [applications]);
   const live = useMemo(() => all.filter((a) => a.stage !== "unsuccessful"), [all]);
   const closed = all.length - live.length;
-  const shown = showClosed ? all : live;
 
   const count = (s: ApplicationStage) => all.filter((a) => a.stage === s).length;
+
+  // One filter state, driven by both the quick tabs and the Filter dropdown.
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = showClosed || filter === "unsuccessful" ? all : live;
+    const list = base.filter((a) => {
+      if (filter !== "all" && a.stage !== filter) return false;
+      if (q) {
+        const hay = `${a.propertyName} ${a.locality} ${a.tenants.map((t) => t.name).join(" ")}`;
+        if (!hay.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+    if (sort === "rent") return [...list].sort((a, b) => (b.offer ?? 0) - (a.offer ?? 0));
+    if (sort === "moveIn")
+      return [...list].sort((a, b) => (a.startDate ?? "9999").localeCompare(b.startDate ?? "9999"));
+    if (sort === "property") return [...list].sort((a, b) => a.propertyName.localeCompare(b.propertyName));
+    return list;
+  }, [all, live, filter, search, sort, showClosed]);
+
+  const movingIn30 = all.filter((a) => {
+    if (!a.startDate) return false;
+    const d = Math.round((new Date(a.startDate).getTime() - Date.now()) / 86_400_000);
+    return d >= 0 && d <= 30;
+  }).length;
+  const monthlyRent = live.reduce((t, a) => t + (a.offer ?? 0), 0);
+  const stageLabel = (s: ApplicationStage) =>
+    fromPropoly
+      ? s === "received"
+        ? "Getting started"
+        : s === "communicated"
+          ? "Referencing & compliance"
+          : "Agreement & move-in"
+      : s === "received"
+        ? "Received"
+        : s === "communicated"
+          ? "With landlord"
+          : "Accepted";
 
   return (
     <div className="outline-cards soft-cards space-y-6">
@@ -516,44 +559,92 @@ export default function ApplicationsPage() {
         </div>
       ) : all.length > 0 ? (
         <>
-          <section className="enter enter-up grid grid-cols-3 gap-3" style={enterAt(140)}>
-            {(["received", "communicated", "accepted"] as ApplicationStage[]).map((s) => (
-              <div key={s} className="p-1">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  {fromPropoly
-                    ? s === "received"
-                      ? "Getting started"
-                      : s === "communicated"
-                        ? "Referencing & compliance"
-                        : "Agreement & move-in"
-                    : s === "received"
-                      ? "Received"
-                      : s === "communicated"
-                        ? "With landlord"
-                        : "Accepted"}
-                </div>
-                <div className="stat-value mt-1 text-[24px]">{count(s)}</div>
-              </div>
-            ))}
-          </section>
-
-          {closed > 0 ? (
-            <button
-              type="button"
-              onClick={() => setShowClosed((v) => !v)}
-              className="text-[12px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
-            >
-              {showClosed
-                ? `Hide ${closed} unsuccessful`
-                : `Show ${closed} unsuccessful`}
-            </button>
-          ) : null}
-
-          <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
-            {shown.map((a, i) => (
-              <ApplicationTile key={a.id} a={a} delay={200 + i * 50} onOpen={() => setOpen(a)} />
-            ))}
+          <div
+            className="enter enter-up flex min-h-[40px] flex-wrap items-center justify-between gap-3"
+            style={enterAt(140)}
+          >
+            <p className="text-[13px] text-muted">
+              <span className="font-semibold text-ink">
+                {live.length} {live.length === 1 ? "application" : "applications"}
+              </span>{" "}
+              in progress
+              {monthlyRent > 0 ? (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-ink">{formatGBP(monthlyRent)}</span> a month
+                </>
+              ) : null}
+            </p>
+            <FilterBar
+              options={[
+                { key: "all", label: "All applications" },
+                { key: "received", label: stageLabel("received") },
+                { key: "communicated", label: stageLabel("communicated") },
+                { key: "accepted", label: stageLabel("accepted") },
+                { key: "unsuccessful", label: "Unsuccessful" },
+              ]}
+              value={filter}
+              onChange={setFilter}
+              search={search}
+              onSearch={setSearch}
+              placeholder="Search property or tenant…"
+            />
           </div>
+
+          {/* ---- the overview bar ---- */}
+          <div className="enter enter-up" style={enterAt(170)}>
+            <StatStrip
+              items={[
+                { icon: "file-contract", value: String(live.length), label: "In progress" },
+                { icon: "user", value: String(count("received")), label: stageLabel("received") },
+                { icon: "checklist", value: String(count("communicated")), label: stageLabel("communicated") },
+                {
+                  icon: "key",
+                  value: String(movingIn30),
+                  label: "Moving in within 30 days",
+                  dot: movingIn30 > 0 ? "amber" : undefined,
+                },
+                { icon: "wallet", value: formatGBP(monthlyRent), label: "Rent a month" },
+              ]}
+            />
+          </div>
+
+          {/* ---- quick cuts + sort ---- */}
+          <div className="enter enter-up" style={enterAt(190)}>
+            <QuickTabs
+              tabs={[
+                { key: "all", label: "All applications", count: live.length },
+                { key: "received", label: stageLabel("received"), count: count("received"), dot: "blue" },
+                { key: "communicated", label: stageLabel("communicated"), count: count("communicated"), dot: "amber" },
+                { key: "accepted", label: stageLabel("accepted"), count: count("accepted"), dot: "green" },
+                ...(closed > 0
+                  ? [{ key: "unsuccessful", label: "Unsuccessful", count: closed } as const]
+                  : []),
+              ]}
+              value={filter}
+              onChange={setFilter}
+              sort={sort}
+              onSort={setSort}
+              sortOptions={[
+                { key: "default", label: "Newest first" },
+                { key: "moveIn", label: "Move-in date" },
+                { key: "rent", label: "Highest rent" },
+                { key: "property", label: "Property A–Z" },
+              ]}
+            />
+          </div>
+
+          {shown.length === 0 ? (
+            <p className="py-10 text-center text-[13px] text-muted">
+              Nothing matches — clear the filter or search.
+            </p>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
+              {shown.map((a, i) => (
+                <ApplicationTile key={a.id} a={a} delay={200 + i * 50} onOpen={() => setOpen(a)} />
+              ))}
+            </div>
+          )}
         </>
       ) : null}
 

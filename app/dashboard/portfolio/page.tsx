@@ -11,6 +11,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import FilterBar from "@/components/FilterBar";
+import StatStrip from "@/components/StatStrip";
+import QuickTabs from "@/components/QuickTabs";
 import Loader from "@/components/Loader";
 import NoPhoto from "@/components/NoPhoto";
 import { rexListingUrl } from "@/lib/rex-links";
@@ -344,6 +346,7 @@ export default function PortfolioPage() {
   const [open, setOpen] = useState<PortfolioProperty | null>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("default");
 
   useEffect(() => {
     let cancelled = false;
@@ -378,16 +381,46 @@ export default function PortfolioPage() {
   const totalOutstanding = all.reduce((t, p) => t + p.outstanding, 0);
   const rentRoll = all.reduce((t, p) => t + (p.rent ?? 0), 0);
 
+  // The slices the quick tabs and the Filter dropdown both drive.
+  const daysTo = (iso: string | null) =>
+    iso ? Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000) : null;
+  const epcNeedsWork = (p: PortfolioProperty) =>
+    p.items.some((i) => i.type.includes("epc") && i.state !== "valid" && i.state !== "not-required");
+  const renewalSoon = (p: PortfolioProperty) => {
+    const d = daysTo(p.nextRenewal?.expiry ?? null);
+    return d != null && d <= 30;
+  };
+  const matches = (p: PortfolioProperty, key: string) => {
+    if (key === "renewals") return p.outstanding > 0;
+    if (key === "epc") return epcNeedsWork(p);
+    if (key === "norenewal") return !p.nextRenewal;
+    if (key === "clear") return p.items.length > 0 && p.outstanding === 0;
+    return true;
+  };
+
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return all.filter((p) => {
-      if (filter === "renewals" && !(p.outstanding > 0)) return false;
-      if (filter === "clear" && !(p.items.length > 0 && p.outstanding === 0)) return false;
-      if (filter === "none" && p.items.length !== 0) return false;
+    const list = all.filter((p) => {
+      if (!matches(p, filter)) return false;
       if (q && !`${p.name} ${p.locality} ${p.address}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [all, filter, search]);
+    if (sort === "rent") return [...list].sort((a, b) => (b.rent ?? 0) - (a.rent ?? 0));
+    if (sort === "renewal")
+      return [...list].sort((a, b) => {
+        const x = a.nextRenewal?.expiry ?? "9999";
+        const y = b.nextRenewal?.expiry ?? "9999";
+        return x.localeCompare(y);
+      });
+    if (sort === "address") return [...list].sort((a, b) => a.name.localeCompare(b.name));
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, filter, search, sort]);
+
+  const renewals30 = all.filter(renewalSoon).length;
+  const clearCount = all.filter((p) => p.items.length > 0 && p.outstanding === 0).length;
+  const withItems = all.filter((p) => p.items.length > 0).length;
+  const complianceRate = withItems ? Math.round((clearCount / withItems) * 100) : 100;
 
   return (
     // Same outline treatment as the rest of the portal.
@@ -448,13 +481,60 @@ export default function PortfolioPage() {
               options={[
                 { key: "all", label: "All properties" },
                 { key: "renewals", label: "Renewals due" },
+                { key: "epc", label: "Expiring EPC" },
+                { key: "norenewal", label: "No renewals on file" },
                 { key: "clear", label: "All clear" },
-                { key: "none", label: "Nothing recorded" },
               ]}
               value={filter}
               onChange={setFilter}
               search={search}
               onSearch={setSearch}
+            />
+          </div>
+
+          {/* ---- the overview bar ---- */}
+          <div className="enter enter-up" style={enterAt(170)}>
+            <StatStrip
+              items={[
+                { icon: "home", value: String(all.length), label: "Total properties" },
+                { icon: "wallet", value: money(rentRoll) ?? "—", label: "Rent roll a month" },
+                {
+                  icon: "calendar",
+                  value: String(renewals30),
+                  label: "Renewals in 30 days",
+                  dot: renewals30 > 0 ? "amber" : undefined,
+                },
+                { icon: "doc", value: money(rentRoll * 12) ?? "—", label: "Annual rental income" },
+                {
+                  icon: "shield",
+                  value: `${complianceRate}%`,
+                  label: "Compliance rate",
+                  tone: complianceRate >= 90 ? "green" : "red",
+                },
+              ]}
+            />
+          </div>
+
+          {/* ---- quick cuts + sort ---- */}
+          <div className="enter enter-up" style={enterAt(190)}>
+            <QuickTabs
+              tabs={[
+                { key: "all", label: "All properties", count: all.length },
+                { key: "renewals", label: "Renewals due", count: all.filter((p) => matches(p, "renewals")).length, dot: "amber" },
+                { key: "epc", label: "Expiring EPC", count: all.filter(epcNeedsWork).length, dot: "red" },
+                { key: "norenewal", label: "No renewals on file", count: all.filter((p) => !p.nextRenewal).length },
+                { key: "clear", label: "All clear", count: clearCount, dot: "green" },
+              ]}
+              value={filter}
+              onChange={setFilter}
+              sort={sort}
+              onSort={setSort}
+              sortOptions={[
+                { key: "default", label: "Worst first" },
+                { key: "renewal", label: "Renewal date" },
+                { key: "rent", label: "Highest rent" },
+                { key: "address", label: "Address A–Z" },
+              ]}
             />
           </div>
 

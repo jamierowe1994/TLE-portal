@@ -158,7 +158,11 @@ export default function FilterBar({
               setSearchOpen(false);
             } else openSearch();
           }}
-          className={`p-2 transition ${searchOpen || search ? "text-ink" : "text-muted hover:text-ink"}`}
+          // Fixed square so the collapsed control is a true circle, and the
+          // glyph stays centred on the text once it springs open.
+          className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center transition ${
+            searchOpen || search ? "text-ink" : "text-muted hover:text-ink"
+          }`}
         >
           <DoodleIcon name="search" size={17} />
         </button>
@@ -183,7 +187,7 @@ export default function FilterBar({
               }
             }}
             placeholder={placeholder}
-            className="w-[190px] bg-transparent py-2 pr-3 text-[13px] text-ink outline-none placeholder:text-muted"
+            className="h-[38px] w-[190px] bg-transparent pr-3 text-[13px] leading-none text-ink outline-none placeholder:text-muted"
           />
         </div>
       </div>

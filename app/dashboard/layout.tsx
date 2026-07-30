@@ -473,7 +473,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {/* The greeting keeps the room the artwork used to fill — the
                   block height is deliberate white space, not a leftover. */}
               <div className="flex items-end gap-4 pt-2 lg:min-h-[292px]">
-                <div className="min-w-0 pb-5">
+                <div className="min-w-0 pb-5 lg:pb-24">
                   <h1 className="w-fit tracking-tight" style={{ fontSize: "clamp(32px, 4vw, 52px)", lineHeight: 1.08, fontWeight: 300 }}>
                     {hello}
                   </h1>
