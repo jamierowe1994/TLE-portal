@@ -46,6 +46,11 @@ const COLUMNS: DataTableColumn<PortfolioRow & Record<string, unknown>>[] = [
 interface LiveBook {
   totalProperties: number;
   totalRentRoll: number;
+  avgRent: number;
+  vacant: number;
+  tenanted: number;
+  byServiceLevel: Array<{ level: string; properties: number; rentRoll: number }>;
+  byAccount: Array<{ account: string; label: string; properties: number; rentRoll: number; avgRent: number }>;
   unattributed: number;
   accounts: string[];
   byAgent: Record<string, { names: string[]; properties: number; rentRoll: number; activeTenancies: number }>;
@@ -55,17 +60,24 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
   // The managed book, live from PayProp across both agencies. Gathered in the
   // background, so poll until it lands rather than blocking the tab.
   const [live, setLive] = useState<LiveBook | null>(null);
+  const [arrearsCount, setArrearsCount] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
     let tries = 0;
     const ask = () => {
       fetch("/api/admin/payprop-live", { cache: "no-store" })
         .then((r) => r.json())
-        .then((d: { portfolio?: LiveBook | null }) => {
-          if (cancelled) return;
-          if (d.portfolio) setLive(d.portfolio);
-          else if (tries++ < 40) setTimeout(ask, 5000);
-        })
+        .then(
+          (d: {
+            portfolio?: LiveBook | null;
+            arrears?: { tenants: unknown[] } | null;
+          }) => {
+            if (cancelled) return;
+            if (d.portfolio) setLive(d.portfolio);
+            if (d.arrears) setArrearsCount(d.arrears.tenants.length);
+            if ((!d.portfolio || !d.arrears) && tries++ < 40) setTimeout(ask, 5000);
+          }
+        )
         .catch(() => {});
     };
     ask();
@@ -75,6 +87,28 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
   }, []);
 
   const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
+
+  /** Sum the service levels whose name matches — PayProp's own wording varies. */
+  function serviceStat(b: LiveBook, match: RegExp) {
+    const hits = b.byServiceLevel.filter((l) => match.test(l.level));
+    if (hits.length === 0) return undefined;
+    return {
+      value: hits.reduce((n, l) => n + l.properties, 0),
+      source: "live-payprop" as const,
+      note: hits.map((l) => `${l.level}: ${l.properties}`).join(" · "),
+    };
+  }
+
+  function accountAvg(b: LiveBook, label: string) {
+    const a = b.byAccount.find((x) => x.label === label);
+    if (!a || !a.properties) return null;
+    return {
+      value: Math.round(a.avgRent),
+      display: gbp(a.avgRent),
+      source: "live-payprop" as const,
+      note: `${gbp(a.rentRoll)} across ${a.properties} properties.`,
+    };
+  }
   const agents = live
     ? Object.entries(live.byAgent)
         .map(([, b]) => b)
@@ -184,26 +218,46 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Total properties"
-            stat={o.total}
+            stat={
+              live
+                ? { value: live.totalProperties, source: "live-payprop", note: "Active properties in PayProp across both agencies." }
+                : o.total
+            }
             big
-            sub={`E&W ${o.eAndWTotal.value ?? "—"} · Glasgow ${o.glasgowTotal.value ?? "—"}`}
+            sub={
+              live
+                ? live.byAccount.map((a) => `${a.label} ${a.properties}`).join(" · ")
+                : `E&W ${o.eAndWTotal.value ?? "—"} · Glasgow ${o.glasgowTotal.value ?? "—"}`
+            }
           />
           <StatCard
             label="Managed"
-            stat={o.totalManaged}
+            stat={(live ? serviceStat(live, /managed/i) : null) ?? o.totalManaged}
             big
-            sub={`E&W ${o.eAndWManaged.value ?? "—"} · Glasgow ${o.glasgowManaged.value ?? "—"}`}
+            sub={
+              live
+                ? "By PayProp service level"
+                : `E&W ${o.eAndWManaged.value ?? "—"} · Glasgow ${o.glasgowManaged.value ?? "—"}`
+            }
           />
           <StatCard
             label="Let only"
-            stat={o.eAndWLetOnly}
-            sub="All E&W — Glasgow has 0 let-only"
+            stat={(live ? serviceStat(live, /let\s*only|tenant\s*find/i) : null) ?? o.eAndWLetOnly}
+            sub={live ? "By PayProp service level" : "All E&W — Glasgow has 0 let-only"}
           />
           <StatCard
             label="Monthly rent roll"
-            stat={o.rentRollTotal}
+            stat={
+              live
+                ? { value: Math.round(live.totalRentRoll), display: gbp(live.totalRentRoll), source: "live-payprop", note: `Across ${live.totalProperties} properties — average ${gbp(live.avgRent)}.` }
+                : o.rentRollTotal
+            }
             big
-            sub={`E&W ${o.rentRollEAndW.display ?? "—"} · Glasgow ${o.rentRollGlasgow.display ?? "—"}`}
+            sub={
+              live
+                ? live.byAccount.map((a) => `${a.label} ${gbp(a.rentRoll)}`).join(" · ")
+                : `E&W ${o.rentRollEAndW.display ?? "—"} · Glasgow ${o.rentRollGlasgow.display ?? "—"}`
+            }
           />
         </div>
       </section>
@@ -223,11 +277,32 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Rents &amp; portfolio health</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <StatCard label="Avg rent — E&W" stat={o.avgRentEAndW} />
-          <StatCard label="Avg rent — Glasgow" stat={o.avgRentGlasgow} />
-          <StatCard label="Vacant" stat={o.vacant} />
+          <StatCard
+            label="Avg rent — E&W"
+            stat={live ? accountAvg(live, "E&W") ?? o.avgRentEAndW : o.avgRentEAndW}
+          />
+          <StatCard
+            label="Avg rent — Glasgow"
+            stat={live ? accountAvg(live, "Glasgow") ?? o.avgRentGlasgow : o.avgRentGlasgow}
+          />
+          <StatCard
+            label="Vacant"
+            stat={
+              live
+                ? { value: live.vacant, source: "live-payprop", note: `Properties with no tenancy running; ${live.tenanted} are tenanted.` }
+                : o.vacant
+            }
+          />
           <StatCard label="Renewals due" stat={o.renewals} />
-          <StatCard label="In arrears" stat={o.arrears} sub="See Arrears tab (admin only)" />
+          <StatCard
+            label="In arrears"
+            stat={
+              arrearsCount != null
+                ? { value: arrearsCount, source: "live-payprop", note: "Tenancies currently in debit across both agencies." }
+                : o.arrears
+            }
+            sub="See Arrears tab (admin only)"
+          />
         </div>
       </section>
 
