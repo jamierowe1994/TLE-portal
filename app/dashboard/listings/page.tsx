@@ -977,7 +977,7 @@ export default function ListingsPage() {
   return (
     // Same outline treatment as the dashboard — boxes as hairline outlines on
     // the grey, photos and property details inside.
-    <div className="outline-cards space-y-6">
+    <div className="outline-cards soft-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">My properties</h1>
         <p className="mt-1 text-[13px] text-muted">

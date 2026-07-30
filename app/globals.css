@@ -290,6 +290,15 @@ h5 {
   box-shadow: none !important;
   border-color: rgba(16, 16, 20, 1);
 }
+/* Busy tile grids (properties, applications, compliance, portfolio) keep the
+   outlines but at hairline weight — a page of thick frames is eye-ache. */
+.outline-cards.soft-cards .card {
+  border-width: 1px;
+  border-color: rgba(16, 16, 20, 0.22);
+}
+.outline-cards.soft-cards .card-lift:hover {
+  border-color: rgba(16, 16, 20, 0.38);
+}
 
 /* TLE OS spring box — brand chips thrown up from behind the bottom line,
    knocking about (per-chip --tilt and --delay) before landing in place; on

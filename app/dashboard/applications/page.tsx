@@ -489,7 +489,7 @@ export default function ApplicationsPage() {
   const count = (s: ApplicationStage) => all.filter((a) => a.stage === s).length;
 
   return (
-    <div className="space-y-6">
+    <div className="outline-cards soft-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">Applications</h1>
         <p className="mt-1 text-[13px] text-muted">
@@ -518,7 +518,7 @@ export default function ApplicationsPage() {
         <>
           <section className="enter enter-up grid grid-cols-3 gap-3" style={enterAt(140)}>
             {(["received", "communicated", "accepted"] as ApplicationStage[]).map((s) => (
-              <div key={s} className="card p-4">
+              <div key={s} className="p-1">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                   {fromPropoly
                     ? s === "received"

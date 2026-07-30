@@ -276,7 +276,7 @@ export default function CompliancePage() {
 
   return (
     // Same outline treatment as the rest of the portal.
-    <div className="outline-cards space-y-6">
+    <div className="outline-cards soft-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
         <h1 className="text-xl font-semibold tracking-tight">Compliance</h1>
         <p className="mt-1 text-[13px] text-muted">
