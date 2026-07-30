@@ -6,6 +6,7 @@ import {
   payPropAuthMode,
   payPropConfigured,
   payPropGet,
+  payPropGetAll,
   payPropLabel,
   payPropPing,
   type PayPropAccountId,
@@ -95,5 +96,37 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  return NextResponse.json({ configured: true, auth, connected, seededFromEnv, ping, accounts });
+  // Who PayProp thinks manages each property. Needed to attribute portfolio,
+  // arrears and move-ins per partner — reported here so the matching rule is
+  // built against the real values rather than assumed.
+  const agents: Record<string, { properties: number; ids: string[]; accounts: string[] }> = {};
+  for (const id of payPropAccounts()) {
+    const rows = await payPropGetAll<{
+      responsible_agent?: unknown;
+      responsible_agent_id?: unknown;
+      responsible_user?: unknown;
+    }>(id, "export/properties", { is_archived: "false" }).catch(() => []);
+    for (const r of rows) {
+      const name =
+        typeof r.responsible_agent === "string"
+          ? r.responsible_agent
+          : JSON.stringify(r.responsible_agent ?? null);
+      const key = name || "(none)";
+      const entry = (agents[key] ??= { properties: 0, ids: [], accounts: [] });
+      entry.properties++;
+      const aid = String(r.responsible_agent_id ?? "");
+      if (aid && !entry.ids.includes(aid)) entry.ids.push(aid);
+      if (!entry.accounts.includes(id)) entry.accounts.push(id);
+    }
+  }
+
+  return NextResponse.json({
+    configured: true,
+    auth,
+    connected,
+    seededFromEnv,
+    ping,
+    agents,
+    accounts,
+  });
 }
