@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BrandMark from "@/components/BrandMark";
 import AssistantBubble from "@/components/AssistantBubble";
+import FontSwitcher from "@/components/FontSwitcher";
 import SearchOverlay from "@/components/SearchOverlay";
 import DoodleIcon from "@/components/DoodleIcon";
 import Loader from "@/components/Loader";
@@ -488,6 +489,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* The assistant lives in a speech bubble bottom-right, on every page —
           out of the way until it's wanted. */}
       <AssistantBubble firstName={user.name.split(" ")[0]} />
+
+      {/* Corner control for trialling the portal's type. */}
+      <FontSwitcher />
 
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>

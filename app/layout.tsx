@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Montserrat, Shantell_Sans } from "next/font/google";
+import { Inter, Montserrat, Shantell_Sans } from "next/font/google";
 import "./globals.css";
 
 const montserrat = Montserrat({
@@ -15,6 +15,13 @@ const shantell = Shantell_Sans({
   display: "swap",
 });
 
+// Loaded for the type-preview switcher's third option.
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "The Lettings Expert — Partner Portal",
   description:
@@ -25,7 +32,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${montserrat.variable} ${shantell.variable}`}>
+    <html lang="en" className={`${montserrat.variable} ${shantell.variable} ${inter.variable}`}>
       <body>{children}</body>
     </html>
   );

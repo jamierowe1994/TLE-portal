@@ -9,6 +9,8 @@
 :root {
   --font-body: var(--font-montserrat), system-ui, -apple-system, sans-serif;
   --font-heading: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+  /* Figures track the headings unless a scheme separates them. */
+  --font-figures: var(--font-heading);
 
   /* Brand — The Lettings Expert */
   --accent: #e31f36;
@@ -38,6 +40,22 @@
   --color-card: var(--card);
   --font-sans: var(--font-body);
   --radius-card: 1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Type schemes — the switcher in the corner sets data-font on <html>.
+   "full" is the default and needs no block.
+     half  → headings and nav go plain; only the figures stay handwritten.
+     brand → one face throughout.
+--------------------------------------------------------------------------- */
+:root[data-font="half"] {
+  --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+  --font-figures: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+}
+:root[data-font="brand"] {
+  --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-figures: var(--font-inter), system-ui, -apple-system, sans-serif;
 }
 
 body {
@@ -108,7 +126,7 @@ h5 {
 
 /* Stat card number — scaled up in presentation mode */
 .stat-value {
-  font-family: var(--font-heading);
+  font-family: var(--font-figures);
   font-size: clamp(28px, 2.6vw, 36px);
   font-weight: 500; /* was 600 — the whole surface leans lighter now */
   letter-spacing: -0.02em;
