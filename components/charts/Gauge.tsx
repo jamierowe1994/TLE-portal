@@ -30,7 +30,7 @@ export default function Gauge({
     <div className="flex flex-col items-center text-center">
       <div style={{ position: "relative", width: size, height: size }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EFEFF2" strokeWidth={stroke} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(16, 16, 20, 0.28)" strokeWidth={stroke} />
           <circle
             cx={size / 2}
             cy={size / 2}

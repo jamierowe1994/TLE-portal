@@ -227,7 +227,7 @@ export default function MyDashboardPage() {
                 </div>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
               </div>
-              <div className="mt-1 flex items-center gap-5">
+              <div className="my-auto flex items-center gap-5 py-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/illustrations/piggy.png"
@@ -338,11 +338,11 @@ export default function MyDashboardPage() {
                   {/* rent roll underneath, with the supporting stats */}
                   <div className="mt-auto grid grid-cols-2 gap-x-6 gap-y-3 border-t border-line pt-4">
                     <div>
-                      <div className="stat-value text-[19px]">{stats.portfolio.rentRoll.display ?? "—"}</div>
+                      <div className="stat-value text-[17px]">{stats.portfolio.rentRoll.display ?? "—"}</div>
                       <div className="mt-0.5 text-[11px] text-muted">Rent roll / month</div>
                     </div>
                     <div>
-                      <div className="stat-value text-[19px]">{estFees != null ? formatGBP(estFees) : "—"}</div>
+                      <div className="stat-value text-[17px]">{estFees != null ? formatGBP(estFees) : "—"}</div>
                       <div
                         className="mt-0.5 text-[11px] text-muted"
                         title="Estimated at ~9% of rent roll — the actual management fee and your share are confirmed with head office."
@@ -351,13 +351,13 @@ export default function MyDashboardPage() {
                       </div>
                     </div>
                     <div>
-                      <div className="stat-value text-[19px]">
+                      <div className="stat-value text-[17px]">
                         {detail?.avgRent != null ? formatGBP(detail.avgRent) : "—"}
                       </div>
                       <div className="mt-0.5 text-[11px] text-muted">Avg rent</div>
                     </div>
                     <div>
-                      <div className="stat-value text-[19px]">
+                      <div className="stat-value text-[17px]">
                         {detail ? `${formatNum(detail.rlpLec)}/${formatNum(detail.managed)}` : "—"}
                       </div>
                       <div className="mt-0.5 text-[11px] text-muted" title="Managed properties covered by Rent & Legal Protection (incl. LEC).">
