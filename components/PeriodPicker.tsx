@@ -66,10 +66,10 @@ const PRESET_MENU = [
 ];
 
 const boxClass = (active: boolean) =>
-  `inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
+  `inline-flex items-center gap-2 rounded-xl border-[1.5px] bg-transparent px-3 py-2 text-[13px] font-medium transition ${
     active
-      ? "border-ink/40 bg-black/[0.05] text-ink"
-      : "hairline border-line bg-card text-muted hover:text-ink"
+      ? "border-ink/85 text-ink"
+      : "border-ink/30 text-muted hover:border-ink/60 hover:text-ink"
   }`;
 
 function CalendarIcon() {
@@ -117,14 +117,35 @@ export default function PeriodPicker({
   const [from, setFrom] = useState("2026-04");
   const [to, setTo] = useState(ANCHOR);
   const [openMenu, setOpenMenu] = useState<"preset" | "month" | null>(null);
+  const [closingMenu, setClosingMenu] = useState<"preset" | "month" | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  // Same choreography as the account menu: swing open, zip shut.
+  const closeMenus = () => {
+    setOpenMenu((current) => {
+      if (current) {
+        setClosingMenu(current);
+        if (closeTimer.current) window.clearTimeout(closeTimer.current);
+        closeTimer.current = window.setTimeout(() => setClosingMenu(null), 240);
+      }
+      return null;
+    });
+  };
+  const toggleMenu = (which: "preset" | "month") => {
+    if (openMenu === which) closeMenus();
+    else {
+      setClosingMenu(null);
+      setOpenMenu(which);
+    }
+  };
 
   // Close whichever dropdown is open on any outside click.
   useEffect(() => {
     if (!openMenu) return;
     const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpenMenu(null);
+      if (wrap.current && !wrap.current.contains(e.target as Node)) closeMenus();
     };
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
@@ -139,7 +160,7 @@ export default function PeriodPicker({
   function pickPreset(k: string) {
     setPresetKey(k);
     setMode("preset");
-    setOpenMenu(null);
+    closeMenus();
     setCustomOpen(false);
     onChange(resolvePreset(k));
   }
@@ -147,7 +168,7 @@ export default function PeriodPicker({
   function pickMonth(m: string) {
     setSelectedMonth(m);
     setMode("month");
-    setOpenMenu(null);
+    closeMenus();
     setCustomOpen(false);
     onChange({ key: "by-month", label: monthLabel(m), months: [m], forecastMonth: m });
   }
@@ -175,14 +196,18 @@ export default function PeriodPicker({
         <button
           type="button"
           className={boxClass(mode === "preset" || mode === "custom")}
-          onClick={() => setOpenMenu((m) => (m === "preset" ? null : "preset"))}
+          onClick={() => toggleMenu("preset")}
         >
           <CalendarIcon />
           <span>{presetLabel}</span>
           <Chevron open={openMenu === "preset"} />
         </button>
-        {openMenu === "preset" ? (
-          <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 min-w-[208px] rounded-xl border border-line bg-card p-1 shadow-lg">
+        {openMenu === "preset" || closingMenu === "preset" ? (
+          <div
+            className={`${
+              closingMenu === "preset" ? "shrink-up" : "swing-down"
+            } absolute left-0 top-full z-30 mt-1.5 min-w-[208px] overflow-hidden rounded-xl border border-line bg-card p-1 shadow-lg`}
+          >
             {PRESET_MENU.map((p) => (
               <button
                 key={p.key}
@@ -257,14 +282,18 @@ export default function PeriodPicker({
         <button
           type="button"
           className={boxClass(mode === "month")}
-          onClick={() => setOpenMenu((m) => (m === "month" ? null : "month"))}
+          onClick={() => toggleMenu("month")}
         >
           <MonthIcon />
           <span>{mode === "month" ? monthLabel(selectedMonth) : "By month"}</span>
           <Chevron open={openMenu === "month"} />
         </button>
-        {openMenu === "month" ? (
-          <div className="modal-pop absolute left-0 top-full z-30 mt-1.5 max-h-64 min-w-[184px] overflow-y-auto rounded-xl border border-line bg-card p-1 shadow-lg">
+        {openMenu === "month" || closingMenu === "month" ? (
+          <div
+            className={`${
+              closingMenu === "month" ? "shrink-up" : "swing-down"
+            } absolute left-0 top-full z-30 mt-1.5 max-h-64 min-w-[184px] overflow-y-auto rounded-xl border border-line bg-card p-1 shadow-lg`}
+          >
             {ALL_MONTHS.map((m) => (
               <button
                 key={m}
