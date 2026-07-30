@@ -8,6 +8,12 @@
 // different job and deliberately not mixed in here.
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import DoodleIcon from "@/components/DoodleIcon";
+import CollapsePanel, { PANEL_STAGGER } from "@/components/CollapsePanel";
+import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
+import PropertyNotes from "@/components/PropertyNotes";
+import { rexListingUrl } from "@/lib/rex-links";
 import FilterBar from "@/components/FilterBar";
 import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
@@ -133,117 +139,292 @@ function ComplianceTile({
 /* -------------------------------- drawer -------------------------------- */
 
 function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) {
+  // Which panel is opened out; null = the resting arrangement.
+  type Expanded = null | "indate" | "notes";
+  const [expanded, setExpanded] = useState<Expanded>(null);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && (expanded ? setExpanded(null) : onClose());
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [expanded, onClose]);
 
-  // Only what needs a human gets a full row. Everything already in date is real
-  // information but not news, so it goes half-size, two-up — a dozen items fits
-  // in a few rows instead of a screen of scrolling.
+  // Only what needs a human gets a full row; everything already in date is
+  // real information but not news, so it waits behind its own panel.
   const outstanding = p.items.filter((i) => needsWork(i.state));
   const settled = p.items.filter((i) => !needsWork(i.state));
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-12"
-      onClick={onClose}
+  // The soonest thing to fall due, whatever it is.
+  const nextDue = [...p.items]
+    .filter((i) => i.expiry)
+    .sort((a, b) => (a.expiry ?? "").localeCompare(b.expiry ?? ""))[0];
+
+  const collapse = (
+    <button
+      type="button"
+      onClick={() => setExpanded(null)}
+      className="btn-press rounded-full border border-line px-3 py-1 text-[12px] font-medium text-muted transition hover:text-ink"
     >
-      {/* Wider than the property drawer: compliance is a list of pairs, and the
-          extra width is what keeps it to a few rows rather than a scroll. */}
-      <div
-        className="modal-pop my-auto w-full max-w-2xl rounded-2xl bg-card p-3"
-        onClick={(e) => e.stopPropagation()}
+      Collapse
+    </button>
+  );
+
+  return (
+    <SplitDrawer onClose={onClose} hideClose>
+      <DrawerPanel
+        className="relative shrink-0 grow-0 p-5 sm:p-7"
+        style={{ width: "min(70rem, calc(100vw - 2rem))" }}
       >
-        <div className="relative h-44 w-full overflow-hidden rounded-xl bg-page">
-          <Photo p={p} />
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/70"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="btn-press absolute right-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-line bg-page text-muted transition hover:text-ink"
+        >
+          <DoodleIcon name="cross" size={16} />
+        </button>
+
+        {/* ---- header: the property, then where its paperwork stands ---- */}
+        <div className="flex flex-wrap items-center gap-5 pr-12">
+          <div className="h-[76px] w-[104px] shrink-0 overflow-hidden rounded-xl bg-page">
+            <Photo p={p} />
+          </div>
+
+          <div className="min-w-0">
+            {/* Straight through to the property itself. */}
+            <Link
+              href={`/dashboard/listings?open=${encodeURIComponent(p.listingId)}`}
+              className="text-[24px] leading-tight tracking-tight decoration-2 underline-offset-4 hover:underline"
+              style={{ fontWeight: 500 }}
+            >
+              {p.name}
+            </Link>
+            <p className="mt-1 text-[13px] text-muted">{p.locality}</p>
+            <span
+              className={`mt-2 inline-block rounded-full border px-2.5 py-0.5 text-[9px] font-semibold ${
+                STATE_STYLE[
+                  (p.items.some((i) => i.state === "expired")
+                    ? "expired"
+                    : p.outstanding > 0
+                      ? "expiring"
+                      : "valid") as ComplianceState
+                ]
+              }`}
+            >
+              {p.outstanding > 0
+                ? `${p.outstanding} OUTSTANDING`
+                : p.items.length
+                  ? "ALL CLEAR"
+                  : "NOTHING RECORDED"}
+            </span>
+          </div>
+
+          <div className="ml-auto flex flex-wrap items-center gap-x-8 gap-y-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <DoodleIcon name="shield" size={22} className="mt-[3px] shrink-0 text-ink" />
+              <div>
+                <div className="text-[14px] font-semibold text-ink">{p.outstanding}</div>
+                <div className="text-[11.5px] text-muted">Need attention</div>
+              </div>
+            </div>
+            <div className="flex min-w-0 items-start gap-2.5">
+              <DoodleIcon name="checklist" size={22} className="mt-[3px] shrink-0 text-ink" />
+              <div>
+                <div className="text-[14px] font-semibold text-ink">{p.items.length}</div>
+                <div className="text-[11.5px] text-muted">Items on file</div>
+              </div>
+            </div>
+            <div className="flex min-w-0 items-start gap-2.5">
+              <DoodleIcon name="calendar" size={22} className="mt-[3px] shrink-0 text-ink" />
+              <div>
+                <div className="text-[14px] font-semibold text-ink">
+                  {nextDue?.expiry ?? "—"}
+                </div>
+                <div className="text-[11.5px] text-muted">Next renewal</div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="p-6 sm:p-8">
-          <h2 className="text-[17px] font-semibold leading-snug">{p.name}</h2>
-          <p className="mt-0.5 text-[13px] text-muted">{p.locality}</p>
+        <div className="mt-6 grid items-stretch gap-5 lg:grid-cols-[1fr_1fr]">
+          {/* ================= left: what needs doing ================= */}
+          <div className="card p-5 sm:p-6">
+            <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+              <DoodleIcon name="shield" size={17} className="text-accent" />
+              What needs doing
+            </h3>
 
-          <p className="mt-5 text-[13px] text-muted">
-            {p.outstanding > 0 ? (
-              <>
-                <span className="font-semibold text-ink">
-                  {p.outstanding} {p.outstanding === 1 ? "item needs" : "items need"} attention
-                </span>{" "}
-                on this property.
-              </>
-            ) : p.items.length ? (
-              "Everything on file is in date."
-            ) : (
-              "No compliance records against this property yet."
-            )}
-          </p>
-
-          {/* Needs a human — full width, hard to miss */}
-          {outstanding.length ? (
-            <div className="mt-6 space-y-2.5">
-              {outstanding.map((i) => (
-                <div
-                  key={i.type}
-                  className={`flex items-start gap-3 rounded-xl border p-4 ${STATE_STYLE[i.state]}`}
-                >
-                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-ink">{i.label}</p>
-                    <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
-                    {i.notes ? (
-                      <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {/* Settled — half-size, two-up. Still there, just not shouting. */}
-          {settled.length ? (
-            <div className="mt-6">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                In date
-              </p>
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
-                {settled.map((i) => (
+            {outstanding.length ? (
+              <div className="mt-4 space-y-2.5">
+                {outstanding.map((i) => (
                   <div
                     key={i.type}
-                    title={i.notes ?? stateLabel(i)}
-                    className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                    className={`flex items-start gap-3 rounded-xl border p-4 ${STATE_STYLE[i.state]}`}
                   >
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-medium text-ink">
-                        {i.label}
-                      </span>
-                      <span className="block truncate text-[10px] text-muted">
-                        {stateLabel(i)}
-                      </span>
-                    </span>
+                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-ink">{i.label}</p>
+                      <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
+                      {i.notes ? (
+                        <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
-          ) : null}
+            ) : (
+              <div className="flex min-h-[180px] items-center">
+                <p
+                  className="text-left font-light leading-tight tracking-tight text-ink"
+                  style={{ fontSize: "clamp(26px, 2.4vw, 34px)" }}
+                >
+                  {p.items.length ? (
+                    <>
+                      Everything
+                      <br />
+                      in date
+                    </>
+                  ) : (
+                    <>
+                      Nothing
+                      <br />
+                      recorded yet
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
 
-          <p className="mt-6 text-[11px] text-muted">
-            Live from REX. Certificates are updated in REX — this is the view, not
-            the record.
-          </p>
+            <p className="mt-5 text-[11px] text-muted">
+              Live from REX. Certificates are updated in REX — this is the view,
+              not the record.
+            </p>
+          </div>
+
+          {/* ============ right: the panels that open over each other ============ */}
+          <div className="flex flex-col">
+            {/* ---- the summary cards, while nothing is opened out ---- */}
+            <CollapsePanel
+              open={expanded === null}
+              delay={expanded === null ? PANEL_STAGGER : 0}
+            >
+              <div className="grid gap-5 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setExpanded("indate")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="checklist" size={16} className="text-accent" />
+                    In date
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    {settled.length
+                      ? `${settled.length} item${settled.length === 1 ? "" : "s"} on file`
+                      : "Nothing recorded yet"}
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExpanded("notes")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="note" size={16} className="text-accent" />
+                    Notes
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    Anything you or the team have logged
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+              </div>
+            </CollapsePanel>
+
+            {/* ---- everything already in date ---- */}
+            <CollapsePanel
+              open={expanded === "indate"}
+              delay={expanded === "indate" ? PANEL_STAGGER : 0}
+              grow={expanded === "indate"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="checklist" size={17} className="text-accent" />
+                    In date
+                  </h3>
+                  {collapse}
+                </div>
+                {settled.length ? (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {settled.map((i) => (
+                      <div
+                        key={i.type}
+                        title={i.notes ?? stateLabel(i)}
+                        className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                      >
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[12px] font-medium text-ink">
+                            {i.label}
+                          </span>
+                          <span className="block truncate text-[10px] text-muted">
+                            {stateLabel(i)}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[13px] text-muted">
+                    Nothing on file for this property yet.
+                  </p>
+                )}
+              </div>
+            </CollapsePanel>
+
+            {/* ---- notes on the property ---- */}
+            <CollapsePanel
+              open={expanded === "notes"}
+              delay={expanded === "notes" ? PANEL_STAGGER : 0}
+              grow={expanded === "notes"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="note" size={17} className="text-accent" />
+                    Notes
+                  </h3>
+                  {collapse}
+                </div>
+                <div className="mt-3 flex-1">
+                  <PropertyNotes listingId={p.listingId} name={p.name} />
+                </div>
+              </div>
+            </CollapsePanel>
+          </div>
         </div>
-      </div>
-    </div>
+
+        {/* ---- footer ---- */}
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
+          <a
+            href={rexListingUrl(p.listingId, "rental")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-[13px] font-semibold transition hover:border-black/30"
+          >
+            <DoodleIcon name="link" size={15} />
+            Update in REX
+          </a>
+        </div>
+      </DrawerPanel>
+    </SplitDrawer>
   );
 }
 

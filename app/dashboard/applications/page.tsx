@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import DoodleIcon from "@/components/DoodleIcon";
+import CollapsePanel, { PANEL_STAGGER } from "@/components/CollapsePanel";
 import FilterBar from "@/components/FilterBar";
 import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
@@ -328,42 +329,6 @@ function MessageComposer({
   );
 }
 
-/**
- * A panel that grows and shrinks by its real height. `grid-template-rows`
- * 1fr → 0fr animates proportionally from the first frame (max-height can't),
- * so neighbours are genuinely pushed along rather than jumping. Nothing
- * unmounts mid-flight — the collapse is always seen through to the end.
- */
-function CollapsePanel({
-  open,
-  delay = 0,
-  grow = false,
-  children,
-}: {
-  open: boolean;
-  /** Hold off so the outgoing panels finish shrinking first. */
-  delay?: number;
-  /** Take the leftover column height while it's open. */
-  grow?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={`grid ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"} ${
-        open && grow ? "min-h-0 flex-1" : ""
-      }`}
-      style={{
-        transition: `grid-template-rows 560ms cubic-bezier(0.32, 0.72, 0, 1) ${delay}ms, opacity 380ms ease ${delay}ms`,
-      }}
-      aria-hidden={!open}
-    >
-      <div className="min-h-0 overflow-hidden">
-        <div className={`${open && grow ? "h-full" : ""} pb-5`}>{children}</div>
-      </div>
-    </div>
-  );
-}
-
 /** Click-into-a-deal dashboard: where the tenancy is, stage by stage. */
 // One wide window: the property across the top, the stage board on the left,
 // and a right-hand column of panels that expand over each other on demand.
@@ -382,7 +347,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
   const composerOpen = expanded === "tenant" || expanded === "landlord";
   // Opening: the others shrink first, then the chosen one opens out. Closing
   // runs the other way round.
-  const IN = 300;
+  const IN = PANEL_STAGGER;
 
   const p = a.propoly!;
   const cancelled = p.statusKey === "cancelled";

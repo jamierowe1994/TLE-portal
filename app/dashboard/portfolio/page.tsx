@@ -10,6 +10,10 @@
 // rather than pretend to mirror it.
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import DoodleIcon from "@/components/DoodleIcon";
+import CollapsePanel, { PANEL_STAGGER } from "@/components/CollapsePanel";
+import PropertyNotes from "@/components/PropertyNotes";
 import FilterBar from "@/components/FilterBar";
 import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
@@ -184,152 +188,254 @@ function PortfolioTile({
 // Two windows: the property (front-of-house) on the left, what needs doing on
 // the right.
 function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
+  type Expanded = null | "indate" | "notes";
+  const [expanded, setExpanded] = useState<Expanded>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && (expanded ? setExpanded(null) : onClose());
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, onClose]);
+
   const outstanding = p.items.filter((i) => needsWork(i.state));
   const settled = p.items.filter((i) => !needsWork(i.state));
   const since = sinceLabel(p.sinceISO);
 
+  const collapse = (
+    <button
+      type="button"
+      onClick={() => setExpanded(null)}
+      className="btn-press rounded-full border border-line px-3 py-1 text-[12px] font-medium text-muted transition hover:text-ink"
+    >
+      Collapse
+    </button>
+  );
+
   return (
-    <SplitDrawer onClose={onClose}>
-      {/* ---- the property ---- */}
-      <DrawerPanel className="p-3 lg:w-[26rem]">
-        <PhotoCarousel images={p.images} alt={p.name} />
+    <SplitDrawer onClose={onClose} hideClose>
+      <DrawerPanel
+        className="relative shrink-0 grow-0 p-5 sm:p-7"
+        style={{ width: "min(70rem, calc(100vw - 2rem))" }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="btn-press absolute right-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-line bg-page text-muted transition hover:text-ink"
+        >
+          <DoodleIcon name="cross" size={16} />
+        </button>
 
-        <div className="p-5 sm:p-6">
-          <h2 className="text-[17px] font-semibold leading-snug">{p.name}</h2>
-          <p className="mt-0.5 text-[13px] text-muted">{p.locality}</p>
-
-          {/* The facts of the tenancy at a glance */}
-          <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3">
-            {money(p.rent) ? (
-              <div>
-                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Rent</dt>
-                <dd className="mt-0.5 text-[13px] font-medium">{money(p.rent)} pcm</dd>
-              </div>
-            ) : null}
-            {since ? (
-              <div>
-                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">On the book</dt>
-                <dd className="mt-0.5 text-[13px] font-medium">{since}</dd>
-              </div>
-            ) : null}
-            {p.letType ? (
-              <div>
-                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Let type</dt>
-                <dd className="mt-0.5 text-[13px] font-medium">{p.letType}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX listing ID</dt>
-              <dd className="mt-0.5 text-[13px] font-medium tabular-nums">{p.listingId}</dd>
-            </div>
-            {p.propertyId ? (
-              <div>
-                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">REX property ID</dt>
-                <dd className="mt-0.5 text-[13px] font-medium tabular-nums">{p.propertyId}</dd>
-              </div>
-            ) : null}
-          </dl>
-
-          {/* Straight out to the record */}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <a
-              href={rexListingUrl(p.listingId, "leased")}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-press inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[12px] font-semibold text-white transition hover:opacity-90"
-            >
-              View Listing
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 17L17 7M9 7h8v8" />
-              </svg>
-            </a>
-            <a
-              href={REXPM_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-press inline-flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[12px] font-semibold transition hover:border-black/20"
-            >
-              Maintenance in REX PM
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 17L17 7M9 7h8v8" />
-              </svg>
-            </a>
+        {/* ---- top: photos left, the tenancy facts right ---- */}
+        <div className="grid gap-7 lg:grid-cols-[1.05fr_1fr] lg:gap-9">
+          <div className="min-w-0">
+            <PhotoCarousel
+              images={p.images}
+              alt={p.name}
+              aspect="h-60 sm:h-[17rem]"
+              arrowsOutside
+              thumbs
+            />
           </div>
 
-          <p className="mt-5 text-[11px] text-muted">
-            Live from REX. Certificates and maintenance jobs are managed in REX /
-            REX PM — this is the view, not the record.
-          </p>
-        </div>
-      </DrawerPanel>
+          <div className="min-w-0 pr-12">
+            <Link
+              href={`/dashboard/listings?open=${encodeURIComponent(p.listingId)}`}
+              className="text-[24px] leading-tight tracking-tight decoration-2 underline-offset-4 hover:underline"
+              style={{ fontWeight: 500 }}
+            >
+              {p.name}
+            </Link>
+            <p className="mt-1.5 text-[13px] text-muted">{p.locality}</p>
 
-      {/* ---- what you need to do ---- */}
-      <DrawerPanel className="lg:w-[24rem]">
-        <div className="p-5 sm:p-6">
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-            {outstanding.length ? "What you need to do" : "Nothing outstanding"}
-          </h3>
-          <p className="mt-2 text-[13px] text-muted">
-            {outstanding.length ? (
-              <>
-                <span className="font-semibold text-ink">
-                  {outstanding.length} {outstanding.length === 1 ? "item needs" : "items need"} attention
-                </span>{" "}
-                on this property.
-              </>
-            ) : p.items.length ? (
-              "Everything on file is in date."
-            ) : (
-              "No compliance records against this property yet."
-            )}
-          </p>
-
-          {outstanding.length ? (
-            <div className="mt-4 space-y-2.5">
-              {outstanding.map((i) => (
-                <div
-                  key={i.type}
-                  className={`flex items-start gap-3 rounded-xl border p-4 ${STATE_STYLE[i.state]}`}
-                >
-                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-ink">{i.label}</p>
-                    <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
-                    {i.notes ? (
-                      <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {settled.length ? (
-            <div className="mt-6">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                In date
+            <div className="mt-5 border-t border-line pt-5">
+              <div className="flex items-end gap-2">
+                <span className="stat-value text-[34px] leading-none" style={{ fontWeight: 300 }}>
+                  {money(p.rent) ?? "—"}
+                </span>
+                <span className="pb-1 text-[13px] text-muted">pcm</span>
+              </div>
+              <p className="mt-2.5 text-[12.5px] text-muted">
+                {since ? (
+                  <>
+                    On the book <span className="text-ink">{since}</span>
+                  </>
+                ) : null}
+                {p.letType ? (
+                  <>
+                    {since ? "  ·  " : null}
+                    <span className="text-ink">{p.letType}</span>
+                  </>
+                ) : null}
               </p>
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
-                {settled.map((i) => (
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-line px-4 py-3">
+                <div className="text-[11px] text-muted">Needs attention</div>
+                <div className="stat-value mt-1 text-[19px] leading-none" style={{ fontWeight: 400 }}>
+                  {p.outstanding}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-line px-4 py-3">
+                <div className="text-[11px] text-muted">Next renewal</div>
+                <div className="mt-1 truncate text-[13px] font-medium text-ink">
+                  {p.nextRenewal ? `${p.nextRenewal.label} ${p.nextRenewal.expiry}` : "None on file"}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid items-stretch gap-5 lg:grid-cols-[1fr_1fr]">
+          {/* ---- left: what needs doing ---- */}
+          <div className="card p-5 sm:p-6">
+            <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+              <DoodleIcon name="shield" size={17} className="text-accent" />
+              What needs doing
+            </h3>
+            {outstanding.length ? (
+              <div className="mt-4 space-y-2.5">
+                {outstanding.map((i) => (
                   <div
                     key={i.type}
-                    title={i.notes ?? stateLabel(i)}
-                    className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                    className={`flex items-start gap-3 rounded-xl border p-4 ${STATE_STYLE[i.state]}`}
                   >
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-medium text-ink">
-                        {i.label}
-                      </span>
-                      <span className="block truncate text-[10px] text-muted">
-                        {stateLabel(i)}
-                      </span>
-                    </span>
+                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-ink">{i.label}</p>
+                      <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
-          ) : null}
+            ) : (
+              <div className="flex min-h-[160px] items-center">
+                <p
+                  className="text-left font-light leading-tight tracking-tight text-ink"
+                  style={{ fontSize: "clamp(26px, 2.4vw, 34px)" }}
+                >
+                  Everything
+                  <br />
+                  in date
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ---- right: panels that open over each other ---- */}
+          <div className="flex flex-col">
+            <CollapsePanel open={expanded === null} delay={expanded === null ? PANEL_STAGGER : 0}>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setExpanded("indate")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="checklist" size={16} className="text-accent" />
+                    In date
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    {settled.length
+                      ? `${settled.length} item${settled.length === 1 ? "" : "s"} on file`
+                      : "Nothing recorded yet"}
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExpanded("notes")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="note" size={16} className="text-accent" />
+                    Notes
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    Anything you or the team have logged
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+              </div>
+            </CollapsePanel>
+
+            <CollapsePanel
+              open={expanded === "indate"}
+              delay={expanded === "indate" ? PANEL_STAGGER : 0}
+              grow={expanded === "indate"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="checklist" size={17} className="text-accent" />
+                    In date
+                  </h3>
+                  {collapse}
+                </div>
+                {settled.length ? (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {settled.map((i) => (
+                      <div
+                        key={i.type}
+                        className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                      >
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[12px] font-medium text-ink">
+                            {i.label}
+                          </span>
+                          <span className="block truncate text-[10px] text-muted">
+                            {stateLabel(i)}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[13px] text-muted">
+                    Nothing on file for this property yet.
+                  </p>
+                )}
+              </div>
+            </CollapsePanel>
+
+            <CollapsePanel
+              open={expanded === "notes"}
+              delay={expanded === "notes" ? PANEL_STAGGER : 0}
+              grow={expanded === "notes"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="note" size={17} className="text-accent" />
+                    Notes
+                  </h3>
+                  {collapse}
+                </div>
+                <div className="mt-3 flex-1">
+                  <PropertyNotes listingId={p.listingId} name={p.name} />
+                </div>
+              </div>
+            </CollapsePanel>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
+          <a
+            href={rexListingUrl(p.listingId, "leased")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-[13px] font-semibold transition hover:border-black/30"
+          >
+            <DoodleIcon name="link" size={15} />
+            View listing in REX
+          </a>
         </div>
       </DrawerPanel>
     </SplitDrawer>
