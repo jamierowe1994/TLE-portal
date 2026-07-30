@@ -95,8 +95,35 @@ function oauthFor(id: PayPropAccountId): { id: string; secret: string } | null {
 
 /* ------------------------------ OAuth tokens ------------------------------ */
 
+/** Host root + /api/oauth/... — the OAuth endpoints sit outside the versioned base. */
+function oauthRoot(): string {
+  const b = base();
+  const host = b.replace(/\/api\/agency\/v[\d.]+$/, "");
+  return `${host}/api/oauth`;
+}
+
+export function payPropAuthorizeUrl(params: {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  scope?: string;
+}): string {
+  const u = new URL(`${oauthRoot()}/authorize`);
+  u.searchParams.set("response_type", "code");
+  u.searchParams.set("client_id", params.clientId);
+  u.searchParams.set("redirect_uri", params.redirectUri);
+  u.searchParams.set("state", params.state);
+  if (params.scope) u.searchParams.set("scope", params.scope);
+  return u.toString();
+}
+
 function tokenUrl(): string {
-  return process.env.PAYPROP_TOKEN_URL ?? `${base()}/oauth/access_token`;
+  return process.env.PAYPROP_TOKEN_URL ?? `${oauthRoot()}/access_token`;
+}
+
+/** The client credentials for an account — used by the connect/callback routes. */
+export function payPropClient(account: PayPropAccountId) {
+  return oauthFor(account);
 }
 
 const tokens = new Map<PayPropAccountId, { token: string; expiresAt: number }>();
@@ -105,12 +132,22 @@ const pending = new Map<PayPropAccountId, Promise<string | null>>();
 async function fetchToken(account: PayPropAccountId): Promise<string | null> {
   const creds = oauthFor(account);
   if (!creds) return null;
+
+  // PayProp only issues tokens through the authorisation-code grant, so this
+  // needs the refresh token saved when someone connected the account. Their
+  // spec says refresh tokens never expire, but each refresh returns a new one,
+  // so we store whatever comes back.
+  const { getPayPropTokens, updatePayPropRefreshToken } = await import("@/lib/payprop-tokens");
+  const stored = await getPayPropTokens(account);
+  if (!stored?.refreshToken) return null;
+
   try {
     const res = await fetch(tokenUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        grant_type: "client_credentials",
+        grant_type: "refresh_token",
+        refresh_token: stored.refreshToken,
         client_id: creds.id,
         client_secret: creds.secret,
       }),
@@ -118,8 +155,15 @@ async function fetchToken(account: PayPropAccountId): Promise<string | null> {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { access_token?: string; expires_in?: number };
+    const data = (await res.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      refresh_token?: string;
+    };
     if (!data.access_token) return null;
+    if (data.refresh_token && data.refresh_token !== stored.refreshToken) {
+      await updatePayPropRefreshToken(account, data.refresh_token).catch(() => {});
+    }
     // Retire it a minute early so no call starts with a token about to die.
     const ttl = Math.max((data.expires_in ?? 3600) * 1000 - 60_000, 30_000);
     tokens.set(account, { token: data.access_token, expiresAt: Date.now() + ttl });

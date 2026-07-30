@@ -23,4 +23,5 @@ data/property-files/
 data/property-files.json
 data/agent-compliance/
 data/agent-compliance.json
+data/payprop-tokens.json
 data/property-notes.json

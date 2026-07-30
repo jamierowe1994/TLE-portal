@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
   }
 
   const ping = await payPropPing();
+  const { connectedPayPropAccounts } = await import("@/lib/payprop-tokens");
+  const connected = await connectedPayPropAccounts();
   // Which scheme each account resolved to — the first thing to check when a
   // migrated account starts failing.
   const auth = Object.fromEntries(
@@ -88,5 +90,5 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  return NextResponse.json({ configured: true, auth, ping, accounts });
+  return NextResponse.json({ configured: true, auth, connected, ping, accounts });
 }
