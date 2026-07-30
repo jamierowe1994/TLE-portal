@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const origin = req.nextUrl.origin;
+  // Explicit wins: behind a proxy the request origin can differ from the
+  // public URL, and PayProp matches redirect_uri byte-for-byte on exchange.
+  const origin = (process.env.PAYPROP_REDIRECT_ORIGIN ?? req.nextUrl.origin).replace(/\/+$/, "");
   if (!origin.startsWith("https://")) {
     return NextResponse.json(
       {

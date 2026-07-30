@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         code,
         client_id: creds.id,
         client_secret: creds.secret,
-        redirect_uri: `${req.nextUrl.origin}/api/payprop/callback`,
+        redirect_uri: `${(process.env.PAYPROP_REDIRECT_ORIGIN ?? req.nextUrl.origin).replace(/\/+$/, "")}/api/payprop/callback`,
       }),
       cache: "no-store",
     }
