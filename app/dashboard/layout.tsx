@@ -274,7 +274,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="relative min-h-screen" style={{ background: "var(--page)" }}>
       {/* ── Desktop sidebar — grey on grey, broken up by darker hairlines and
           capped off by its own right-hand line ── */}
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r ${RAIL_LINE} lg:flex`}>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r-[1.5px] border-ink/85 lg:flex">
         {/* Account selector, top of the rail — photo, name, dropdown. Just an
             outline in the same hairline grey; no fill. */}
         <div className="relative mt-5 px-3" ref={menuRef}>
@@ -495,7 +495,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           line. Only the assistant bubble lives up here. */}
       <div
         aria-hidden
-        className={`fixed left-[240px] right-0 top-0 z-[5] hidden h-[56px] border-b ${RAIL_LINE} lg:block`}
+        className="fixed left-[240px] right-0 top-0 z-[5] hidden h-[56px] border-b-[1.5px] border-ink/85 lg:block"
         style={{ background: "var(--page)" }}
       />
 
