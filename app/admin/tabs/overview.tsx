@@ -139,12 +139,7 @@ function Tile({
   /** Denser tile for the headline band — smaller number so £ figures fit. */
   compact?: boolean;
 }) {
-  const isLive =
-    stat.source === "live-rex" ||
-    stat.source === "live-meta" ||
-    stat.source === "live-propoly" ||
-    stat.source === "live-teg" ||
-    stat.source === "live-ghl";
+  const isLive = stat.source.startsWith("live-");
   const isManual = stat.source === "manual";
   const value = stat.display ?? (stat.value != null ? formatNum(stat.value) : "—");
   return (

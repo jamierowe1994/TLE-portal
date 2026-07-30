@@ -62,10 +62,29 @@ export interface AgentBook {
   accounts: PayPropAccountId[];
 }
 
+export interface AccountSlice {
+  account: PayPropAccountId;
+  label: string;
+  properties: number;
+  rentRoll: number;
+  /** Mean rent across that account's properties. */
+  avgRent: number;
+}
+
 export interface PortfolioBook {
   /** Every managed property, business-wide. */
   totalProperties: number;
   totalRentRoll: number;
+  /** Mean rent across the whole book. */
+  avgRent: number;
+  /** Properties with no tenancy running — the vacancy figure. */
+  vacant: number;
+  /** Tenanted properties (active_tenancies > 0). */
+  tenanted: number;
+  /** Counts per PayProp service level, e.g. Fully Managed vs Let Only. */
+  byServiceLevel: Array<{ level: string; properties: number; rentRoll: number }>;
+  /** E&W and Glasgow are separate agencies — split so both can be shown. */
+  byAccount: AccountSlice[];
   /** Keyed by normalised name. */
   byAgent: Record<string, AgentBook>;
   /** Properties on buckets that aren't a person (TLE, Admin Property, blank). */
@@ -123,14 +142,34 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
   let totalProperties = 0;
   let totalRentRoll = 0;
   let unattributed = 0;
+  let vacant = 0;
+  let tenanted = 0;
+  const levels = new Map<string, { properties: number; rentRoll: number }>();
+  const slices: AccountSlice[] = [];
 
   for (const { account, rows } of perAccount) {
+    let accProperties = 0;
+    let accRent = 0;
     for (const r of rows) {
       // contract_amount is the agreed rent; monthly_payment_required is what's
       // actually collected each month. Prefer the latter, fall back.
       const rent = money(r.monthly_payment_required) || money(r.contract_amount);
       totalProperties++;
       totalRentRoll += rent;
+      accProperties++;
+      accRent += rent;
+
+      // A property with no running tenancy is a void.
+      if (money(r.active_tenancies) > 0) tenanted++;
+      else vacant++;
+
+      // PayProp's own service level — how "managed" vs "let only" is decided,
+      // rather than us inferring it.
+      const level = (r.service_level ?? "").trim() || "Not set";
+      const lv = levels.get(level) ?? { properties: 0, rentRoll: 0 };
+      lv.properties++;
+      lv.rentRoll += rent;
+      levels.set(level, lv);
 
       const raw = (r.responsible_agent ?? "").trim();
       const key = normaliseAgentName(raw);
@@ -154,11 +193,25 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
       if (r.property_name) book.propertyNames.push(r.property_name);
       if (!book.accounts.includes(account)) book.accounts.push(account);
     }
+    slices.push({
+      account,
+      label: account === "scotland" ? "Glasgow" : "E&W",
+      properties: accProperties,
+      rentRoll: accRent,
+      avgRent: accProperties ? accRent / accProperties : 0,
+    });
   }
 
   return {
     totalProperties,
     totalRentRoll,
+    avgRent: totalProperties ? totalRentRoll / totalProperties : 0,
+    vacant,
+    tenanted,
+    byServiceLevel: [...levels.entries()]
+      .map(([level, v]) => ({ level, ...v }))
+      .sort((a, b) => b.properties - a.properties),
+    byAccount: slices,
     byAgent,
     unattributed,
     accounts,

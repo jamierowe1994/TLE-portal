@@ -214,6 +214,11 @@ export interface ArrearsSummary {
   totalOwed: number;
   /** How many tenancies were checked, so a count can be shown honestly. */
   checked: number;
+  /** Split by agency — E&W and Glasgow are separate PayProp accounts. */
+  byAccount: Array<{ account: PayPropAccountId; label: string; tenants: number; owed: number }>;
+  /** Largest single debt, and the mean — both asked for on the arrears tab. */
+  largest: number;
+  average: number;
 }
 
 /**
@@ -229,12 +234,26 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
   if (accounts.length === 0) return null;
 
   const perAccount = await Promise.all(
-    accounts.map((a) =>
-      payPropGetAll<TenantBalanceRow>(a, "report/tenant/balances")
-    )
+    accounts.map(async (a) => ({
+      account: a,
+      rows: await payPropGetAll<TenantBalanceRow>(a, "report/tenant/balances"),
+    }))
   );
-  const rows = perAccount.flat();
+  const rows = perAccount.flatMap((p) => p.rows);
   if (rows.length === 0) return null;
+
+  // Same rule per agency, so the parts sum to the whole.
+  const inArrears = (list: TenantBalanceRow[]) =>
+    list.map((r) => -money(r.balance)).filter((owed) => owed > 0.005);
+  const byAccount = perAccount.map((p) => {
+    const owedList = inArrears(p.rows);
+    return {
+      account: p.account,
+      label: p.account === "scotland" ? "Glasgow" : "E&W",
+      tenants: owedList.length,
+      owed: owedList.reduce((s, x) => s + x, 0),
+    };
+  });
 
   const tenants = rows
     .map((r) => ({
@@ -247,10 +266,14 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
     .filter((t) => t.owed > 0.005)
     .sort((a, b) => b.owed - a.owed);
 
+  const totalOwed = tenants.reduce((t, x) => t + x.owed, 0);
   return {
     tenants,
-    totalOwed: tenants.reduce((t, x) => t + x.owed, 0),
+    totalOwed,
     checked: rows.length,
+    byAccount,
+    largest: tenants.length ? tenants[0].owed : 0,
+    average: tenants.length ? totalOwed / tenants.length : 0,
   };
 }
 
