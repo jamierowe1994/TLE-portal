@@ -492,7 +492,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           line. Only the assistant bubble lives up here. */}
       <div
         aria-hidden
-        className={`fixed left-[240px] right-0 top-0 z-20 hidden h-[56px] border-b ${RAIL_LINE} lg:block`}
+        className={`fixed left-[240px] right-0 top-0 z-[5] hidden h-[56px] border-b ${RAIL_LINE} lg:block`}
         style={{ background: "var(--page)" }}
       />
 

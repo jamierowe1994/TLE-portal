@@ -7,12 +7,15 @@
 // let is up to, what's outstanding, which platform does the next bit — lives
 // behind the click, so the grid stays scannable.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Loader from "@/components/Loader";
 import { formatGBP } from "@/lib/format";
 import { platformById } from "@/lib/platforms";
 import { rexListingUrl } from "@/lib/rex-links";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
+import DrawerRail, { type RailAction } from "@/components/DrawerRail";
+import DoodleIcon from "@/components/DoodleIcon";
+import MilestoneBars, { type Milestone } from "@/components/charts/MilestoneBars";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import NoPhoto from "@/components/NoPhoto";
 import type { AgentListing } from "@/lib/rex-stats";
@@ -237,19 +240,120 @@ function StepRow({ s }: { s: Step }) {
 }
 
 // One box: the photos run full-width across the top, then the property
-// details on the left and what-to-do on the right beneath them.
+// details on the left; the right-hand column is a live panel area driven by
+// the action rail down the drawer's right edge.
+type PanelId = "next" | "note" | "contacts" | "chat";
+
+function milestonesFor(l: AgentListing, stage: Stage): Milestone[] {
+  const epc = epcState(l);
+  const hasPhotos = l.imageCount > 0;
+  const published = l.publicationStatus?.toLowerCase() !== "draft";
+  const agreed = stage === "let-agreed";
+  return [
+    {
+      label: "Photos on file",
+      progress: hasPhotos ? 1 : 0,
+      note: hasPhotos ? `${l.imageCount} uploaded` : "None yet",
+    },
+    {
+      label: "EPC in date",
+      progress: epc.state === "valid" ? 1 : epc.state === "not-required" ? 1 : epc.state === "expiring" ? 0.6 : 0,
+      note: epc.label,
+    },
+    {
+      label: "Live on the portals",
+      progress: published ? 1 : 0,
+      note: published ? (l.publicationStatus ?? "Published") : "Still a draft",
+    },
+    {
+      label: "Let agreed",
+      progress: agreed ? 1 : published ? 0.35 : 0,
+      note: agreed ? "Agreed" : published ? "On the market" : "Not yet live",
+    },
+    {
+      label: "Tenancy set up",
+      progress: agreed ? 0.5 : 0,
+      note: agreed ? "In progress" : "Waiting on a let",
+    },
+  ];
+}
+
 function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   const stage = stageOf(l);
   const epc = epcState(l);
   const steps = stepsFor(l, stage);
+  const [panel, setPanel] = useState<PanelId>("next");
+  const [showDetails, setShowDetails] = useState(false);
+  const [note, setNote] = useState("");
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const actions: RailAction[] = [
+    { id: "close", icon: "cross", label: "Close", onClick: onClose, top: true },
+    {
+      id: "note",
+      icon: "note",
+      label: "Add a note",
+      active: panel === "note",
+      onClick: () => setPanel((p) => (p === "note" ? "next" : "note")),
+    },
+    {
+      id: "contacts",
+      icon: "call",
+      label: "Contact details",
+      active: panel === "contacts",
+      onClick: () => setPanel((p) => (p === "contacts" ? "next" : "contacts")),
+    },
+    {
+      id: "chat",
+      icon: "message-2",
+      label: "Ask a question",
+      active: panel === "chat",
+      onClick: () => setPanel((p) => (p === "chat" ? "next" : "chat")),
+    },
+    {
+      id: "details",
+      icon: "info",
+      label: showDetails ? "Hide details" : "More details",
+      active: showDetails,
+      onClick: () => setShowDetails((v) => !v),
+    },
+    {
+      id: "rex",
+      icon: "link",
+      label: "View listing in REX",
+      onClick: () => window.open(rexListingUrl(l.id, "rental"), "_blank", "noopener"),
+    },
+  ];
+
+  async function saveNote() {
+    const text = note.trim();
+    if (!text || saving) return;
+    setSaving(true);
+    // Notes ride on the agent's own to-do list so they surface in the places
+    // that already read it (the list itself and the assistant).
+    await fetch("/api/my/todos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: text, property: l.name, platform: "REX" }),
+    }).catch(() => {});
+    setSavedNote(text);
+    setNote("");
+    setSaving(false);
+    setPanel("next");
+  }
 
   return (
-    <SplitDrawer onClose={onClose}>
+    <SplitDrawer onClose={onClose} hideClose>
       <DrawerPanel
-        className="shrink-0 grow-0 overflow-hidden p-3"
+        className="relative shrink-0 grow-0 p-3"
         style={{ width: "min(56rem, calc(100vw - 2rem))" }}
       >
-        <PhotoCarousel images={l.images} alt={l.name} aspect="h-64 sm:h-80" />
+        <DrawerRail actions={actions} />
+
+        <div className="overflow-hidden rounded-2xl">
+          <PhotoCarousel images={l.images} alt={l.name} aspect="h-64 sm:h-80" />
+        </div>
 
         <div className="grid gap-x-8 p-5 sm:p-6 lg:grid-cols-[1.1fr_1fr]">
         <div>
@@ -259,20 +363,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           <h2 className="mt-3 text-[17px] font-semibold leading-snug">{l.name}</h2>
           <p className="mt-0.5 text-[13px] text-muted">{l.locality}</p>
 
-          {/* Straight through to the record in REX — no hunting by address. */}
-          <a
-            href={rexListingUrl(l.id, "rental")}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-press mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[12px] font-semibold text-white transition hover:opacity-90"
-          >
-            View Listing
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 17L17 7M9 7h8v8" />
-            </svg>
-          </a>
-
-          <div className="mt-6 grid grid-cols-3 gap-3 border-y border-line py-5 text-[11px] text-muted">
+          <div className="mt-5 grid grid-cols-3 gap-3 border-y border-line py-5 text-[11px] text-muted">
             <div>
               <div className="stat-value text-[18px] text-ink">
                 {l.rent != null ? formatGBP(l.rent) : "—"}
@@ -304,15 +395,19 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
             ) : null}
           </div>
 
-          {/* The long tail lives behind a dropdown, so the box stays calm. */}
-          <details className="group/details mt-5 rounded-xl border border-line">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[12px] font-semibold text-muted [&::-webkit-details-marker]:hidden">
-              More details
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 transition-transform group-open/details:rotate-180" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </summary>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-line px-4 py-4 text-[12px]">
+          {/* Where this property is up to, drawn as filling bars. */}
+          <div className="mt-6">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Where it&rsquo;s up to
+            </h3>
+            <div className="mt-3">
+              <MilestoneBars milestones={milestonesFor(l, stage)} />
+            </div>
+          </div>
+
+          {/* The long tail — toggled from the rail rather than a dropdown. */}
+          {showDetails ? (
+            <dl className="panel-up mt-5 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border border-line px-4 py-4 text-[12px]">
               {l.category ? (
                 <div>
                   <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Category</dt>
@@ -348,34 +443,229 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
                 </div>
               ) : null}
             </dl>
-          </details>
+          ) : null}
         </div>
 
-        {/* ---- what you need to do ---- */}
-        <div className="mt-6 border-t border-line pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-            {steps.length ? "What's next" : "Nothing outstanding"}
-          </h3>
-          {steps.length ? (
-            <div className="mt-3 space-y-2.5">
-              {steps.map((s) => (
-                <StepRow key={s.title} s={s} />
-              ))}
-              <p className="pt-2 text-[11px] text-muted">
-                These aren&rsquo;t ticked off automatically yet — once the
-                PayProp, Flatfair and Propoly connections are live, this list
-                will know what&rsquo;s already done.
+        {/* ---- the active panel: whatever the rail last asked for ---- */}
+        <div className="mt-6 min-h-[280px] border-t border-line pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          {panel === "next" ? (
+            <div key="next" className="panel-up">
+              <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                {steps.length ? "What's next" : "Nothing outstanding"}
+              </h3>
+              {steps.length ? (
+                <div className="mt-3 space-y-2.5">
+                  {steps.map((s) => (
+                    <StepRow key={s.title} s={s} />
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-[13px] text-muted">
+                  Nothing needs doing on this one right now.
+                </p>
+              )}
+              {savedNote ? (
+                <div className="mt-4 rounded-xl border border-line p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    Note added
+                  </p>
+                  <p className="mt-1 text-[12px] text-ink">{savedNote}</p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {panel === "note" ? (
+            <div key="note" className="panel-up flex h-full flex-col">
+              <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                <DoodleIcon name="note" size={15} />
+                Add a note
+              </h3>
+              <textarea
+                autoFocus
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={`Something to remember about ${l.name}…`}
+                className="mt-3 h-32 w-full resize-none rounded-xl border border-line bg-white p-3 text-[13px] outline-none transition focus:border-black/25"
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveNote()}
+                  disabled={!note.trim() || saving}
+                  className="btn-press rounded-full bg-ink px-4 py-2 text-[12px] font-semibold text-white transition disabled:opacity-40"
+                >
+                  {saving ? "Saving…" : "Save note"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanel("next")}
+                  className="btn-press rounded-full border border-line px-4 py-2 text-[12px] font-medium text-muted transition hover:text-ink"
+                >
+                  Cancel
+                </button>
+              </div>
+              <p className="mt-3 text-[11px] text-muted">
+                Saved to your to-do list against this property, so the assistant
+                can find it too.
               </p>
             </div>
-          ) : (
-            <p className="mt-2 text-[13px] text-muted">
-              Nothing needs doing on this one right now.
-            </p>
-          )}
+          ) : null}
+
+          {panel === "contacts" ? (
+            <div key="contacts" className="panel-up">
+              <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                <DoodleIcon name="call" size={15} />
+                Contact details
+              </h3>
+              <div className="mt-3 space-y-2">
+                <div className="rounded-xl border border-line p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Property</p>
+                  <p className="mt-1 text-[13px] text-ink">{l.address}</p>
+                </div>
+                <p className="text-[12px] text-muted">
+                  Landlord and tenant contacts live on the REX record — open it
+                  from the rail and they&rsquo;re on the contacts tab.
+                </p>
+                <a
+                  href={rexListingUrl(l.id, "rental")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-press inline-flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[12px] font-semibold transition hover:border-black/25"
+                >
+                  Open contacts in REX
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 17L17 7M9 7h8v8" />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          ) : null}
+
+          {panel === "chat" ? (
+            <div key="chat" className="panel-up">
+              <PropertyChat listing={l} />
+            </div>
+          ) : null}
         </div>
         </div>
       </DrawerPanel>
     </SplitDrawer>
+  );
+}
+
+/* ------------------------------ property chat ----------------------------- */
+
+/** Ask the assistant about this specific property, in the drawer. */
+function PropertyChat({ listing }: { listing: AgentListing }) {
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const thread = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = thread.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  async function send() {
+    const q = input.trim();
+    if (!q || streaming) return;
+    setInput("");
+    const history = [
+      ...messages,
+      {
+        role: "user" as const,
+        content: `About ${listing.address} (REX listing ${listing.id}): ${q}`,
+      },
+    ];
+    setMessages([...history, { role: "assistant", content: "" }]);
+    setStreaming(true);
+    try {
+      const res = await fetch("/api/my/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history }),
+      });
+      if (!res.ok || !res.body) {
+        setMessages([...history, { role: "assistant", content: "Couldn't answer that just now." }]);
+        return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let answer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        answer += dec.decode(value, { stream: true });
+        setMessages([...history, { role: "assistant", content: answer }]);
+      }
+    } catch {
+      setMessages([...history, { role: "assistant", content: "Lost the connection — try again." }]);
+    } finally {
+      setStreaming(false);
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+        <DoodleIcon name="message-2" size={15} />
+        Ask about this property
+      </h3>
+      <div
+        ref={thread}
+        className="no-scrollbar mt-3 h-44 space-y-2.5 overflow-y-auto pr-1"
+      >
+        {messages.length === 0 ? (
+          <p className="text-[12px] text-muted">
+            &ldquo;When does the EPC expire?&rdquo; · &ldquo;What&rsquo;s outstanding here?&rdquo;
+          </p>
+        ) : (
+          messages.map((m, i) =>
+            m.role === "user" ? (
+              <div key={i} className="flex justify-end">
+                <span className="max-w-[85%] rounded-2xl rounded-br-md bg-ink px-3 py-1.5 text-[12px] text-white">
+                  {m.content.replace(/^About .*?\): /, "")}
+                </span>
+              </div>
+            ) : (
+              <div key={i} className="flex">
+                <span className="max-w-[90%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-black/[0.04] px-3 py-1.5 text-[12px] leading-relaxed text-ink">
+                  {m.content || "…"}
+                </span>
+              </div>
+            )
+          )
+        )}
+      </div>
+      <form
+        className="relative mt-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+      >
+        <input
+          autoFocus
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask a question…"
+          disabled={streaming}
+          className="w-full rounded-full border border-line bg-white py-2 pl-3.5 pr-10 text-[12.5px] outline-none transition focus:border-black/25 disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={streaming || !input.trim()}
+          aria-label="Send"
+          className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-ink text-white transition disabled:opacity-30"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </button>
+      </form>
+    </div>
   );
 }
 

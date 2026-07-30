@@ -34,9 +34,12 @@ export function DrawerPanel({
 export default function SplitDrawer({
   onClose,
   children,
+  hideClose = false,
 }: {
   onClose: () => void;
   children: React.ReactNode;
+  /** Drawers with their own action rail supply the close button themselves. */
+  hideClose?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -51,6 +54,7 @@ export default function SplitDrawer({
     >
       <div className="flex min-h-full items-center justify-center p-4 py-10 sm:p-10">
         <div className="relative">
+{hideClose ? null : (
           <button
             onClick={onClose}
             aria-label="Close"
@@ -60,6 +64,7 @@ export default function SplitDrawer({
               <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
+          )}
 
           {/* items-start keeps the two boxes top-aligned even when one runs long */}
           <div className="flex flex-col items-start gap-4 lg:flex-row">{children}</div>
