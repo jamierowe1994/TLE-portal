@@ -43,6 +43,11 @@ export async function GET(req: NextRequest) {
   const ping = await payPropPing();
   const { connectedPayPropAccounts } = await import("@/lib/payprop-tokens");
   const connected = await connectedPayPropAccounts();
+  const seededFromEnv = Boolean(
+    process.env.PAYPROP_REFRESH_TOKEN ??
+      process.env.PAYPROP_REFRESH_TOKEN_UK ??
+      process.env.PAYPROP_REFRESH_TOKEN_SCOTLAND
+  );
   // Which scheme each account resolved to — the first thing to check when a
   // migrated account starts failing.
   const auth = Object.fromEntries(
@@ -90,5 +95,5 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  return NextResponse.json({ configured: true, auth, connected, ping, accounts });
+  return NextResponse.json({ configured: true, auth, connected, seededFromEnv, ping, accounts });
 }

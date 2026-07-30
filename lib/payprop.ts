@@ -137,9 +137,24 @@ async function fetchToken(account: PayPropAccountId): Promise<string | null> {
   // needs the refresh token saved when someone connected the account. Their
   // spec says refresh tokens never expire, but each refresh returns a new one,
   // so we store whatever comes back.
-  const { getPayPropTokens, updatePayPropRefreshToken } = await import("@/lib/payprop-tokens");
+  const { getPayPropTokens, updatePayPropRefreshToken, savePayPropTokens } =
+    await import("@/lib/payprop-tokens");
   const stored = await getPayPropTokens(account);
-  if (!stored?.refreshToken) return null;
+
+  // A refresh token can also be seeded from the environment. That matters for
+  // production: consent has to happen somewhere PayProp will redirect to, and
+  // until our live callback is registered the only completed consent lives on
+  // a developer machine. The token itself is portable, so lifting it into
+  // Railway gets production running without waiting.
+  //
+  // NOTE: PayProp issues a NEW refresh token on every refresh, so two
+  // environments must not share one — whichever refreshes first leaves the
+  // other holding a stale token. Seed one environment, not both.
+  const seeded =
+    process.env[`PAYPROP_REFRESH_TOKEN_${account.toUpperCase()}`] ??
+    process.env.PAYPROP_REFRESH_TOKEN;
+  const refreshToken = stored?.refreshToken ?? seeded;
+  if (!refreshToken) return null;
 
   try {
     const res = await fetch(tokenUrl(), {
@@ -147,7 +162,7 @@ async function fetchToken(account: PayPropAccountId): Promise<string | null> {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        refresh_token: stored.refreshToken,
+        refresh_token: refreshToken,
         client_id: creds.id,
         client_secret: creds.secret,
       }),
@@ -161,8 +176,19 @@ async function fetchToken(account: PayPropAccountId): Promise<string | null> {
       refresh_token?: string;
     };
     if (!data.access_token) return null;
-    if (data.refresh_token && data.refresh_token !== stored.refreshToken) {
-      await updatePayPropRefreshToken(account, data.refresh_token).catch(() => {});
+    // Persist the rotated token. If we started from the env seed there's no
+    // record yet, so write a full one — after this the volume is the source of
+    // truth and the seed is only a fallback.
+    if (data.refresh_token && data.refresh_token !== refreshToken) {
+      if (stored) {
+        await updatePayPropRefreshToken(account, data.refresh_token).catch(() => {});
+      } else {
+        await savePayPropTokens(account, {
+          refreshToken: data.refresh_token,
+          connectedBy: "seeded from environment",
+          connectedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
     }
     // Retire it a minute early so no call starts with a token about to die.
     const ttl = Math.max((data.expires_in ?? 3600) * 1000 - 60_000, 30_000);
