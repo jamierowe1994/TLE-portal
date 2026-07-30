@@ -8,6 +8,8 @@
 // appears on the click.
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import DoodleIcon from "@/components/DoodleIcon";
 import FilterBar from "@/components/FilterBar";
 import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
@@ -117,233 +119,592 @@ function ApplicationTile({
 // Stage definitions live in lib/propoly-stages.ts, shared with the
 // pre-tenancy dashboard so both sides always show the same board.
 
+/* ---------------------- pieces of the Propoly drawer ---------------------- */
+
+/** A stat in the drawer header: icon, figure, label. */
+function HeadStat({ icon, value, label }: { icon: string; value: string; label: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <DoodleIcon name={icon} size={22} className="shrink-0 text-ink" />
+      <div className="min-w-0">
+        <div className="truncate text-[14px] font-semibold text-ink">{value}</div>
+        <div className="truncate text-[11.5px] text-muted">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Send-a-message composer. No SMTP of our own, so it hands off to mail. */
+function MessageComposer({
+  to,
+  who,
+  property,
+  onClose,
+}: {
+  to: string | null;
+  who: string;
+  property: string;
+  onClose: () => void;
+}) {
+  const [address, setAddress] = useState(to ?? "");
+  const [subject, setSubject] = useState(`${property}`);
+  const [body, setBody] = useState("");
+
+  const send = () => {
+    const url = `mailto:${encodeURIComponent(address)}?subject=${encodeURIComponent(
+      subject
+    )}&body=${encodeURIComponent(body)}`;
+    window.location.href = url;
+    onClose();
+  };
+
+  return (
+    <div className="panel-bounce card p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+          <DoodleIcon name="mail" size={17} className="text-accent" />
+          Message the {who}
+        </h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="btn-press rounded-full border border-line px-3 py-1 text-[12px] font-medium text-muted transition hover:text-ink"
+        >
+          Collapse
+        </button>
+      </div>
+      <div className="mt-4 space-y-3">
+        <label className="block">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">To</span>
+          <input
+            type="email"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder={to ? "" : `The ${who}'s address — it lives on the REX record`}
+            className="mt-1 w-full border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2 text-[13px] outline-none transition focus:border-ink/70"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Subject</span>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            className="mt-1 w-full border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2 text-[13px] outline-none transition focus:border-ink/70"
+          />
+        </label>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder={`Write to the ${who}…`}
+          className="h-32 w-full resize-none rounded-xl border border-line bg-transparent p-3 text-[13px] outline-none transition focus:border-black/30"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={!address.trim()}
+          className="btn-press inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition disabled:opacity-40"
+          style={{ background: BRAND.accent }}
+        >
+          <DoodleIcon name="mail" size={15} />
+          Open in your mail app
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Click-into-a-deal dashboard: where the tenancy is, stage by stage. */
-// Two windows: the deal and its stages on the left; the tenants, checklist and
-// the running conversation with pre-tenancy (Kirstie's side) on the right.
+// One wide window: the property across the top, the stage board on the left,
+// and a right-hand column of panels that expand over each other on demand.
 function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
   // Pre-tenancy meta (checklist ticks) arrives with the notes fetch.
   const [meta, setMeta] = useState<DealMeta | null>(null);
+  // Which right-hand panel is opened out; null = the resting arrangement.
+  type Expanded = null | "notes" | "documents" | "comms" | "tenant" | "landlord";
+  const [expanded, setExpanded] = useState<Expanded>(null);
 
   const p = a.propoly!;
   const cancelled = p.statusKey === "cancelled";
   const currentIdx = PORTAL_STAGES.findIndex((s) => s.key === p.statusKey);
+  const lead = a.tenants.find((t) => t.isPrimary) ?? a.tenants[0];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (expanded ? setExpanded(null) : onClose());
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, onClose]);
+
+  const collapse = (
+    <button
+      type="button"
+      onClick={() => setExpanded(null)}
+      className="btn-press rounded-full border border-line px-3 py-1 text-[12px] font-medium text-muted transition hover:text-ink"
+    >
+      Collapse
+    </button>
+  );
 
   return (
-    <SplitDrawer onClose={onClose}>
-      {/* ---- the deal & where it is ---- */}
-      <DrawerPanel className="lg:w-[26rem]">
-        <div className="p-5 sm:p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
-              {a.status.toUpperCase()}
-            </span>
-            {p.service ? (
-              <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted">
-                {p.service.toUpperCase()}
+    <SplitDrawer onClose={onClose} hideClose>
+      <DrawerPanel
+        className="relative shrink-0 grow-0 p-5 sm:p-7"
+        style={{ width: "min(74rem, calc(100vw - 2rem))" }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="btn-press absolute right-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-line bg-page text-muted transition hover:text-ink"
+        >
+          <DoodleIcon name="cross" size={16} />
+        </button>
+
+        {/* ---- header: the property, then the headline numbers ---- */}
+        <div className="flex flex-wrap items-center gap-5 pr-12">
+          <div className="h-[76px] w-[104px] shrink-0 overflow-hidden rounded-xl bg-page">
+            {a.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={a.image} alt={a.propertyName} className="h-full w-full object-cover" />
+            ) : (
+              <NoPhoto className="border-0" />
+            )}
+          </div>
+
+          <div className="min-w-0">
+            {/* The address links through to the property itself when we found it. */}
+            {a.listingId ? (
+              <Link
+                href={`/dashboard/listings?open=${encodeURIComponent(a.listingId)}`}
+                className="text-[24px] leading-tight tracking-tight decoration-2 underline-offset-4 hover:underline"
+                style={{ fontWeight: 500 }}
+              >
+                {a.propertyName}
+              </Link>
+            ) : (
+              <h2 className="text-[24px] leading-tight tracking-tight" style={{ fontWeight: 500 }}>
+                {a.propertyName}
+              </h2>
+            )}
+            <p className="mt-1 text-[13px] text-muted">{a.locality}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className={`rounded-full border px-2.5 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[a.stage]}`}>
+                {a.status.toUpperCase()}
               </span>
+              {p.service ? (
+                <span className="rounded-full border border-line px-2.5 py-0.5 text-[9px] font-semibold text-muted">
+                  {p.service.toUpperCase()}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="ml-auto flex flex-wrap items-center gap-x-8 gap-y-3">
+            <HeadStat
+              icon="home"
+              value={a.offer != null ? `${formatGBP(a.offer)} pcm` : "—"}
+              label="Rent"
+            />
+            <HeadStat
+              icon="calendar"
+              value={fmtDate(a.startDate) ?? "TBC"}
+              label="Tenancy starts"
+            />
+            {a.occupants != null ? (
+              <HeadStat icon="user" value={String(a.occupants)} label={a.occupants === 1 ? "Occupant" : "Occupants"} />
             ) : null}
           </div>
-          <h2 className="mt-3 text-[17px] font-semibold leading-snug">{a.propertyName}</h2>
-          <p className="mt-0.5 text-[13px] text-muted">{a.locality}</p>
-
-          {cancelled ? (
-            <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
-              This deal was cancelled before completion — the stages below show the
-              journey it would have taken.
-            </p>
-          ) : null}
-
-          {a.portal?.override ? (
-            <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
-              {a.portal.override.by || "The pre-tenancy team"} moved this deal to{" "}
-              <span className="font-semibold">{a.status}</span>
-              {a.portal.override.at ? ` on ${fmtDate(a.portal.override.at)}` : ""}.
-            </p>
-          ) : null}
-
-          {/* ---- the stage board ---- */}
-          <ol className="mt-6">
-            {PORTAL_STAGES.map((s, i) => {
-              const state = cancelled
-                ? "off"
-                : i < currentIdx
-                  ? "done"
-                  : i === currentIdx
-                    ? "current"
-                    : "todo";
-              const last = i === PORTAL_STAGES.length - 1;
-              return (
-                <li key={s.key} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    {state === "done" ? (
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-100">
-                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-green-700" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M5 13l4 4L19 7" />
-                        </svg>
-                      </span>
-                    ) : state === "current" ? (
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full accent-soft-bg">
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: BRAND.accent }} />
-                      </span>
-                    ) : (
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-page">
-                        <span className="h-2 w-2 rounded-full bg-gray-300" />
-                      </span>
-                    )}
-                    {!last ? (
-                      <span className={`w-px flex-1 ${state === "done" ? "bg-green-200" : "bg-line"}`} />
-                    ) : null}
-                  </div>
-                  <div className={last ? "pb-1" : "pb-5"}>
-                    <p
-                      className={`text-[13px] font-semibold leading-6 ${
-                        state === "todo" || state === "off" ? "text-muted" : "text-ink"
-                      }`}
-                    >
-                      {s.label}
-                      {state === "current" ? (
-                        <span className="ml-2 rounded-full accent-soft-bg px-2 py-0.5 text-[9px] font-semibold accent-text">
-                          HAPPENING NOW
-                        </span>
-                      ) : null}
-                    </p>
-                    {state === "current" ? (
-                      <>
-                        <p className="mt-0.5 text-[12px] text-muted">{s.blurb}</p>
-                        <a
-                          href={PROPOLY_APP_URL}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium accent-text underline-offset-2 hover:underline"
-                        >
-                          Chase this in Propoly
-                          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 5h5v5M19 5l-8 8" />
-                          </svg>
-                        </a>
-                      </>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-
-          {/* ---- the numbers ---- */}
-          <div className="mt-6 grid grid-cols-2 gap-3 border-y border-line py-5 text-[11px] text-muted">
-            <div>
-              <div className="stat-value text-[18px] text-ink">{a.offer != null ? formatGBP(a.offer) : "—"}</div>
-              Rent / month
-            </div>
-            <div>
-              <div className="stat-value text-[18px] text-ink">{p.deposit != null ? formatGBP(p.deposit) : "—"}</div>
-              Deposit
-            </div>
-            <div>
-              <div className="stat-value text-[18px] text-ink">{p.holdingFee != null ? formatGBP(p.holdingFee) : "—"}</div>
-              Holding fee
-            </div>
-            <div>
-              <div className="text-[13px] font-medium text-ink">{fmtDate(a.startDate) ?? "TBC"}</div>
-              Move-in
-            </div>
-          </div>
-
-          {/* ---- go do it ---- */}
-          <div className="mt-5 flex items-center justify-between gap-3">
-            <p className="text-[11px] text-muted">
-              Live from Propoly — updates within a minute of anything moving.
-            </p>
-            <a
-              href={PROPOLY_APP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-press shrink-0 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition"
-              style={{ background: BRAND.accent }}
-            >
-              Open in Propoly
-            </a>
-          </div>
         </div>
-      </DrawerPanel>
 
-      {/* ---- the people & the pre-tenancy side ---- */}
-      <DrawerPanel className="lg:w-[26rem]">
-        <div className="p-5 sm:p-6">
-          {/* ---- tenants ---- */}
-          <div>
-            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-              {a.tenants.length === 1 ? "Tenant" : `Tenants (${a.tenants.length})`}
+        {cancelled ? (
+          <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+            This deal was cancelled before completion — the stages below show the
+            journey it would have taken.
+          </p>
+        ) : null}
+
+        {a.portal?.override ? (
+          <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+            {a.portal.override.by || "The pre-tenancy team"} moved this deal to{" "}
+            <span className="font-semibold">{a.status}</span>
+            {a.portal.override.at ? ` on ${fmtDate(a.portal.override.at)}` : ""}.
+          </p>
+        ) : null}
+
+        <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_1.08fr]">
+          {/* ================= left: where the tenancy is ================= */}
+          <div className="card p-5 sm:p-6">
+            <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+              <DoodleIcon name="lock" size={17} className="text-accent" />
+              Application progress
             </h3>
-            <div className="mt-3 space-y-2.5">
-              {a.tenants.length ? (
-                a.tenants.map((t, i) => (
-                  <div key={i} className="rounded-xl border border-line p-4">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[13px] font-medium">{t.name}</p>
-                      {t.isPrimary ? (
-                        <span className="rounded-full border border-line bg-page px-1.5 py-0.5 text-[9px] font-semibold text-muted">
-                          LEAD
+
+            <ol className="mt-5">
+              {PORTAL_STAGES.map((s, i) => {
+                const state = cancelled
+                  ? "off"
+                  : i < currentIdx
+                    ? "done"
+                    : i === currentIdx
+                      ? "current"
+                      : "todo";
+                const last = i === PORTAL_STAGES.length - 1;
+                return (
+                  <li key={s.key} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      {state === "done" ? (
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-emerald-700" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 13l4 4L19 7" />
+                          </svg>
                         </span>
+                      ) : state === "current" ? (
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full accent-soft-bg">
+                          <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: BRAND.accent }} />
+                        </span>
+                      ) : (
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-page">
+                          <span className="h-2 w-2 rounded-full bg-black/20" />
+                        </span>
+                      )}
+                      {!last ? (
+                        <span className={`w-px flex-1 ${state === "done" ? "bg-emerald-200" : "bg-line"}`} />
                       ) : null}
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted">
-                      {t.email ? <a href={`mailto:${t.email}`} className="hover:text-ink">{t.email}</a> : null}
-                      {t.phone ? <a href={`tel:${t.phone}`} className="hover:text-ink">{t.phone}</a> : null}
+                    <div className={`min-w-0 flex-1 ${last ? "pb-1" : "pb-5"}`}>
+                      <div
+                        className={`-mx-2 rounded-lg px-2 py-0.5 ${
+                          state === "current" ? "bg-accent-soft" : ""
+                        }`}
+                      >
+                        <p className="flex flex-wrap items-center gap-2 text-[13.5px] leading-6">
+                          <span className={state === "todo" || state === "off" ? "text-muted" : "font-semibold text-ink"}>
+                            {s.label}
+                          </span>
+                          {state === "current" ? (
+                            <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold accent-text accent-soft-bg">
+                              AWAITING
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-[12px] text-muted">
+                          {state === "done" ? "Completed" : state === "current" ? s.blurb : "Pending"}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-[13px] text-muted">No tenant details recorded yet.</p>
-              )}
-            </div>
-          </div>
+                  </li>
+                );
+              })}
+            </ol>
 
-          {/* ---- pre-tenancy checklist (Kirstie ticks, you watch) ---- */}
-          {meta && Object.keys(meta.checklist).length > 0 ? (
-            <div className="mt-6">
-              <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                Pre-tenancy checklist
-                <span className="ml-2 font-normal normal-case">
-                  {CHECKLIST_ITEMS.filter((i) => meta.checklist[i.key]?.done).length}/
-                  {CHECKLIST_ITEMS.length} done
-                </span>
-              </h3>
-              <div className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-                {CHECKLIST_ITEMS.map((item) => {
-                  const done = meta.checklist[item.key]?.done ?? false;
-                  return (
-                    <div key={item.key} className="flex items-center gap-2 text-[12px]">
-                      {done ? (
-                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-green-600" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-line" />
-                      )}
-                      <span className={done ? "text-muted line-through" : "text-ink"}>
-                        {item.label}
-                      </span>
-                    </div>
-                  );
-                })}
+            {/* the deal in one line, like the reference's footer strip */}
+            <div className="mt-5 grid grid-cols-3 divide-x divide-line rounded-xl border border-line">
+              <div className="min-w-0 p-3.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-muted">
+                  <DoodleIcon name="home" size={13} />
+                  Property
+                </div>
+                <p className="mt-1 truncate text-[12.5px] font-medium text-ink">{a.propertyName}</p>
+                <p className="truncate text-[11px] text-muted">{a.locality}</p>
+              </div>
+              <div className="min-w-0 p-3.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-muted">
+                  <DoodleIcon name="user" size={13} />
+                  Tenant
+                </div>
+                <p className="mt-1 truncate text-[12.5px] font-medium text-ink">
+                  {lead?.name ?? "—"}
+                </p>
+                <p className="truncate text-[11px] text-muted">
+                  {a.tenants.length > 1 ? `+${a.tenants.length - 1} more` : "Lead applicant"}
+                </p>
+              </div>
+              <div className="min-w-0 p-3.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-muted">
+                  <DoodleIcon name="calendar" size={13} />
+                  Tenancy
+                </div>
+                <p className="mt-1 truncate text-[12.5px] font-medium text-ink">
+                  {a.agreementMonths ? `${a.agreementMonths} months` : "—"}
+                </p>
+                <p className="truncate text-[11px] text-muted">
+                  {a.startDate ? `Start: ${fmtDate(a.startDate)}` : "Start TBC"}
+                </p>
               </div>
             </div>
-          ) : null}
-
-          {/* ---- notes with the pre-tenancy team ---- */}
-          <div className="mt-6">
-            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-              Notes with pre-tenancy
-            </h3>
-            <div className="mt-1">
-              <DealNotesPanel
-                dealId={a.id}
-                placeholder="Reply to pre-tenancy — they see it instantly…"
-                onMeta={setMeta}
-              />
-            </div>
           </div>
+
+          {/* ============ right: the people, and whatever's opened out ============ */}
+          <div className="space-y-5">
+            {expanded === "tenant" || expanded === "landlord" ? (
+              <MessageComposer
+                to={expanded === "tenant" ? (lead?.email ?? null) : null}
+                who={expanded === "tenant" ? "tenant" : "landlord"}
+                property={`${a.propertyName}, ${a.locality}`}
+                onClose={() => setExpanded(null)}
+              />
+            ) : null}
+
+            {/* Tenant details — squeezed away while a panel is opened out. */}
+            {expanded === null ? (
+              <div className="panel-bounce card p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="user" size={17} className="text-accent" />
+                    Tenant details
+                  </h3>
+                  <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${STAGE_STYLE[a.stage]}`}>
+                    {cancelled ? "Cancelled" : "Application in progress"}
+                  </span>
+                </div>
+
+                {a.tenants.length ? (
+                  <div className="mt-4 space-y-4">
+                    {a.tenants.map((t, i) => (
+                      <div key={i} className={i > 0 ? "border-t border-line pt-4" : ""}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[15px] font-semibold text-ink">{t.name}</p>
+                          {t.isPrimary ? (
+                            <span className="rounded-full border border-line px-2 py-0.5 text-[9px] font-semibold text-muted">
+                              LEAD
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 space-y-1.5">
+                          {t.email ? (
+                            <a href={`mailto:${t.email}`} className="flex items-center gap-2 text-[12.5px] text-muted transition hover:text-ink">
+                              <DoodleIcon name="mail" size={14} />
+                              {t.email}
+                            </a>
+                          ) : null}
+                          {t.phone ? (
+                            <a href={`tel:${t.phone}`} className="flex items-center gap-2 text-[12.5px] text-muted transition hover:text-ink">
+                              <DoodleIcon name="call" size={14} />
+                              {t.phone}
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[13px] text-muted">No tenant details recorded yet.</p>
+                )}
+
+                {/* Only the facts Propoly actually gives us — the rest waits for
+                    referencing to be wired in rather than showing invented data. */}
+                <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-line pt-4 text-[12.5px]">
+                  <div>
+                    <dt className="text-muted">Holding fee</dt>
+                    <dd className="mt-0.5 text-ink">
+                      {p.holdingFee != null ? formatGBP(p.holdingFee) : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted">Deposit</dt>
+                    <dd className="mt-0.5 text-ink">
+                      {p.deposit != null ? formatGBP(p.deposit) : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted">Affordability</dt>
+                    <dd className="mt-0.5 text-ink">
+                      {a.affordability != null ? `${a.affordability.toFixed(1)}% of income` : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted">Pets</dt>
+                    <dd className="mt-0.5 text-ink">{a.hasPets ? "Yes" : "None declared"}</dd>
+                  </div>
+                </dl>
+              </div>
+            ) : null}
+
+            {/* ---- Notes ---- */}
+            {expanded === null || expanded === "notes" ? (
+              <div className={`card p-5 sm:p-6 ${expanded === "notes" ? "panel-bounce" : ""}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="note" size={17} className="text-accent" />
+                    Notes
+                  </h3>
+                  {expanded === "notes" ? (
+                    collapse
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setExpanded("notes")}
+                      className="btn-press inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-ink transition hover:border-black/30"
+                    >
+                      <DoodleIcon name="pencil" size={13} />
+                      Add note
+                    </button>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <DealNotesPanel
+                    dealId={a.id}
+                    placeholder="Reply to pre-tenancy — they see it instantly…"
+                    onMeta={setMeta}
+                    compact={expanded !== "notes"}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {/* ---- Documents + Communication, side by side until one opens ---- */}
+            {expanded === null ? (
+              <div className="grid gap-5 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setExpanded("documents")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="doc" size={16} className="text-accent" />
+                    Documents
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    {meta && Object.keys(meta.checklist).length
+                      ? `${CHECKLIST_ITEMS.filter((i) => meta.checklist[i.key]?.done).length}/${CHECKLIST_ITEMS.length} pre-tenancy steps done`
+                      : "Pre-tenancy checklist"}
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExpanded("comms")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="message-2" size={16} className="text-accent" />
+                    Communication
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    Message the tenant or the landlord
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+              </div>
+            ) : null}
+
+            {/* ---- Documents opened out: the pre-tenancy checklist in full ---- */}
+            {expanded === "documents" ? (
+              <div className="panel-bounce card p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="doc" size={17} className="text-accent" />
+                    Documents &amp; pre-tenancy steps
+                  </h3>
+                  {collapse}
+                </div>
+                {meta && Object.keys(meta.checklist).length ? (
+                  <div className="mt-4 space-y-2">
+                    {CHECKLIST_ITEMS.map((item) => {
+                      const done = meta.checklist[item.key]?.done ?? false;
+                      return (
+                        <div
+                          key={item.key}
+                          className="flex items-center gap-3 rounded-xl border border-line px-3.5 py-2.5"
+                        >
+                          {done ? (
+                            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <span className="h-4 w-4 shrink-0 rounded-full border border-line" />
+                          )}
+                          <span className={`flex-1 text-[13px] ${done ? "text-muted" : "text-ink"}`}>
+                            {item.label}
+                          </span>
+                          <span className="text-[11px] text-muted">
+                            {done ? "Done" : "Outstanding"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[13px] text-muted">
+                    Nothing recorded yet. The signed agreement, deposit protection and
+                    inventory appear here as pre-tenancy work through them.
+                  </p>
+                )}
+                <a
+                  href={PROPOLY_APP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-press mt-4 inline-flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[12px] font-semibold transition hover:border-black/30"
+                >
+                  Open the file in Propoly
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 17L17 7M9 7h8v8" />
+                  </svg>
+                </a>
+              </div>
+            ) : null}
+
+            {/* ---- Communication opened out ---- */}
+            {expanded === "comms" ? (
+              <div className="panel-bounce card p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="message-2" size={17} className="text-accent" />
+                    Communication
+                  </h3>
+                  {collapse}
+                </div>
+                <p className="mt-4 text-[13px] text-muted">
+                  Sent mail isn&rsquo;t fed back into the portal yet, so this is the
+                  outbound side only — messages open in your own mail app so they
+                  come from you.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded("tenant")}
+                    className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2 text-[12.5px] font-semibold transition hover:border-black/30"
+                  >
+                    <DoodleIcon name="user" size={14} />
+                    Message the tenant
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpanded("landlord")}
+                    className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2 text-[12.5px] font-semibold transition hover:border-black/30"
+                  >
+                    <DoodleIcon name="home" size={14} />
+                    Message the landlord
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* ---- footer actions ---- */}
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
+          <button
+            type="button"
+            onClick={() => setExpanded("landlord")}
+            className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-[13px] font-semibold transition hover:border-black/30"
+          >
+            <DoodleIcon name="home" size={15} />
+            Message the landlord
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded("tenant")}
+            className="btn-press inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white transition"
+            style={{ background: BRAND.accent }}
+          >
+            <DoodleIcon name="mail" size={15} />
+            Send message to tenant
+          </button>
         </div>
       </DrawerPanel>
     </SplitDrawer>

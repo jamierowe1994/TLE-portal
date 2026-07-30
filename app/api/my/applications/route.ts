@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { resolveRexUserId } from "@/lib/agent-link";
-import { getAgentApplications } from "@/lib/rex-stats";
+import {
+  getAgentApplications,
+  getAgentPhotoIndex,
+  matchListingPhoto,
+} from "@/lib/rex-stats";
 import { getPropolyAgentDeals } from "@/lib/propoly-deals";
 import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
 import { PORTAL_STAGE_BY_KEY, portalStageOf } from "@/lib/propoly-stages";
@@ -31,7 +35,18 @@ export async function GET(req: NextRequest) {
     // Propoly statuses are translated onto the shared 8-stage portal
     // pipeline so the agent's board matches Kirstie's exactly.
     const overlays = await getOverlays(propoly.map((a) => a.id)).catch(() => null);
+
+    // Propoly holds no photos, so borrow them from the same property in REX,
+    // matched on postcode + street number. That match also hands us the
+    // listing id, which is what makes the address clickable in the drawer.
+    const rexId = await resolveRexUserId(user).catch(() => null);
+    const photos = rexId ? await getAgentPhotoIndex(rexId).catch(() => null) : null;
+
     const applications = propoly.map((a) => {
+      const match = photos ? matchListingPhoto(photos, a.propertyName, a.locality) : null;
+      if (match) {
+        a = { ...a, image: match.image, images: match.images, listingId: match.listingId };
+      }
       if (!a.propoly) return a;
       const raw = a.propoly.statusKey;
       if (raw === "cancelled") return a;

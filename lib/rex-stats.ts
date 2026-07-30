@@ -1046,6 +1046,9 @@ export type ApplicationStage = "received" | "communicated" | "accepted" | "unsuc
 
 export interface AgentApplication {
   id: string;
+  /** Matched REX listing (photos + a link through to My Properties). */
+  listingId?: string | null;
+  images?: string[];
   stage: ApplicationStage;
   status: string; // REX's own label, e.g. "Communicated"
   propertyName: string;
@@ -1270,4 +1273,108 @@ export async function getListingDetail(
 
   detailCache.set(listingId, { at: Date.now(), data });
   return data;
+}
+
+/* ------------------- matching Propoly deals back to REX ------------------- */
+
+/**
+ * Propoly stores a free-text address, REX stores parts, and the two rarely
+ * agree: "66 Fore Street, Kingsteignton" in one is "Room 2, 66 Fore Street,
+ * Newton Abbot" in the other. Postcode is the only field both get right, so
+ * we bucket by postcode and then score the candidates on the numbers and
+ * street words they share.
+ */
+const POSTCODE = /\b([A-Z]{1,2}\d{1,2}[A-Z]?)\s?(\d[A-Z]{2})\b/;
+const NOISE = new Set([
+  "FLAT", "ROOM", "APARTMENT", "THE", "AND", "COURT", "HOUSE", "ROAD",
+  "STREET", "AVENUE", "DRIVE", "LANE", "TERRACE", "PLACE", "WAY", "CLOSE",
+]);
+
+function postcodeOf(name: string, locality: string): string | null {
+  const m = `${name} ${locality}`.toUpperCase().match(POSTCODE);
+  return m ? `${m[1]}${m[2]}` : null;
+}
+
+function tokensOf(name: string): { numbers: Set<string>; words: Set<string> } {
+  const upper = name.toUpperCase();
+  const numbers = new Set(upper.match(/\d+[A-Z]?/g) ?? []);
+  const words = new Set(
+    (upper.match(/[A-Z]{3,}/g) ?? []).filter((w) => !NOISE.has(w))
+  );
+  return { numbers, words };
+}
+
+export interface ListingPhotoMatch {
+  listingId: string;
+  image: string | null;
+  images: string[];
+}
+
+interface IndexedProperty extends ListingPhotoMatch {
+  numbers: Set<string>;
+  words: Set<string>;
+}
+
+export type PhotoIndex = Map<string, IndexedProperty[]>;
+
+/**
+ * Photos (and the listing id, so the drawer can link through to My
+ * Properties) for the agent's own properties, bucketed by postcode. Covers
+ * both books: what's on the market now and what they already manage.
+ */
+export async function getAgentPhotoIndex(rexUserId: string): Promise<PhotoIndex> {
+  const [listings, portfolio] = await Promise.all([
+    getAgentListings(rexUserId).catch(() => null),
+    getAgentPortfolioProperties(rexUserId).catch(() => null),
+  ]);
+
+  const index: PhotoIndex = new Map();
+  const add = (
+    name: string,
+    locality: string,
+    listingId: string,
+    image: string | null,
+    images: string[]
+  ) => {
+    const pc = postcodeOf(name, locality);
+    if (!pc || !image) return;
+    const { numbers, words } = tokensOf(name);
+    const bucket = index.get(pc) ?? [];
+    bucket.push({ listingId, image, images, numbers, words });
+    index.set(pc, bucket);
+  };
+
+  for (const l of listings ?? []) add(l.name, l.locality, l.id, l.image, l.images);
+  for (const p of portfolio ?? []) add(p.name, p.locality, p.listingId, p.image, p.images);
+  return index;
+}
+
+/** Best property in the index for one address, or null if nothing convinces. */
+export function matchListingPhoto(
+  index: PhotoIndex,
+  name: string,
+  locality: string
+): ListingPhotoMatch | null {
+  const pc = postcodeOf(name, locality);
+  if (!pc) return null;
+  const bucket = index.get(pc);
+  if (!bucket?.length) return null;
+  // A single property on the postcode is already the answer.
+  if (bucket.length === 1) return bucket[0];
+
+  const { numbers, words } = tokensOf(name);
+  let best: IndexedProperty | null = null;
+  let bestScore = 0;
+  for (const cand of bucket) {
+    let score = 0;
+    for (const n of numbers) if (cand.numbers.has(n)) score += 2;
+    for (const w of words) if (cand.words.has(w)) score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = cand;
+    }
+  }
+  // Same postcode with nothing else in common is still the same street —
+  // the building photo beats no photo at all.
+  return best ?? bucket[0];
 }

@@ -87,10 +87,13 @@ export function DealNotesPanel({
   dealId,
   placeholder,
   onMeta,
+  compact = false,
 }: {
   dealId: string;
   placeholder: string;
   onMeta?: (meta: DealMeta) => void;
+  /** Resting state in the drawer: show the thread, hide the composer. */
+  compact?: boolean;
 }) {
   const [notes, setNotes] = useState<DealNote[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -140,24 +143,27 @@ export function DealNotesPanel({
     <div>
       <NotesThread notes={notes} />
       {error ? <p className="mt-2 text-[12px] text-accent">{error}</p> : null}
-      <div className="mt-2 flex gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void send()}
-          placeholder={placeholder}
-          className="min-w-0 flex-1 rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] outline-none transition focus:border-gray-400"
-        />
-        <button
-          type="button"
-          disabled={busy || !draft.trim()}
-          onClick={() => void send()}
-          className="btn-press shrink-0 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition disabled:opacity-50"
-          style={{ background: BRAND.accent }}
-        >
-          Send
-        </button>
-      </div>
+      {/* Compact = the panel is resting; the composer waits for Add note. */}
+      {compact ? null : (
+        <div className="mt-3 flex items-end gap-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void send()}
+            placeholder={placeholder}
+            className="min-w-0 flex-1 border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2 text-[13px] outline-none transition focus:border-ink/70"
+          />
+          <button
+            type="button"
+            disabled={busy || !draft.trim()}
+            onClick={() => void send()}
+            className="btn-press shrink-0 rounded-full px-4 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
+            style={{ background: BRAND.accent }}
+          >
+            Send
+          </button>
+        </div>
+      )}
     </div>
   );
 }
