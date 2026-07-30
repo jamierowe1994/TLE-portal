@@ -36,14 +36,15 @@ export default function StatStrip({ items }: { items: StatStripItem[] }) {
       {items.map((s, i) => (
         <div
           key={s.label}
-          className={`flex min-w-0 flex-1 items-center gap-3 lg:px-5 ${
+          className={`flex min-w-0 flex-1 items-start gap-3 lg:px-5 ${
             i > 0 ? "lg:border-l lg:border-line" : "lg:pl-0"
           } ${i === items.length - 1 ? "lg:pr-0" : ""}`}
         >
+          {/* nudged down a hair so its optical centre lands on the figure */}
           <DoodleIcon
             name={s.icon}
             size={24}
-            className={`shrink-0 ${TONE[s.tone ?? "ink"]}`}
+            className={`mt-[3px] shrink-0 ${TONE[s.tone ?? "ink"]}`}
           />
           <div className="min-w-0">
             <div className="stat-value text-[21px] leading-none" style={{ fontWeight: 400 }}>

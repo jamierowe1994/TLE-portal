@@ -134,23 +134,79 @@ function HeadStat({ icon, value, label }: { icon: string; value: string; label: 
   );
 }
 
+interface AttachableFile {
+  id: string;
+  name: string;
+  size: number;
+}
+
+/**
+ * Which of a property's files are worth offering for this recipient. The
+ * landlord usually wants the certificates; the tenant wants their agreement
+ * and the move-in paperwork. Everything else is still listed, just not
+ * flagged.
+ */
+const SUGGESTED: Record<string, RegExp> = {
+  landlord: /epc|gas|electric|eicr|certificate|safety|licen[cs]e|inventory|statement/i,
+  tenant: /agreement|tenancy|approval|reference|deposit|prescribed|how to rent|inventory|invent/i,
+};
+
 /** Send-a-message composer. No SMTP of our own, so it hands off to mail. */
 function MessageComposer({
   to,
   who,
   property,
+  listingId,
   onClose,
 }: {
   to: string | null;
-  who: string;
+  who: "tenant" | "landlord";
   property: string;
+  listingId: string | null;
   onClose: () => void;
 }) {
   const [address, setAddress] = useState(to ?? "");
-  const [subject, setSubject] = useState(`${property}`);
+  const [subject, setSubject] = useState(property);
   const [body, setBody] = useState("");
+  const [files, setFiles] = useState<AttachableFile[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  // What's already on file for this property — only askable when the deal
+  // matched a REX listing.
+  useEffect(() => {
+    if (!listingId) {
+      setFiles([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/my/property-files?listingId=${encodeURIComponent(listingId)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { files?: AttachableFile[] }) => !cancelled && setFiles(d.files ?? []))
+      .catch(() => !cancelled && setFiles([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [listingId]);
+
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const send = () => {
+    // A web page can't hand attachments to a mail app, so the ticked files
+    // download first — they're then sat in Downloads ready to drag in.
+    for (const id of picked) {
+      const link = document.createElement("a");
+      link.href = `/api/my/property-files/${id}`;
+      link.download = "";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
     const url = `mailto:${encodeURIComponent(address)}?subject=${encodeURIComponent(
       subject
     )}&body=${encodeURIComponent(body)}`;
@@ -158,8 +214,13 @@ function MessageComposer({
     onClose();
   };
 
+  const suggested = (name: string) => SUGGESTED[who]?.test(name) ?? false;
+  const sorted = [...(files ?? [])].sort(
+    (a, b) => Number(suggested(b.name)) - Number(suggested(a.name))
+  );
+
   return (
-    <div className="panel-bounce card p-5">
+    <div className="panel-bounce card flex h-full flex-col p-5 sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
           <DoodleIcon name="mail" size={17} className="text-accent" />
@@ -173,6 +234,7 @@ function MessageComposer({
           Collapse
         </button>
       </div>
+
       <div className="mt-4 space-y-3">
         <label className="block">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">To</span>
@@ -193,23 +255,75 @@ function MessageComposer({
             className="mt-1 w-full border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2 text-[13px] outline-none transition focus:border-ink/70"
           />
         </label>
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder={`Write to the ${who}…`}
-          className="h-32 w-full resize-none rounded-xl border border-line bg-transparent p-3 text-[13px] outline-none transition focus:border-black/30"
-        />
-        <button
-          type="button"
-          onClick={send}
-          disabled={!address.trim()}
-          className="btn-press inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition disabled:opacity-40"
-          style={{ background: BRAND.accent }}
-        >
-          <DoodleIcon name="mail" size={15} />
-          Open in your mail app
-        </button>
       </div>
+
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder={`Write to the ${who}…`}
+        className="mt-3 min-h-[120px] w-full flex-1 resize-none rounded-xl border border-line bg-transparent p-3 text-[13px] outline-none transition focus:border-black/30"
+      />
+
+      {/* ---- documents already on file for this property ---- */}
+      <div className="mt-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+            Attach from this property
+          </span>
+          {picked.size > 0 ? (
+            <span className="text-[11px] text-muted">{picked.size} selected</span>
+          ) : null}
+        </div>
+
+        {files === null ? (
+          <p className="mt-2 text-[12px] text-muted">Checking what&rsquo;s on file…</p>
+        ) : sorted.length === 0 ? (
+          <p className="mt-2 text-[12px] text-muted">
+            Nothing on file for this property yet — anything uploaded on its
+            record in My Properties shows up here.
+          </p>
+        ) : (
+          <div className="no-scrollbar mt-2 max-h-32 space-y-1.5 overflow-y-auto">
+            {sorted.map((f) => (
+              <label
+                key={f.id}
+                className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-line px-3 py-2 transition hover:border-black/25"
+              >
+                <input
+                  type="checkbox"
+                  checked={picked.has(f.id)}
+                  onChange={() => toggle(f.id)}
+                  className="h-3.5 w-3.5 shrink-0 accent-[#e31f36]"
+                />
+                <DoodleIcon name="doc" size={14} className="shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{f.name}</span>
+                {suggested(f.name) ? (
+                  <span className="shrink-0 rounded-full accent-soft-bg px-2 py-0.5 text-[9px] font-semibold accent-text">
+                    SUGGESTED
+                  </span>
+                ) : null}
+              </label>
+            ))}
+          </div>
+        )}
+        {picked.size > 0 ? (
+          <p className="mt-2 text-[11px] text-muted">
+            Ticked files download when you send, ready to drag into the email —
+            a web page can&rsquo;t attach them for you.
+          </p>
+        ) : null}
+      </div>
+
+      <button
+        type="button"
+        onClick={send}
+        disabled={!address.trim()}
+        className="btn-press mt-4 inline-flex w-fit items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white transition disabled:opacity-40"
+        style={{ background: BRAND.accent }}
+      >
+        <DoodleIcon name="mail" size={15} />
+        {picked.size > 0 ? `Open in mail with ${picked.size} file${picked.size === 1 ? "" : "s"}` : "Open in your mail app"}
+      </button>
     </div>
   );
 }
@@ -434,12 +548,13 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
           </div>
 
           {/* ============ right: the people, and whatever's opened out ============ */}
-          <div className="space-y-5">
+          <div className={expanded === "tenant" || expanded === "landlord" ? "flex" : "space-y-5"}>
             {expanded === "tenant" || expanded === "landlord" ? (
               <MessageComposer
                 to={expanded === "tenant" ? (lead?.email ?? null) : null}
                 who={expanded === "tenant" ? "tenant" : "landlord"}
                 property={`${a.propertyName}, ${a.locality}`}
+                listingId={a.listingId ?? null}
                 onClose={() => setExpanded(null)}
               />
             ) : null}

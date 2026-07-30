@@ -455,11 +455,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* ── Main ── */}
-      {/* relative z-0 makes main its own stacking context, so negative-z page
-          furniture (the corner illustrations) sits behind the cards but in
-          front of the page background. */}
+      {/* Deliberately NOT its own stacking context: drawer overlays (z-50)
+          have to be able to cover the nav rail (z-30). */}
       <main
-        className={`dash-cards relative z-0 px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-12 ${
+        className={`dash-cards px-4 pb-12 pt-6 lg:ml-[240px] lg:px-10 lg:pt-12 ${
           dropping ? "page-drop" : ""
         }`}
       >
