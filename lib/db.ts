@@ -112,6 +112,20 @@ CREATE INDEX IF NOT EXISTS deal_notes_deal_idx ON deal_notes (deal_id);
 -- (author-only — filtered to the author on read)
 ALTER TABLE deal_notes ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'note';
 
+-- Property notes (lib/property-notes-store.ts): the conversation log on a
+-- property drawer — agents and the pre-tenancy team leaving each other notes
+-- against a REX listing id.
+CREATE TABLE IF NOT EXISTS property_notes (
+  id               TEXT PRIMARY KEY,
+  listing_id       TEXT NOT NULL,
+  author_id        TEXT NOT NULL,
+  author_name      TEXT NOT NULL DEFAULT '',
+  author_role      TEXT NOT NULL DEFAULT 'agent',
+  text             TEXT NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS property_notes_listing_idx ON property_notes (listing_id);
+
 -- Follow-ups Kirstie sets herself against a deal ("Tasks" tab + Tasks today).
 CREATE TABLE IF NOT EXISTS deal_tasks (
   id               TEXT PRIMARY KEY,

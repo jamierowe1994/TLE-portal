@@ -19,6 +19,7 @@ import MilestoneBars, { type Milestone } from "@/components/charts/MilestoneBars
 import PhotoCarousel from "@/components/PhotoCarousel";
 import NoPhoto from "@/components/NoPhoto";
 import type { AgentListing } from "@/lib/rex-stats";
+import type { PropertyNote } from "@/lib/property-notes-store";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
@@ -298,8 +299,31 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
     }, 290);
   };
   const [note, setNote] = useState("");
-  const [savedNote, setSavedNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [notes, setNotes] = useState<PropertyNote[] | null>(null);
+  const [meId, setMeId] = useState<string | null>(null);
+  // The just-saved note id — it gets the float-up entrance; the composer
+  // folds down, then folds back out fresh.
+  const [floating, setFloating] = useState<string | null>(null);
+  const [folding, setFolding] = useState(false);
+  const logRef = useRef<HTMLDivElement | null>(null);
+
+  // Pull the thread the first time the note panel opens.
+  useEffect(() => {
+    if (panel !== "note" || notes !== null) return;
+    fetch(`/api/my/property-notes?listingId=${encodeURIComponent(l.id)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { notes?: PropertyNote[]; me?: string }) => {
+        setNotes(d.notes ?? []);
+        setMeId(d.me ?? null);
+      })
+      .catch(() => setNotes([]));
+  }, [panel, notes, l.id]);
+
+  // Newest note sits at the top of the log; keep the view pinned there.
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = 0;
+  }, [notes]);
 
   const actions: RailAction[] = [
     { id: "close", icon: "cross", label: "Close", onClick: onClose, top: true },
@@ -343,17 +367,33 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
     const text = note.trim();
     if (!text || saving) return;
     setSaving(true);
-    // Notes ride on the agent's own to-do list so they surface in the places
-    // that already read it (the list itself and the assistant).
-    await fetch("/api/my/todos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: text, property: l.name, platform: "REX" }),
-    }).catch(() => {});
-    setSavedNote(text);
-    setNote("");
-    setSaving(false);
-    setPanel("next");
+    setFolding(true); // composer folds down around the note…
+    try {
+      // Let the fold play in full even when the API answers instantly —
+      // the choreography is the point.
+      const [res] = await Promise.all([
+        fetch("/api/my/property-notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listingId: l.id, text }),
+        }),
+        new Promise((r) => setTimeout(r, 380)),
+      ]);
+      const data = (await res.json()) as { note?: PropertyNote };
+      if (res.ok && data.note) {
+        // …then the note floats up into the top of the log…
+        setNotes((prev) => [...(prev ?? []), data.note!]);
+        setFloating(data.note.id);
+        setNote("");
+      }
+    } catch {
+      /* keep the text so nothing is lost */
+    } finally {
+      setSaving(false);
+      // …and a fresh composer folds back out underneath.
+      setTimeout(() => setFolding(false), 80);
+      setTimeout(() => setFloating(null), 900);
+    }
   }
 
   return (
@@ -440,14 +480,6 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
                   Nothing needs doing on this one right now.
                 </p>
               )}
-              {savedNote ? (
-                <div className="mt-4 rounded-xl border border-line p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                    Note added
-                  </p>
-                  <p className="mt-1 text-[12px] text-ink">{savedNote}</p>
-                </div>
-              ) : null}
             </div>
           ) : null}
 
@@ -455,36 +487,74 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
             <div key="note" className="flex h-full flex-col">
               <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
                 <DoodleIcon name="note" size={15} />
-                Add a note
+                Notes on this property
               </h3>
-              <textarea
-                autoFocus
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder={`Something to remember about ${l.name}…`}
-                className="mt-3 h-32 w-full resize-none rounded-xl border border-line bg-white p-3 text-[13px] outline-none transition focus:border-black/25"
-              />
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void saveNote()}
-                  disabled={!note.trim() || saving}
-                  className="btn-press rounded-full bg-ink px-4 py-2 text-[12px] font-semibold text-white transition disabled:opacity-40"
-                >
-                  {saving ? "Saving…" : "Save note"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPanel("next")}
-                  className="btn-press rounded-full border border-line px-4 py-2 text-[12px] font-medium text-muted transition hover:text-ink"
-                >
-                  Cancel
-                </button>
+
+              {/* the log — newest at the top, speech bubbles per side:
+                  yours on the left (outline only), the team's on the right */}
+              <div ref={logRef} className="no-scrollbar mt-3 max-h-44 flex-1 space-y-2 overflow-y-auto pr-1">
+                {notes === null ? (
+                  <p className="text-[12px] text-muted">Loading the thread…</p>
+                ) : notes.length === 0 ? (
+                  <p className="text-[12px] text-muted">
+                    Nothing on file yet — the first note starts the thread.
+                  </p>
+                ) : (
+                  [...notes].reverse().map((n) => {
+                    const mine = n.authorRole !== "team";
+                    return (
+                      <div
+                        key={n.id}
+                        className={`flex ${mine ? "justify-start" : "justify-end"} ${
+                          floating === n.id ? "note-float" : ""
+                        }`}
+                      >
+                        <div
+                          className={`max-w-[88%] rounded-2xl border px-3 py-2 text-[12px] leading-relaxed ${
+                            mine
+                              ? "rounded-bl-md border-ink/40 bg-transparent text-ink"
+                              : "rounded-br-md border-line bg-black/[0.04] text-ink"
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap">{n.text}</p>
+                          <p className="mt-1 text-[9.5px] uppercase tracking-wide text-muted">
+                            {mine && n.authorId === meId ? "You" : n.authorName}
+                            {" · "}
+                            {new Date(n.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-              <p className="mt-3 text-[11px] text-muted">
-                Saved to your to-do list against this property, so the assistant
-                can find it too.
-              </p>
+
+              {/* the composer — folds down on save, folds back out fresh */}
+              <div className={folding ? "note-fold" : floating ? "note-unfold" : ""}>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={`Add a note about ${l.name}…`}
+                  className="mt-3 h-20 w-full resize-none rounded-xl border border-line bg-white p-3 text-[13px] outline-none transition focus:border-black/25"
+                />
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveNote()}
+                    disabled={!note.trim() || saving}
+                    className="btn-press rounded-full bg-ink px-4 py-2 text-[12px] font-semibold text-white transition disabled:opacity-40"
+                  >
+                    {saving ? "Saving…" : "Save note"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchPanel("next")}
+                    className="btn-press rounded-full border border-line px-4 py-2 text-[12px] font-medium text-muted transition hover:text-ink"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
 
