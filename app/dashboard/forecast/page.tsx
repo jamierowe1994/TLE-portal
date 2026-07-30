@@ -372,7 +372,7 @@ export default function ForecastPage() {
   ];
 
   return (
-    <div className="fade-up space-y-6">
+    <div className="outline-cards fade-up space-y-6">
       <div>
         <h1 className="text-xl font-semibold">My Forecast</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">

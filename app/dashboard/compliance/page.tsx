@@ -7,7 +7,8 @@
 // REX also tracks contact-level checks (AML, Right to Rent), which is a
 // different job and deliberately not mixed in here.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import FilterBar from "@/components/FilterBar";
 import Loader from "@/components/Loader";
 import NoPhoto from "@/components/NoPhoto";
 import type { ComplianceItem, ComplianceState, PropertyCompliance } from "@/lib/rex-stats";
@@ -252,6 +253,8 @@ export default function CompliancePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<PropertyCompliance | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -273,6 +276,17 @@ export default function CompliancePage() {
   const all = properties ?? [];
   const flagged = all.filter((p) => p.outstanding > 0);
   const totalOutstanding = all.reduce((t, p) => t + p.outstanding, 0);
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return all.filter((p) => {
+      if (filter === "outstanding" && !(p.outstanding > 0)) return false;
+      if (filter === "clear" && !(p.items.length > 0 && p.outstanding === 0)) return false;
+      if (filter === "none" && p.items.length !== 0) return false;
+      if (q && !`${p.name} ${p.locality}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [all, filter, search]);
 
   return (
     // Same outline treatment as the rest of the portal.
@@ -302,36 +316,52 @@ export default function CompliancePage() {
         </div>
       ) : all.length > 0 ? (
         <>
+          {/* Summary line (only when something needs doing) + filters on the right.
+              The row is always there so the controls don't jump about. */}
           <div
-            className={`enter enter-up card p-4 text-[13px] ${
-              totalOutstanding > 0
-                ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "text-muted"
-            }`}
+            className="enter enter-up flex min-h-[40px] flex-wrap items-center justify-between gap-3"
             style={enterAt(140)}
           >
-            {totalOutstanding > 0 ? (
-              <>
-                <span className="font-semibold">
-                  {totalOutstanding} {totalOutstanding === 1 ? "item" : "items"} outstanding
-                </span>{" "}
-                across {flagged.length} of your {all.length} properties.
-              </>
-            ) : (
-              <>Everything on file is in date across all {all.length} properties.</>
-            )}
+            <p className="text-[13px] text-muted">
+              {totalOutstanding > 0 ? (
+                <>
+                  <span className="font-semibold text-ink">
+                    {totalOutstanding} {totalOutstanding === 1 ? "item" : "items"} outstanding
+                  </span>{" "}
+                  across {flagged.length} of your {all.length} properties.
+                </>
+              ) : null}
+            </p>
+            <FilterBar
+              options={[
+                { key: "all", label: "All properties" },
+                { key: "outstanding", label: "Outstanding" },
+                { key: "clear", label: "All clear" },
+                { key: "none", label: "Nothing recorded" },
+              ]}
+              value={filter}
+              onChange={setFilter}
+              search={search}
+              onSearch={setSearch}
+            />
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
-            {all.map((p, i) => (
-              <ComplianceTile
-                key={p.listingId}
-                p={p}
-                delay={200 + i * 50}
-                onOpen={() => setOpen(p)}
-              />
-            ))}
-          </div>
+          {shown.length === 0 ? (
+            <p className="py-10 text-center text-[13px] text-muted">
+              Nothing matches — clear the filter or search.
+            </p>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
+              {shown.map((p, i) => (
+                <ComplianceTile
+                  key={p.listingId}
+                  p={p}
+                  delay={200 + i * 50}
+                  onOpen={() => setOpen(p)}
+                />
+              ))}
+            </div>
+          )}
         </>
       ) : null}
 

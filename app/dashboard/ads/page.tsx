@@ -146,7 +146,7 @@ export default function MyAdsPage() {
   const cpl = totals?.cpl ?? (totals && totals.leads > 0 ? totals.spend / totals.leads : null);
 
   return (
-    <div className="space-y-5">
+    <div className="outline-cards space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">My Ads</h1>
@@ -159,7 +159,7 @@ export default function MyAdsPage() {
             <TimescaleSelect value={preset} options={PRESETS} onChange={setPreset} disabled={loading} />
             <button
               onClick={() => void disconnect()}
-              className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-[12px] font-medium text-muted hover:text-ink"
+              className="rounded-lg border border-line bg-transparent px-2.5 py-1.5 text-[12px] font-medium text-muted hover:text-ink"
               title="Disconnect your ads"
             >
               Disconnect
@@ -216,7 +216,7 @@ export default function MyAdsPage() {
           </p>
           <button
             onClick={() => setReloadKey((k) => k + 1)}
-            className="rounded-lg border border-line bg-card px-3 py-1.5 text-[13px] font-medium text-muted hover:text-ink"
+            className="rounded-lg border border-line bg-transparent px-3 py-1.5 text-[13px] font-medium text-muted hover:text-ink"
           >
             Refresh
           </button>

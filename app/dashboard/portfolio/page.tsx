@@ -9,7 +9,8 @@
 // REX record by id. Maintenance jobs live in REX PM (Alfie) — we link there
 // rather than pretend to mirror it.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import FilterBar from "@/components/FilterBar";
 import Loader from "@/components/Loader";
 import NoPhoto from "@/components/NoPhoto";
 import { rexListingUrl } from "@/lib/rex-links";
@@ -341,6 +342,8 @@ export default function PortfolioPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<PortfolioProperty | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -375,6 +378,17 @@ export default function PortfolioPage() {
   const totalOutstanding = all.reduce((t, p) => t + p.outstanding, 0);
   const rentRoll = all.reduce((t, p) => t + (p.rent ?? 0), 0);
 
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return all.filter((p) => {
+      if (filter === "renewals" && !(p.outstanding > 0)) return false;
+      if (filter === "clear" && !(p.items.length > 0 && p.outstanding === 0)) return false;
+      if (filter === "none" && p.items.length !== 0) return false;
+      if (q && !`${p.name} ${p.locality} ${p.address}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [all, filter, search]);
+
   return (
     // Same outline treatment as the rest of the portal.
     <div className="outline-cards soft-cards space-y-6">
@@ -404,46 +418,62 @@ export default function PortfolioPage() {
         </div>
       ) : all.length > 0 ? (
         <>
+          {/* Summary as bare text on the paper, filters on the right. */}
           <div
-            className={`enter enter-up card p-4 text-[13px] ${
-              totalOutstanding > 0
-                ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "text-muted"
-            }`}
+            className="enter enter-up flex min-h-[40px] flex-wrap items-center justify-between gap-3"
             style={enterAt(140)}
           >
-            <span className="font-semibold">
-              {all.length} {all.length === 1 ? "property" : "properties"}
-            </span>
-            {rentRoll > 0 ? (
-              <>
-                {" "}
-                · <span className="font-semibold">{money(rentRoll)}</span> rent roll a month
-              </>
-            ) : null}
-            {totalOutstanding > 0 ? (
-              <>
-                {" "}
-                ·{" "}
-                <span className="font-semibold">
-                  {totalOutstanding} {totalOutstanding === 1 ? "renewal" : "renewals"} due
-                </span>
-              </>
-            ) : (
-              <> · everything on file is in date</>
-            )}
+            <p className="text-[13px] text-muted">
+              <span className="font-semibold text-ink">
+                {all.length} {all.length === 1 ? "property" : "properties"}
+              </span>
+              {rentRoll > 0 ? (
+                <>
+                  {" "}
+                  · <span className="font-semibold text-ink">{money(rentRoll)}</span> rent roll a
+                  month
+                </>
+              ) : null}
+              {totalOutstanding > 0 ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span className="font-semibold text-ink">
+                    {totalOutstanding} {totalOutstanding === 1 ? "renewal" : "renewals"} due
+                  </span>
+                </>
+              ) : null}
+            </p>
+            <FilterBar
+              options={[
+                { key: "all", label: "All properties" },
+                { key: "renewals", label: "Renewals due" },
+                { key: "clear", label: "All clear" },
+                { key: "none", label: "Nothing recorded" },
+              ]}
+              value={filter}
+              onChange={setFilter}
+              search={search}
+              onSearch={setSearch}
+            />
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
-            {all.map((p, i) => (
-              <PortfolioTile
-                key={p.listingId}
-                p={p}
-                delay={200 + i * 50}
-                onOpen={() => setOpen(p)}
-              />
-            ))}
-          </div>
+          {shown.length === 0 ? (
+            <p className="py-10 text-center text-[13px] text-muted">
+              Nothing matches — clear the filter or search.
+            </p>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
+              {shown.map((p, i) => (
+                <PortfolioTile
+                  key={p.listingId}
+                  p={p}
+                  delay={200 + i * 50}
+                  onOpen={() => setOpen(p)}
+                />
+              ))}
+            </div>
+          )}
         </>
       ) : null}
 
