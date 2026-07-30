@@ -1174,3 +1174,100 @@ export async function getAgentApplications(
     return null;
   }
 }
+
+/* ------------------------- one listing, in full ------------------------- */
+
+/**
+ * The extra detail the property drawer shows — the advert copy, the room
+ * counts and the dated milestones for the activity strip. Deliberately a
+ * separate call from getAgentListings: it needs a Properties read per
+ * property (room counts don't ride along on a Listings search), which is
+ * fine for one open drawer and far too slow across a whole grid.
+ */
+export interface ListingDetail {
+  /** Advert body — the "About this property" copy. */
+  description: string | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  receptions: number | null;
+  ensuites: number | null;
+  garages: number | null;
+  propertyType: string | null;
+  furnishing: string | null;
+  councilTaxBand: string | null;
+  deposit: number | null;
+  /** Dated events for the activity strip, oldest first. */
+  activity: Array<{ label: string; at: string }>;
+}
+
+const detailCache = new Map<string, { at: number; data: ListingDetail }>();
+const DETAIL_TTL_MS = 5 * 60_000;
+
+/** Unix seconds → ISO date, ignoring REX's zero/blank stamps. */
+function stamp(v: unknown): string | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n * 1000).toISOString();
+}
+
+export async function getListingDetail(
+  listingId: string
+): Promise<ListingDetail | null> {
+  if (!rexConfigured() || !listingId) return null;
+
+  const cached = detailCache.get(listingId);
+  if (cached && Date.now() - cached.at < DETAIL_TTL_MS) return cached.data;
+
+  const res = await rexCall("Listings", "search", {
+    criteria: [{ name: "id", type: "=", value: listingId }],
+    extra_options: { extra_fields: ["related.listing_adverts"] },
+    limit: 1,
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+
+  const row = rexRows(res.result)[0];
+  if (!row) return null;
+
+  const related = (row.related ?? {}) as Record<string, unknown>;
+  const adverts = Array.isArray(related.listing_adverts)
+    ? (related.listing_adverts as Array<Record<string, unknown>>)
+    : [];
+  const internet = adverts.find((a) => a.advert_type === "internet") ?? adverts[0];
+  const body = typeof internet?.advert_body === "string" ? internet.advert_body : null;
+  const heading =
+    typeof internet?.advert_heading === "string" ? internet.advert_heading : null;
+
+  // Room counts hang off the property record, not the listing.
+  const property = (row.property ?? {}) as Record<string, unknown>;
+  const propertyId = property.id ? String(property.id) : null;
+  const propRes = propertyId
+    ? await rexCall("Properties", "read", { id: propertyId }).catch(() => null)
+    : null;
+  const prop = (propRes?.ok ? propRes.result : {}) as Record<string, unknown>;
+
+  const activity = [
+    { label: "Added to portfolio", at: stamp(row.system_ctime) },
+    { label: "Marked on market", at: stamp(row.system_publication_time) },
+    { label: "Available from", at: (row.available_from_date as string) ?? null },
+    { label: "Details updated", at: stamp(row.system_modtime) },
+  ]
+    .filter((e): e is { label: string; at: string } => Boolean(e.at))
+    .sort((a, b) => a.at.localeCompare(b.at));
+
+  const data: ListingDetail = {
+    description: (body ?? heading)?.trim() || null,
+    bedrooms: num(prop.attr_bedrooms),
+    bathrooms: num(prop.attr_bathrooms),
+    receptions: num(prop.attr_living_areas),
+    ensuites: num(prop.attr_ensuites),
+    garages: num(prop.attr_garages),
+    propertyType: label(prop.property_subcategory) ?? label(prop.property_category),
+    furnishing: label(row.tenancy_type) ?? label(row.let_type),
+    councilTaxBand: label(prop.attr_council_tax_band),
+    deposit: num(row.price_bond),
+    activity,
+  };
+
+  detailCache.set(listingId, { at: Date.now(), data });
+  return data;
+}

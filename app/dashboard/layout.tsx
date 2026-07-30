@@ -37,53 +37,17 @@ function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
 }
 
-// A time-of-day welcome with a little personality — and matching artwork.
-// The doodle lady changes with the hour (public/illustrations), and each
-// piece carries a small animation: the wavers rock into a wave, the evening
-// scribble jitters, the night Zs bob. Overlay positions are percentages of
-// the base image, emitted by the split-layers script that cut them apart.
-interface ArtSpec {
-  /** Display-height override — the window scene runs taller than the busts. */
-  h?: string;
-  base: string;
-  /** Animation class applied to the whole figure. */
-  anim?: string;
-  overlay?: { src: string; left: string; top: string; width: string; anim: string };
-  /** Landscape art (the sleeper) renders shorter so it doesn't dominate. */
-  wide?: boolean;
-  /** Padding classes making room for overlays that float above the figure. */
-  headroom?: string;
-}
-
-const ART: Record<"window" | "morning" | "wave" | "evening" | "night", ArtSpec> = {
-  // The hero from James's reference sheet — lounging by the window.
-  window: { base: "/illustrations/lady-window.png", h: "h-44 lg:h-[280px]" },
-  morning: { base: "/illustrations/tle-morning.png", anim: "art-wave" },
-  wave: { base: "/illustrations/tle-wave.png", anim: "art-wave" },
-  evening: {
-    base: "/illustrations/tle-evening-base.png",
-    overlay: { src: "/illustrations/tle-evening-scribble.png", left: "-9.6%", top: "-21.8%", width: "37.8%", anim: "art-scribble" },
-    headroom: "pt-8 lg:pt-10",
-  },
-  night: {
-    base: "/illustrations/tle-night-base.png",
-    overlay: { src: "/illustrations/tle-night-zs.png", left: "55.1%", top: "-27.4%", width: "35.9%", anim: "art-zs" },
-    headroom: "pt-10 lg:pt-12",
-  },
-};
-
-type ArtKey = keyof typeof ART;
-const ART_ORDER: ArtKey[] = ["window", "morning", "wave", "evening", "night"];
-
-function greeting(name: string): { hello: string; prompt: string; artKey: ArtKey } {
+// A time-of-day welcome with a little personality — the wording shifts with
+// the hour, and the block keeps generous room above it.
+function greeting(name: string): { hello: string; prompt: string } {
   const first = name.split(" ")[0] || name;
   const h = new Date().getHours();
-  if (h < 5) return { hello: `Still up, ${first}?`, prompt: "Burning the midnight oil — don't work too hard.", artKey: "window" };
-  if (h < 7) return { hello: `Morning, ${first}`, prompt: "You're an early riser — let's make it count.", artKey: "window" };
-  if (h < 12) return { hello: `Good morning, ${first}`, prompt: "Here's where you're at today.", artKey: "window" };
-  if (h < 17) return { hello: `Good afternoon, ${first}`, prompt: "Hope the day's going your way.", artKey: "window" };
-  if (h < 21) return { hello: `Good evening, ${first}`, prompt: "Winding down — here's your day.", artKey: "window" };
-  return { hello: `Evening, ${first}`, prompt: "Late one? Here's the latest.", artKey: "window" };
+  if (h < 5) return { hello: `Still up, ${first}?`, prompt: "Burning the midnight oil — don't work too hard." };
+  if (h < 7) return { hello: `Morning, ${first}`, prompt: "You're an early riser — let's make it count." };
+  if (h < 12) return { hello: `Good morning, ${first}`, prompt: "Here's where you're at today." };
+  if (h < 17) return { hello: `Good afternoon, ${first}`, prompt: "Hope the day's going your way." };
+  if (h < 21) return { hello: `Good evening, ${first}`, prompt: "Winding down — here's your day." };
+  return { hello: `Evening, ${first}`, prompt: "Late one? Here's the latest." };
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -99,7 +63,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // mounted just long enough to tumble back down behind the line.
   const [tleOpen, setTleOpen] = useState(false);
   const [tleClosing, setTleClosing] = useState(false);
-  const [artPreview, setArtPreview] = useState<ArtKey | null>(null);
   // Page transition: nav clicks drop the current page out of the bottom of
   // the screen, then navigate; the new page rises back up (keyed wrapper).
   const [dropping, setDropping] = useState(false);
@@ -223,11 +186,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const isActive = (href: string) =>
     href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
-  const { hello, prompt, artKey } = greeting(user.name);
+  const { hello, prompt } = greeting(user.name);
   // Clicking the illustration flicks through the other times of day — a
-  // little easter egg that doubles as the way to preview all the art.
-  const shownKey = artPreview ?? artKey;
-  const art = ART[shownKey];
 
   // Reference-style items with hand-drawn doodle icons — no tiles, no pills.
   // The active one simply goes deeper black and a touch bolder; everything
@@ -510,59 +470,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="enter enter-pop mb-8 pt-4 lg:mb-10 lg:pt-0"
               style={{ "--enter-delay": "600ms" } as React.CSSProperties}
             >
-              {/* Light weight, Launch Pad-style — the size does the welcoming,
-                  the weight stays out of the way. The doodle lady waves from
-                  behind the line that closes the greeting off. */}
-              {/* The lady fills the band between the top line and the greeting's
-                  own line — big, sat over where the period buttons live below,
-                  and her bottom edge tucked past the border so the artwork's
-                  cut-off is never visible: the line does the cropping. */}
-              <div className="flex items-end gap-4 pt-2">
-                <div className="min-w-0 pb-5 pl-12">
-                  <h1 className="relative w-fit tracking-tight" style={{ fontSize: "clamp(32px, 4vw, 52px)", lineHeight: 1.08, fontWeight: 300 }}>
-                    {/* big ink flicks either side, like the sketch */}
-                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -left-12 -top-2 h-9 w-9 text-accent" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-                      <path d="M4 14l6-3M8 20l4-4M3 8l5 1" />
-                    </svg>
+              {/* The greeting keeps the room the artwork used to fill — the
+                  block height is deliberate white space, not a leftover. */}
+              <div className="flex items-end gap-4 pt-2 lg:min-h-[292px]">
+                <div className="min-w-0 pb-5">
+                  <h1 className="w-fit tracking-tight" style={{ fontSize: "clamp(32px, 4vw, 52px)", lineHeight: 1.08, fontWeight: 300 }}>
                     {hello}
-                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -right-12 -top-1 h-9 w-9 text-accent" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-                      <path d="M20 10l-6 3M16 4l-4 4M21 16l-5-1" />
-                    </svg>
                   </h1>
                   <p className="mt-2.5 text-[14px] font-light text-muted lg:text-[15px]">{prompt}</p>
                 </div>
-                <button
-                  type="button"
-                  key={shownKey}
-                  onClick={() =>
-                    setArtPreview(ART_ORDER[(ART_ORDER.indexOf(shownKey) + 1) % ART_ORDER.length])
-                  }
-                  title="Flick through the other times of day"
-                  aria-label="Preview the other times of day"
-                  className={`rise-in mb-3 ml-auto mr-2 shrink-0 cursor-pointer self-end outline-none sm:mr-16 lg:mr-36 ${art.headroom ?? ""}`}
-                  style={{ "--enter-delay": artPreview ? "0ms" : "950ms" } as React.CSSProperties}
-                >
-                  {/* Overlay percentages are relative to the image box, so the
-                      positioning wrapper hugs the img exactly; headroom for
-                      overlays that float above (the Zs) lives on the button. */}
-                  <span className="relative block">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={art.base}
-                      alt=""
-                      className={`w-auto ${art.h ?? (art.wide ? "h-16 lg:h-24" : "h-32 lg:h-[172px]")} ${art.anim ?? ""}`}
-                    />
-                    {art.overlay ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={art.overlay.src}
-                        alt=""
-                        className={`absolute ${art.overlay.anim}`}
-                        style={{ left: art.overlay.left, top: art.overlay.top, width: art.overlay.width }}
-                      />
-                    ) : null}
-                  </span>
-                </button>
               </div>
             </div>
           ) : null}

@@ -3,22 +3,54 @@
 import { useRef, useState } from "react";
 import NoPhoto from "@/components/NoPhoto";
 
-// Square photo carousel for the split drawers: arrows to step, drag/swipe to
-// flick through, dots for where you are. One photo → no chrome at all.
+// Photo carousel for the record drawers: arrows to step, drag/swipe to flick
+// through, dots for where you are. One photo → no chrome at all.
+//
+// Two dressings. The default keeps the arrows floating over the photo (the
+// compact drawers). `arrowsOutside` lifts them clear of the frame as bare
+// hand-drawn strokes on the page — no pill, no backdrop — with an optional
+// thumbnail strip underneath.
 
 function Placeholder() {
   return <NoPhoto label="No photos yet" className="border-0" fit="contain" />;
+}
+
+/** A sketched arrow — drawn slightly off-true so it reads as ink, not UI. */
+function InkArrow({ dir }: { dir: "left" | "right" }) {
+  return (
+    <svg
+      viewBox="0 0 34 34"
+      className={`h-8 w-8 ${dir === "right" ? "-scale-x-100" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {/* shaft, with a touch of wobble */}
+      <path d="M27.5 16.8c-6.2-.5-12.4-.7-18.6-.4" />
+      {/* head */}
+      <path d="M15.4 9.6c-2.6 2.2-4.9 4.5-6.8 6.9 2.2 2.2 4.6 4.2 7.1 6" />
+    </svg>
+  );
 }
 
 export default function PhotoCarousel({
   images,
   alt,
   aspect = "aspect-square",
+  arrowsOutside = false,
+  thumbs = false,
 }: {
   images: string[];
   alt: string;
   /** Shape of the frame, e.g. "aspect-square" (default) or a fixed height. */
   aspect?: string;
+  /** Bare ink arrows either side of the frame instead of over the photo. */
+  arrowsOutside?: boolean;
+  /** Thumbnail strip under the frame. */
+  thumbs?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   // Drag offset in px while the pointer is down; null when at rest.
@@ -49,10 +81,10 @@ export default function PhotoCarousel({
     setDrag(null);
   };
 
-  return (
+  const frame = (
     <div
       ref={box}
-      className={`group relative ${aspect} w-full touch-pan-y select-none overflow-hidden rounded-xl bg-page`}
+      className={`group relative ${aspect} w-full touch-pan-y select-none overflow-hidden rounded-2xl bg-page`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -82,7 +114,7 @@ export default function PhotoCarousel({
         </div>
       )}
 
-      {count > 1 ? (
+      {count > 1 && !arrowsOutside ? (
         <>
           {index > 0 ? (
             <button
@@ -108,7 +140,11 @@ export default function PhotoCarousel({
               </svg>
             </button>
           ) : null}
+        </>
+      ) : null}
 
+      {count > 1 ? (
+        <>
           <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
             {images.map((_, i) => (
               <span
@@ -123,6 +159,54 @@ export default function PhotoCarousel({
             {index + 1}/{count}
           </span>
         </>
+      ) : null}
+    </div>
+  );
+
+  if (!arrowsOutside) return frame;
+
+  return (
+    <div>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label="Previous photo"
+          onClick={() => go(index - 1)}
+          disabled={index === 0 || count < 2}
+          className="btn-press shrink-0 text-ink transition disabled:pointer-events-none disabled:opacity-20"
+        >
+          <InkArrow dir="left" />
+        </button>
+        <div className="min-w-0 flex-1">{frame}</div>
+        <button
+          type="button"
+          aria-label="Next photo"
+          onClick={() => go(index + 1)}
+          disabled={index >= count - 1}
+          className="btn-press shrink-0 text-ink transition disabled:pointer-events-none disabled:opacity-20"
+        >
+          <InkArrow dir="right" />
+        </button>
+      </div>
+
+      {thumbs && count > 1 ? (
+        // Sits under the frame, inset to line up with the photo's edges.
+        <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto px-9">
+          {images.map((src, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => go(i)}
+              aria-label={`Photo ${i + 1}`}
+              className={`h-14 w-20 shrink-0 overflow-hidden rounded-lg border-2 transition ${
+                i === index ? "border-ink" : "border-transparent opacity-70 hover:opacity-100"
+              }`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt="" loading="lazy" draggable={false} className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
       ) : null}
     </div>
   );

@@ -19,7 +19,7 @@ import SkewProgress, { type SkewStep } from "@/components/charts/SkewProgress";
 import FilterBar from "@/components/FilterBar";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import NoPhoto from "@/components/NoPhoto";
-import type { AgentListing } from "@/lib/rex-stats";
+import type { AgentListing, ListingDetail } from "@/lib/rex-stats";
 import type { PropertyNote } from "@/lib/property-notes-store";
 
 const enterAt = (ms: number) =>
@@ -215,36 +215,10 @@ function ListingTile({
 
 /* -------------------------------- drawer -------------------------------- */
 
-function StepRow({ s }: { s: Step }) {
-  const p = s.platformId ? platformById(s.platformId) : undefined;
-  return (
-    <div className="flex items-start gap-3 rounded-xl border border-line p-4">
-      <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-line" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium">{s.title}</p>
-        <p className="mt-0.5 text-[12px] text-muted">{s.why}</p>
-      </div>
-      {p?.url ? (
-        <a
-          href={p.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-press shrink-0 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-white"
-          style={{ background: p.accent }}
-        >
-          {p.name} ↗
-        </a>
-      ) : p ? (
-        <span className="shrink-0 text-[11px] text-muted">{p.name}</span>
-      ) : null}
-    </div>
-  );
-}
-
 // One box: the photos run full-width across the top, then the property
 // details on the left; the right-hand column is a live panel area driven by
 // the action rail down the drawer's right edge.
-type PanelId = "next" | "note" | "contacts" | "chat" | "details" | "files";
+type PanelId = "activity" | "note" | "contacts" | "chat" | "details" | "files";
 
 function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: SkewStep[] } {
   const epc = epcState(l);
@@ -297,14 +271,13 @@ function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: Sk
 function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   const stage = stageOf(l);
   const epc = epcState(l);
-  const steps = stepsFor(l, stage);
-  const [panel, setPanel] = useState<PanelId>("next");
+  const [panel, setPanel] = useState<PanelId>("activity");
   // Switching panels is a two-beat move: the old one falls off the bottom,
   // then the new one bounces up into place.
   const [leaving, setLeaving] = useState(false);
   const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchPanel = (next: PanelId) => {
-    const target = panel === next ? "next" : next;
+    const target = panel === next ? "activity" : next;
     if (target === panel || leaving) return;
     setLeaving(true);
     if (switchTimer.current) clearTimeout(switchTimer.current);
@@ -313,6 +286,9 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
       setLeaving(false);
     }, 290);
   };
+  // undefined = still loading, null = REX wouldn't answer
+  const [detail, setDetail] = useState<ListingDetail | null | undefined>(undefined);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState<PropertyNote[] | null>(null);
@@ -322,6 +298,20 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   const [floating, setFloating] = useState<string | null>(null);
   const [folding, setFolding] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
+
+  // The advert copy, room counts and dated history — one call on open.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/my/listing-detail?id=${encodeURIComponent(l.id)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { detail?: ListingDetail }) => {
+        if (!cancelled) setDetail(d.detail ?? null);
+      })
+      .catch(() => !cancelled && setDetail(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [l.id]);
 
   // Pull the thread the first time the note panel opens.
   useEffect(() => {
@@ -343,6 +333,13 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
 
   const actions: RailAction[] = [
     { id: "close", icon: "cross", label: "Close", onClick: onClose, top: true },
+    {
+      id: "activity",
+      icon: "clock",
+      label: "Activity",
+      active: panel === "activity",
+      onClick: () => switchPanel("activity"),
+    },
     {
       id: "note",
       icon: "note",
@@ -427,94 +424,186 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
     }
   }
 
+  const facts = [
+    { key: "bed", label: "Bedrooms", value: detail?.bedrooms },
+    { key: "bath", label: "Bathrooms", value: detail?.bathrooms },
+    { key: "sofa", label: "Receptions", value: detail?.receptions },
+  ].filter((f) => f.value != null && f.value > 0);
+
+  const keyDetails: Array<[string, string]> = [
+    ["Property type", detail?.propertyType ?? l.category ?? "—"],
+    ["Furnishing", detail?.furnishing ?? l.letType ?? "—"],
+    ["Council tax band", detail?.councilTaxBand ?? "—"],
+    ["Deposit", detail?.deposit != null ? formatGBP(detail.deposit) : "—"],
+    ["Minimum term", l.minTermMonths ? `${l.minTermMonths} months` : "—"],
+    ["Availability", fmtDate(l.availableFrom) ?? "—"],
+  ];
+
   return (
     <SplitDrawer onClose={onClose} hideClose>
       <DrawerPanel
-        className="relative shrink-0 grow-0 p-3"
-        style={{ width: "min(56rem, calc(100vw - 2rem))" }}
+        className="relative shrink-0 grow-0 p-5 sm:p-7"
+        style={{ width: "min(66rem, calc(100vw - 2rem))" }}
       >
         <DrawerRail actions={actions} />
 
-        <div className="overflow-hidden rounded-2xl">
-          <PhotoCarousel images={l.images} alt={l.name} aspect="h-64 sm:h-80" />
-        </div>
-
-        <div className="grid gap-x-8 p-5 sm:p-6 lg:grid-cols-[1.1fr_1fr]">
-        <div>
-          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STAGE_STYLE[stage]}`}>
-            {STAGE_LABEL[stage]}
-          </span>
-          <h2 className="mt-3 text-[17px] font-semibold leading-snug">{l.name}</h2>
-          <p className="mt-0.5 text-[13px] text-muted">{l.locality}</p>
-
-          <div className="mt-5 grid grid-cols-3 gap-3 border-y border-line py-5 text-[11px] text-muted">
-            <div>
-              <div className="stat-value text-[18px] text-ink">
-                {l.rent != null ? formatGBP(l.rent) : "—"}
-              </div>
-              per {(l.rentPeriod ?? "month").toLowerCase()}
-            </div>
-            <div>
-              <div className="text-[13px] font-medium text-ink">
-                {fmtDate(l.availableFrom) ?? "—"}
-              </div>
-              Available from
-            </div>
-            <div>
-              <div className="text-[13px] font-medium text-ink">
-                {l.minTermMonths ? `${l.minTermMonths} months` : "—"}
-              </div>
-              Minimum term
-            </div>
-          </div>
-
-          {/* Compliance — only shouts when it needs to */}
-          <div className="mt-5 flex items-center gap-2">
-            <span
-              className={`h-2 w-2 rounded-full ${epcNeedsWork(epc.state) ? "bg-amber-500" : "bg-emerald-500"}`}
+        {/* ---- top: the photos on the left, the headline facts on the right ---- */}
+        <div className="grid gap-7 lg:grid-cols-[1.05fr_1fr] lg:gap-9">
+          <div className="relative min-w-0">
+            <PhotoCarousel
+              images={l.images}
+              alt={l.name}
+              aspect="h-64 sm:h-[19rem]"
+              arrowsOutside
+              thumbs
             />
-            <span className="text-[12px] text-muted">{epc.label}</span>
-            {l.epcRating != null ? (
-              <span className="text-[12px] text-muted">· rating {l.epcRating}</span>
-            ) : null}
+            <span
+              className={`pointer-events-none absolute left-12 top-3 rounded-full border px-2.5 py-1 text-[9px] font-semibold ${STAGE_STYLE[stage]}`}
+            >
+              {STAGE_LABEL[stage]}
+            </span>
           </div>
 
-          {/* Only the process the property is IN right now. */}
-          {(() => {
-            const proc = milestonesFor(l, stage);
-            return (
-              <div className="mt-6">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  {proc.title}
-                </h3>
-                <div className="mt-3">
-                  <SkewProgress steps={proc.bars} />
-                </div>
-              </div>
-            );
-          })()}
+          <div className="min-w-0">
+            <h2 className="text-[26px] leading-tight tracking-tight" style={{ fontWeight: 500 }}>
+              {l.name}
+            </h2>
+            <p className="mt-1.5 text-[14px] text-muted">{l.locality}</p>
 
+            <div className="mt-5 border-t border-line pt-5">
+              <div className="flex items-end gap-2">
+                <span className="stat-value text-[34px] leading-none" style={{ fontWeight: 300 }}>
+                  {l.rent != null ? formatGBP(l.rent) : "—"}
+                </span>
+                <span className="pb-1 text-[13px] text-muted">
+                  / {(l.rentPeriod ?? "month").toLowerCase()}
+                </span>
+              </div>
+              <p className="mt-2.5 text-[12.5px] text-muted">
+                Available from <span className="text-ink">{fmtDate(l.availableFrom) ?? "—"}</span>
+                {"  ·  "}
+                Minimum term{" "}
+                <span className="text-ink">{l.minTermMonths ? `${l.minTermMonths} months` : "—"}</span>
+              </p>
+
+              {/* Compliance — only shouts when it needs to */}
+              <div className="mt-3 flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${epcNeedsWork(epc.state) ? "bg-amber-500" : "bg-emerald-500"}`}
+                />
+                <span className="text-[12.5px] text-muted">{epc.label}</span>
+                {l.epcRating != null ? (
+                  <span className="text-[12.5px] text-muted">· Rating {l.epcRating}</span>
+                ) : null}
+              </div>
+            </div>
+
+            {/* room counts, straight from the REX property record */}
+            {facts.length ? (
+              <div className="mt-5 grid grid-cols-3 gap-3">
+                {facts.map((f) => (
+                  <div
+                    key={f.key}
+                    className="flex flex-col items-center gap-1 rounded-2xl border border-line px-2 py-4"
+                  >
+                    <RoomIcon name={f.key} />
+                    <span className="stat-value text-[19px] leading-none" style={{ fontWeight: 400 }}>
+                      {f.value}
+                    </span>
+                    <span className="text-[11px] text-muted">{f.label}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* Only the process the property is IN right now. */}
+            {(() => {
+              const proc = milestonesFor(l, stage);
+              return (
+                <div className="mt-6">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    {proc.title}
+                  </h3>
+                  <div className="mt-3">
+                    <SkewProgress steps={proc.bars} />
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
-        {/* ---- the active box: whatever the rail summons lands here, at the
-             bottom, with a bounce; the outgoing panel falls off first ---- */}
-        <div className="mt-6 flex min-h-[300px] flex-col justify-end overflow-hidden border-t border-line pt-5 lg:mt-0 lg:border-l-[1.5px] lg:border-l-ink/85 lg:border-t-0 lg:pl-8 lg:pt-0">
-          <div key={leaving ? `${panel}-out` : panel} className={leaving ? "panel-fall" : "panel-bounce"}>
-          {panel === "next" ? (
-            steps.length ? (
-              <div key="next">
-                <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                  What&rsquo;s next
-                </h3>
-                <div className="mt-3 space-y-2.5">
-                  {steps.map((s) => (
-                    <StepRow key={s.title} s={s} />
-                  ))}
+        {/* ---- the write-up and the facts table, one box split down the middle ---- */}
+        <div className="card mt-6 grid lg:grid-cols-[1.15fr_1fr]">
+          <div className="min-w-0 p-5 sm:p-6">
+            <h3 className="text-[15px]" style={{ fontWeight: 500 }}>About this property</h3>
+            {detail === undefined ? (
+              <p className="mt-3 text-[13px] text-muted">Loading the details…</p>
+            ) : detail?.description ? (
+              <>
+                <div
+                  className={`mt-3 space-y-2.5 text-[13px] leading-relaxed text-muted ${
+                    aboutOpen ? "" : "line-clamp-6"
+                  }`}
+                >
+                  {detail.description
+                    .split(/\n{2,}/)
+                    .filter((p) => p.trim())
+                    .map((para, i) => (
+                      <p key={i}>{para.trim()}</p>
+                    ))}
                 </div>
-              </div>
+                <button
+                  type="button"
+                  onClick={() => setAboutOpen((v) => !v)}
+                  className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted transition hover:text-ink"
+                >
+                  {aboutOpen ? "Show less" : "Show more"}
+                  <svg
+                    viewBox="0 0 16 16"
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.8}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ transform: aboutOpen ? "rotate(180deg)" : "none" }}
+                  >
+                    <path d="M4 6l4 4 4-4" />
+                  </svg>
+                </button>
+              </>
             ) : (
-              <ThumbsUp key="next" />
-            )
+              <p className="mt-3 text-[13px] text-muted">
+                No advert copy on the REX record yet — add it there and it appears here.
+              </p>
+            )}
+          </div>
+
+          <div className="min-w-0 border-t border-line p-5 sm:p-6 lg:border-l lg:border-t-0">
+            <h3 className="text-[15px]" style={{ fontWeight: 500 }}>Key details</h3>
+            <dl className="mt-3.5 space-y-2.5">
+              {keyDetails.map(([label, value]) => (
+                <div key={label} className="flex items-baseline gap-2 text-[12.5px]">
+                  <dt className="shrink-0 text-muted">{label}</dt>
+                  {/* dotted leader, like a printed particulars sheet */}
+                  <span className="min-w-4 flex-1 translate-y-[-3px] border-b border-dotted border-black/25" />
+                  <dd className="shrink-0 text-ink">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+
+        {/* ---- the active box: activity lives here until the rail summons
+             something else, which drops in over the top ---- */}
+        <div className="card mt-6 flex min-h-[168px] flex-col justify-end overflow-hidden p-5 sm:p-6">
+          <div key={leaving ? `${panel}-out` : panel} className={leaving ? "panel-fall" : "panel-bounce"}>
+          {panel === "activity" ? (
+            <div key="activity">
+              <h3 className="text-[15px]" style={{ fontWeight: 500 }}>Activity</h3>
+              <ActivityStrip detail={detail} />
+            </div>
           ) : null}
 
           {panel === "files" ? (
@@ -526,11 +615,11 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           {panel === "note" ? (
             <div key="note" className="flex h-full flex-col">
               <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                <DoodleIcon name="note" size={15} />
+                <DoodleIcon name="note" size={15} className="text-accent" />
                 Notes on this property
               </h3>
 
-              {/* the log — newest at the top, speech bubbles per side:
+              {/* the log — oldest at the top, speech bubbles per side:
                   yours on the left (outline only), the team's on the right */}
               <div ref={logRef} className="no-scrollbar mt-3 max-h-44 flex-1 space-y-2 overflow-y-auto pr-1">
                 {notes === null ? (
@@ -588,7 +677,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => switchPanel("next")}
+                    onClick={() => switchPanel("activity")}
                     className="btn-press rounded-full border border-line px-4 py-2 text-[12px] font-medium text-muted transition hover:text-ink"
                   >
                     Done
@@ -601,7 +690,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           {panel === "contacts" ? (
             <div key="contacts">
               <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                <DoodleIcon name="call" size={15} />
+                <DoodleIcon name="call" size={15} className="text-accent" />
                 Contact details
               </h3>
               <div className="mt-3 space-y-2">
@@ -637,22 +726,10 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           {panel === "details" ? (
             <div key="details">
               <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                <DoodleIcon name="info" size={15} />
+                <DoodleIcon name="info" size={15} className="text-accent" />
                 More details
               </h3>
-              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border border-line px-4 py-4 text-[12px]">
-              {l.category ? (
-                <div>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Category</dt>
-                  <dd className="mt-0.5 font-medium">{l.category}</dd>
-                </div>
-              ) : null}
-              {l.letType ? (
-                <div>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Let type</dt>
-                  <dd className="mt-0.5 font-medium">{l.letType}</dd>
-                </div>
-              ) : null}
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border border-line px-4 py-4 text-[12px] sm:grid-cols-3">
               {l.publicationStatus ? (
                 <div>
                   <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Publication</dt>
@@ -663,6 +740,12 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
                 <div>
                   <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Advertised as</dt>
                   <dd className="mt-0.5 font-medium">{l.advertisedAs}</dd>
+                </div>
+              ) : null}
+              {l.category ? (
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">Category</dt>
+                  <dd className="mt-0.5 font-medium">{l.category}</dd>
                 </div>
               ) : null}
               <div>
@@ -680,9 +763,91 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
           ) : null}
           </div>
         </div>
-        </div>
       </DrawerPanel>
     </SplitDrawer>
+  );
+}
+
+/* ------------------------------ room icons -------------------------------- */
+
+// Bed, bath and sofa in the same hand-drawn stroke as the doodle set — the
+// pack has no room glyphs, so these are drawn to match rather than imported.
+function RoomIcon({ name }: { name: string }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.6,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    className: "h-6 w-6 text-ink",
+    "aria-hidden": true,
+  };
+  if (name === "bed") {
+    return (
+      <svg {...common}>
+        <path d="M3 18v-7.5c0-.6.5-1 1-1h16c.6 0 1 .4 1 1V18" />
+        <path d="M3 15h18M3 18h18M6.5 9.5V7.2c0-.6.5-1 1-1h9c.6 0 1 .4 1 1v2.3" />
+        <path d="M8 12.6h3M13 12.6h3" />
+      </svg>
+    );
+  }
+  if (name === "bath") {
+    return (
+      <svg {...common}>
+        <path d="M3.5 12h17v2.2a4.3 4.3 0 0 1-4.3 4.3H7.8A4.3 4.3 0 0 1 3.5 14.2z" />
+        <path d="M6 12V6.6a1.9 1.9 0 0 1 3.5-1" />
+        <path d="M7.5 19.4 6.6 21M16.5 19.4l.9 1.6" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path d="M4 17v-5.4A2.6 2.6 0 0 1 6.6 9h10.8A2.6 2.6 0 0 1 20 11.6V17" />
+      <path d="M4 13.4A1.7 1.7 0 0 0 2.6 15v2.4h18.8V15A1.7 1.7 0 0 0 20 13.4" />
+      <path d="M6.5 17.4V19M17.5 17.4V19M8.5 9V7.4h7V9" />
+    </svg>
+  );
+}
+
+/* ----------------------------- activity strip ----------------------------- */
+
+// The property's dated milestones across the bottom of the drawer: circled
+// hand-drawn marks joined by a dotted run, oldest on the left.
+function ActivityStrip({ detail }: { detail: ListingDetail | null | undefined }) {
+  if (detail === undefined) {
+    return <p className="mt-3 text-[13px] text-muted">Loading the history…</p>;
+  }
+  if (!detail?.activity.length) {
+    return <p className="mt-3 text-[13px] text-muted">Nothing dated on this record yet.</p>;
+  }
+  const ICONS: Record<string, string> = {
+    "Added to portfolio": "star",
+    "Marked on market": "megaphone",
+    "Available from": "key",
+    "Details updated": "pencil",
+    "Photos updated": "grid",
+    "Price updated": "coin",
+  };
+  return (
+    <div className="no-scrollbar mt-4 flex items-center gap-1 overflow-x-auto pb-1">
+      {detail.activity.map((e, i) => (
+        <div key={`${e.label}-${i}`} className="flex min-w-0 shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line">
+              <DoodleIcon name={ICONS[e.label] ?? "info"} size={16} className="text-ink" />
+            </span>
+            <span className="min-w-0">
+              <span className="block whitespace-nowrap text-[12.5px] text-ink">{e.label}</span>
+              <span className="block whitespace-nowrap text-[11.5px] text-muted">{fmtDate(e.at) ?? "—"}</span>
+            </span>
+          </div>
+          {i < detail.activity.length - 1 ? (
+            <span className="mx-3 hidden h-px w-10 shrink-0 border-b border-dotted border-black/30 sm:block xl:w-16" />
+          ) : null}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -797,22 +962,6 @@ function PropertyChat({ listing }: { listing: AgentListing }) {
           </svg>
         </button>
       </form>
-    </div>
-  );
-}
-
-/* ------------------------------- thumbs up -------------------------------- */
-
-// Nothing outstanding → just say so, big and thin. (The thumbs-up video
-// didn't survive its export — too slow and full of compression dots.)
-function ThumbsUp() {
-  return (
-    <div className="flex h-full min-h-[220px] items-center justify-start">
-      <p className="text-left font-light leading-tight tracking-tight text-ink" style={{ fontSize: "clamp(34px, 3.4vw, 46px)" }}>
-        Nothing
-        <br />
-        outstanding
-      </p>
     </div>
   );
 }

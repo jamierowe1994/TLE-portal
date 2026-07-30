@@ -68,13 +68,13 @@ const PRESET_MENU = [
 const boxClass = (active: boolean) =>
   `inline-flex items-center gap-2 rounded-xl border-[1.5px] bg-transparent px-3 py-2 text-[13px] font-medium transition ${
     active
-      ? "border-accent text-accent"
-      : "border-accent/40 text-accent/80 hover:border-accent hover:text-accent"
+      ? "border-ink/85 text-ink"
+      : "border-ink/30 text-muted hover:border-ink/60 hover:text-ink"
   }`;
 
 function CalendarIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="text-accent">
       <rect x="2" y="3" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.4" />
       <path d="M2 6h12M5.5 2v2M10.5 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
@@ -82,7 +82,7 @@ function CalendarIcon() {
 }
 function MonthIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="text-accent">
       <rect x="2" y="3" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.4" />
       <path d="M2 6h12M5.5 2v2M10.5 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       <rect x="4.5" y="8" width="2.4" height="2.4" rx="0.5" fill="currentColor" />
