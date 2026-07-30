@@ -154,7 +154,7 @@ export default function MyDashboardPage() {
         .then((d: { earnings?: { earned: number; matched: boolean; byCategory: Array<{ category: string; amount: number }> } | null; refreshing?: boolean }) => {
           if (cancelled) return;
           if (d.earnings) setLiveEarnings(d.earnings);
-          else if (d.refreshing && tries++ < 8) setTimeout(ask, 5000);
+          else if (tries++ < 40) setTimeout(ask, 5000);
         })
         .catch(() => {});
     };

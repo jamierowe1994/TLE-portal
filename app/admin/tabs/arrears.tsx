@@ -53,7 +53,7 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
         .then((d: { arrears?: LiveArrears | null; refreshing?: boolean }) => {
           if (cancelled) return;
           if (d.arrears) setLive(d.arrears);
-          else if (d.refreshing && tries++ < 10) setTimeout(ask, 5000);
+          else if (tries++ < 40) setTimeout(ask, 5000);
         })
         .catch(() => {});
     };

@@ -138,7 +138,7 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
           if (cancelled) return;
           if (d.income) setLive(d.income);
           if (d.moveIns) setMoveIns(d.moveIns);
-          if (!d.income && d.refreshing && tries++ < 10) setTimeout(ask, 5000);
+          if (!d.income && tries++ < 40) setTimeout(ask, 5000);
         })
         .catch(() => {});
     };
