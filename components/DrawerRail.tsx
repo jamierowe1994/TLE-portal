@@ -23,6 +23,11 @@ export interface RailAction {
 }
 
 function RailButton({ a }: { a: RailAction }) {
+  // Only the close key keeps its circle; the rest are bare hand-drawn icons
+  // that simply press in.
+  const shape = a.top
+    ? `rail-key rounded-full ${a.active ? "rail-key--on" : ""}`
+    : `transition active:scale-[0.82] ${a.active ? "scale-[0.86] text-ink" : ""}`;
   return (
     <button
       type="button"
@@ -31,8 +36,8 @@ function RailButton({ a }: { a: RailAction }) {
         a.onClick();
       }}
       aria-label={a.label}
-      className={`rail-key group/rail relative flex h-10 w-10 items-center justify-center rounded-full transition ${
-        a.active ? "rail-key--on text-ink" : "text-muted hover:text-ink"
+      className={`group/rail relative flex h-10 w-10 items-center justify-center ${shape} ${
+        a.active ? "text-ink" : "text-muted hover:text-ink"
       }`}
     >
       <DoodleIcon name={a.icon} size={19} />

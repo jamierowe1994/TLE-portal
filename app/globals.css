@@ -715,3 +715,30 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .note-fold, .note-unfold, .note-float { animation: none; }
 }
+
+/* Feather-float: a saved note drifts up into the stack like a bubble rising —
+   swaying left and right on the way before settling into place. */
+.note-feather {
+  animation: note-feather 1.15s cubic-bezier(0.25, 0.6, 0.35, 1) both;
+}
+@keyframes note-feather {
+  0%   { opacity: 0; transform: translate(0, 140px) rotate(0.5deg); }
+  20%  { opacity: 1; transform: translate(-14px, 96px) rotate(-2deg); }
+  40%  { transform: translate(11px, 58px) rotate(1.6deg); }
+  60%  { transform: translate(-8px, 28px) rotate(-1.2deg); }
+  80%  { transform: translate(5px, 8px) rotate(0.8deg); }
+  100% { opacity: 1; transform: none; }
+}
+
+/* The thumbs-up speech bubble pops in near the end of the clip */
+.bubble-pop {
+  animation: bubble-pop 0.4s cubic-bezier(0.34, 1.6, 0.64, 1) both;
+  transform-origin: bottom left;
+}
+@keyframes bubble-pop {
+  0% { opacity: 0; transform: scale(0.3) rotate(-6deg); }
+  100% { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .note-feather, .bubble-pop { animation: none; }
+}

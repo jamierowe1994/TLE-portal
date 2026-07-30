@@ -243,40 +243,52 @@ function StepRow({ s }: { s: Step }) {
 // One box: the photos run full-width across the top, then the property
 // details on the left; the right-hand column is a live panel area driven by
 // the action rail down the drawer's right edge.
-type PanelId = "next" | "note" | "contacts" | "chat" | "details";
+type PanelId = "next" | "note" | "contacts" | "chat" | "details" | "files";
 
-function milestonesFor(l: AgentListing, stage: Stage): Milestone[] {
+function milestonesFor(l: AgentListing, stage: Stage): { title: string; bars: Milestone[] } {
   const epc = epcState(l);
-  const hasPhotos = l.imageCount > 0;
-  const published = l.publicationStatus?.toLowerCase() !== "draft";
-  const agreed = stage === "let-agreed";
-  return [
-    {
-      label: "Photos on file",
-      progress: hasPhotos ? 1 : 0,
-      note: hasPhotos ? `${l.imageCount} uploaded` : "None yet",
-    },
-    {
-      label: "EPC in date",
-      progress: epc.state === "valid" ? 1 : epc.state === "not-required" ? 1 : epc.state === "expiring" ? 0.6 : 0,
-      note: epc.label,
-    },
-    {
-      label: "Live on the portals",
-      progress: published ? 1 : 0,
-      note: published ? (l.publicationStatus ?? "Published") : "Still a draft",
-    },
-    {
-      label: "Let agreed",
-      progress: agreed ? 1 : published ? 0.35 : 0,
-      note: agreed ? "Agreed" : published ? "On the market" : "Not yet live",
-    },
-    {
-      label: "Tenancy set up",
-      progress: agreed ? 0.5 : 0,
-      note: agreed ? "In progress" : "Waiting on a let",
-    },
-  ];
+  const epcBar: Milestone = {
+    label: "EPC in date",
+    progress: epc.state === "valid" || epc.state === "not-required" ? 1 : epc.state === "expiring" ? 0.6 : 0,
+    note: epc.label,
+  };
+
+  // Only the process the property is actually IN — the bars change as it
+  // moves through draft → market → tenancy set-up.
+  if (stage === "draft") {
+    return {
+      title: "Getting it to market",
+      bars: [
+        {
+          label: "Photos on file",
+          progress: l.imageCount > 0 ? 1 : 0,
+          note: l.imageCount > 0 ? `${l.imageCount} uploaded` : "None yet",
+        },
+        epcBar,
+        { label: "Published to the portals", progress: 0, note: "Still a draft" },
+      ],
+    };
+  }
+  if (stage === "on-market") {
+    return {
+      title: "Finding a tenant",
+      bars: [
+        { label: "Live on the portals", progress: 1, note: l.publicationStatus ?? "Published" },
+        epcBar,
+        { label: "Let agreed", progress: 0.35, note: "On the market" },
+      ],
+    };
+  }
+  return {
+    title: "Tenancy set-up",
+    bars: [
+      { label: "Let agreed", progress: 1, note: "Agreed" },
+      epcBar,
+      { label: "Deposit / flatbond", progress: 0, note: "Tracked once Flatfair is live" },
+      { label: "Inventory booked", progress: 0, note: "Tracked once InventoryBase is live" },
+      { label: "Rent collection", progress: 0, note: "Tracked once PayProp is live" },
+    ],
+  };
 }
 
 function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
@@ -320,10 +332,11 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
       .catch(() => setNotes([]));
   }, [panel, notes, l.id]);
 
-  // Newest note sits at the top of the log; keep the view pinned there.
+  // The thread reads top-down; new notes join at the bottom and push the
+  // older ones up, so keep the view pinned to the newest.
   useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = 0;
-  }, [notes]);
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [notes, panel]);
 
   const actions: RailAction[] = [
     { id: "close", icon: "cross", label: "Close", onClick: onClose, top: true },
@@ -347,6 +360,21 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
       label: "Ask a question",
       active: panel === "chat",
       onClick: () => switchPanel("chat"),
+    },
+    {
+      id: "files",
+      icon: "upload",
+      label: "Add a file",
+      active: panel === "files",
+      onClick: () => switchPanel("files"),
+    },
+    {
+      id: "email",
+      icon: "mail",
+      label: "Send an email",
+      onClick: () => {
+        window.location.href = `mailto:?subject=${encodeURIComponent(`${l.name}, ${l.locality}`)}`;
+      },
     },
     {
       id: "details",
@@ -448,15 +476,20 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
             ) : null}
           </div>
 
-          {/* Where this property is up to, drawn as filling bars. */}
-          <div className="mt-6">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Where it&rsquo;s up to
-            </h3>
-            <div className="mt-3">
-              <MilestoneBars milestones={milestonesFor(l, stage)} />
-            </div>
-          </div>
+          {/* Only the process the property is IN right now. */}
+          {(() => {
+            const proc = milestonesFor(l, stage);
+            return (
+              <div className="mt-6">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  {proc.title}
+                </h3>
+                <div className="mt-3">
+                  <MilestoneBars milestones={proc.bars} />
+                </div>
+              </div>
+            );
+          })()}
 
         </div>
 
@@ -465,21 +498,25 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
         <div className="mt-6 flex min-h-[300px] flex-col justify-end overflow-hidden border-t border-line pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
           <div key={leaving ? `${panel}-out` : panel} className={leaving ? "panel-fall" : "panel-bounce"}>
           {panel === "next" ? (
-            <div key="next">
-              <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                {steps.length ? "What's next" : "Nothing outstanding"}
-              </h3>
-              {steps.length ? (
+            steps.length ? (
+              <div key="next">
+                <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                  What&rsquo;s next
+                </h3>
                 <div className="mt-3 space-y-2.5">
                   {steps.map((s) => (
                     <StepRow key={s.title} s={s} />
                   ))}
                 </div>
-              ) : (
-                <p className="mt-2 text-[13px] text-muted">
-                  Nothing needs doing on this one right now.
-                </p>
-              )}
+              </div>
+            ) : (
+              <ThumbsUp key="next" />
+            )
+          ) : null}
+
+          {panel === "files" ? (
+            <div key="files" className="flex h-full flex-col">
+              <FilesPanel listing={l} />
             </div>
           ) : null}
 
@@ -500,13 +537,13 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
                     Nothing on file yet — the first note starts the thread.
                   </p>
                 ) : (
-                  [...notes].reverse().map((n) => {
+                  notes.map((n) => {
                     const mine = n.authorRole !== "team";
                     return (
                       <div
                         key={n.id}
                         className={`flex ${mine ? "justify-start" : "justify-end"} ${
-                          floating === n.id ? "note-float" : ""
+                          floating === n.id ? "note-feather" : ""
                         }`}
                       >
                         <div
@@ -757,6 +794,164 @@ function PropertyChat({ listing }: { listing: AgentListing }) {
           </svg>
         </button>
       </form>
+    </div>
+  );
+}
+
+/* ------------------------------- thumbs up -------------------------------- */
+
+// Nothing outstanding → the thumbs-up clip plays big, and the speech bubble
+// pops in over the final beat. (Current export is H.264 on a flat grey
+// background — swap in a transparent WebM when one lands and it'll sit
+// straight on the white.)
+function ThumbsUp() {
+  const [bubble, setBubble] = useState(false);
+
+  return (
+    <div className="flex justify-center">
+      <div className="relative inline-block">
+        <video
+          src="/illustrations/thumbs.mp4"
+          muted
+          autoPlay
+          playsInline
+          onTimeUpdate={(e) => {
+            if (e.currentTarget.currentTime >= 7.2 && !bubble) setBubble(true);
+          }}
+          onEnded={(e) => {
+            // Hold the final thumbs-up frame rather than going black.
+            e.currentTarget.currentTime = Math.max(0, e.currentTarget.duration - 0.05);
+          }}
+          className="h-64 w-auto rounded-2xl"
+        />
+        {/* lands on the clip's own drawn (empty) bubble, top-left */}
+        {bubble ? (
+          <div className="bubble-pop absolute -left-6 top-4 rounded-2xl rounded-br-sm border-2 border-ink bg-white px-3 py-1.5 shadow-sm">
+            <p className="text-[12px] font-semibold text-ink">Nothing outstanding!</p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------- files ---------------------------------- */
+
+interface PropertyFileMeta {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  uploaderName: string;
+  createdAt: string;
+}
+
+const fmtSize = (b: number) =>
+  b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)}MB` : `${Math.max(1, Math.round(b / 1024))}KB`;
+
+// The whole panel is the drop zone: a big dashed sketch of a box you can drop
+// anything on (or click to browse). Uploads land in the list underneath.
+function FilesPanel({ listing }: { listing: AgentListing }) {
+  const [files, setFiles] = useState<PropertyFileMeta[] | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/my/property-files?listingId=${encodeURIComponent(listing.id)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { files?: PropertyFileMeta[] }) => setFiles(d.files ?? []))
+      .catch(() => setFiles([]));
+  }, [listing.id]);
+
+  async function upload(list: FileList | File[]) {
+    setProblem(null);
+    for (const file of Array.from(list)) {
+      setBusy(true);
+      const form = new FormData();
+      form.append("listingId", listing.id);
+      form.append("file", file);
+      try {
+        const res = await fetch("/api/my/property-files", { method: "POST", body: form });
+        const data = (await res.json()) as { file?: PropertyFileMeta; error?: string };
+        if (res.ok && data.file) {
+          setFiles((prev) => [data.file!, ...(prev ?? [])]);
+        } else {
+          setProblem(data.error ?? `Couldn't upload ${file.name}.`);
+        }
+      } catch {
+        setProblem(`Couldn't upload ${file.name}.`);
+      }
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <h3 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+        <DoodleIcon name="upload" size={15} />
+        Files
+      </h3>
+
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (e.dataTransfer.files.length) void upload(e.dataTransfer.files);
+        }}
+        className={`mt-3 flex min-h-[120px] flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed p-4 text-center transition ${
+          dragging ? "border-ink bg-black/[0.04]" : "border-black/25 hover:border-ink/50"
+        }`}
+      >
+        <DoodleIcon name="upload" size={26} className="text-muted" />
+        <p className="text-[12.5px] font-medium text-ink">
+          {busy ? "Uploading…" : "Drop a file here"}
+        </p>
+        <p className="text-[11px] text-muted">or click to choose one — photos, PDFs, anything</p>
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) void upload(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      {problem ? <p className="mt-2 text-[11px] text-red-600">{problem}</p> : null}
+
+      <div className="no-scrollbar mt-3 max-h-32 space-y-1.5 overflow-y-auto">
+        {files === null ? (
+          <p className="text-[12px] text-muted">Loading files…</p>
+        ) : files.length === 0 ? null : (
+          files.map((f) => (
+            <a
+              key={f.id}
+              href={`/api/my/property-files/${f.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 rounded-xl border border-line px-3 py-2 transition hover:border-black/25"
+            >
+              <DoodleIcon name="doc" size={16} className="shrink-0 text-muted" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12px] font-medium text-ink">{f.name}</span>
+                <span className="block text-[10px] text-muted">
+                  {fmtSize(f.size)} · {f.uploaderName}
+                </span>
+              </span>
+            </a>
+          ))
+        )}
+      </div>
     </div>
   );
 }
