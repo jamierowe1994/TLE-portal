@@ -517,15 +517,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   own line — big, sat over where the period buttons live below,
                   and her bottom edge tucked past the border so the artwork's
                   cut-off is never visible: the line does the cropping. */}
-              <div className="flex items-end gap-4 overflow-hidden pt-2">
+              <div className="flex items-end gap-4 pt-2">
                 <div className="min-w-0 pb-5 pl-12">
                   <h1 className="relative w-fit tracking-tight" style={{ fontSize: "clamp(32px, 4vw, 52px)", lineHeight: 1.08, fontWeight: 300 }}>
                     {/* big ink flicks either side, like the sketch */}
-                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -left-12 -top-2 h-9 w-9 text-ink/75" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -left-12 -top-2 h-9 w-9 text-accent" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
                       <path d="M4 14l6-3M8 20l4-4M3 8l5 1" />
                     </svg>
                     {hello}
-                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -right-12 -top-1 h-9 w-9 text-ink/75" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                    <svg aria-hidden viewBox="0 0 24 24" className="absolute -right-12 -top-1 h-9 w-9 text-accent" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
                       <path d="M20 10l-6 3M16 4l-4 4M21 16l-5-1" />
                     </svg>
                   </h1>
@@ -539,7 +539,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   }
                   title="Flick through the other times of day"
                   aria-label="Preview the other times of day"
-                  className={`rise-in -mb-2 ml-auto mr-2 shrink-0 cursor-pointer self-end outline-none sm:mr-16 lg:mr-36 ${art.headroom ?? ""}`}
+                  className={`rise-in mb-3 ml-auto mr-2 shrink-0 cursor-pointer self-end outline-none sm:mr-16 lg:mr-36 ${art.headroom ?? ""}`}
                   style={{ "--enter-delay": artPreview ? "0ms" : "950ms" } as React.CSSProperties}
                 >
                   {/* Overlay percentages are relative to the image box, so the

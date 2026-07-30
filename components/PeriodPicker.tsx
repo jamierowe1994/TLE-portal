@@ -68,8 +68,8 @@ const PRESET_MENU = [
 const boxClass = (active: boolean) =>
   `inline-flex items-center gap-2 rounded-xl border-[1.5px] bg-transparent px-3 py-2 text-[13px] font-medium transition ${
     active
-      ? "border-ink/85 text-ink"
-      : "border-ink/30 text-muted hover:border-ink/60 hover:text-ink"
+      ? "border-accent text-accent"
+      : "border-accent/40 text-accent/80 hover:border-accent hover:text-accent"
   }`;
 
 function CalendarIcon() {

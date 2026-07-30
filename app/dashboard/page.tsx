@@ -222,7 +222,7 @@ export default function MyDashboardPage() {
             <div className="flex h-full flex-col p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                  <DoodleIcon name="wallet" size={16} />
+                  <DoodleIcon name="wallet" size={16} className="text-accent" />
                   Earnings · {period.label}
                 </div>
                 <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
@@ -294,7 +294,7 @@ export default function MyDashboardPage() {
                   <div className="absolute bottom-6 left-0 top-6 hidden w-px bg-black/[0.08] lg:block" />
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                      <DoodleIcon name="pie" size={16} />
+                      <DoodleIcon name="pie" size={16} className="text-accent" />
                       Your portfolio mix
                     </div>
                     <SourceBadge
@@ -376,7 +376,7 @@ export default function MyDashboardPage() {
           <section className="enter enter-up" style={enterAt(1100)}>
             <div className="card card-lift p-5">
               <h2 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                <DoodleIcon name="calendar" size={16} />
+                <DoodleIcon name="calendar" size={16} className="text-accent" />
                 This month · {monthLabel(ANCHOR)}
               </h2>
               <div className="relative mt-4 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">

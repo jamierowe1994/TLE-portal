@@ -907,7 +907,7 @@ export default function TodosPage() {
               <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 py-8 text-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/illustrations/confetti.png" alt="" aria-hidden className="w-[150px]" />
-                <p className="mt-3 text-[19px] font-semibold text-ink">All caught up — nothing open. 🎉</p>
+                <p className="mt-3 text-[19px] font-semibold text-ink">All caught up — nothing open.</p>
                 <p className="text-[13px] text-muted">Nice work! Enjoy the calm.</p>
               </div>
             ) : (
