@@ -426,7 +426,7 @@ export default function PortfolioPage() {
     // Same outline treatment as the rest of the portal.
     <div className="outline-cards soft-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="text-xl font-semibold tracking-tight">My Portfolio</h1>
+        <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>My Portfolio</h1>
         <p className="mt-1 text-[13px] text-muted">
           The properties you&apos;ve let and now manage — renewals due, rent roll,
           and a straight line back to the record in REX.

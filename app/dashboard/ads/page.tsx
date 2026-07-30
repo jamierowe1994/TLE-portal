@@ -149,7 +149,7 @@ export default function MyAdsPage() {
     <div className="outline-cards space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">My Ads</h1>
+          <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>My Ads</h1>
           <p className="mt-0.5 text-[13px] text-muted">
             Your live Meta ads — spend, leads and cost per lead, straight from the ads platform.
           </p>

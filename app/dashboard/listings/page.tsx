@@ -1078,12 +1078,23 @@ export default function ListingsPage() {
     // Same outline treatment as the dashboard — boxes as hairline outlines on
     // the grey, photos and property details inside.
     <div className="outline-cards soft-cards space-y-6">
-      <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="text-xl font-semibold tracking-tight">My properties</h1>
-        <p className="mt-1 text-[13px] text-muted">
-          Everything on the market or let agreed. Tap one to see where it&rsquo;s up
-          to and what&rsquo;s next.
-        </p>
+      <div className="enter enter-up flex items-start gap-6 pt-2" style={enterAt(60)}>
+        <div className="min-w-0 flex-1">
+          <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>
+            My properties
+          </h1>
+          <p className="mt-2.5 max-w-xl text-[13px] leading-relaxed text-muted">
+            Everything on the market or let agreed. Tap one to see where it&rsquo;s up
+            to and what&rsquo;s next.
+          </p>
+        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/illustrations/houses.png"
+          alt=""
+          aria-hidden
+          className="pointer-events-none -mt-6 hidden w-[300px] shrink-0 lg:block xl:w-[380px]"
+        />
       </div>
 
       {!linked ? (

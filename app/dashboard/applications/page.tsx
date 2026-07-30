@@ -328,6 +328,42 @@ function MessageComposer({
   );
 }
 
+/**
+ * A panel that grows and shrinks by its real height. `grid-template-rows`
+ * 1fr → 0fr animates proportionally from the first frame (max-height can't),
+ * so neighbours are genuinely pushed along rather than jumping. Nothing
+ * unmounts mid-flight — the collapse is always seen through to the end.
+ */
+function CollapsePanel({
+  open,
+  delay = 0,
+  grow = false,
+  children,
+}: {
+  open: boolean;
+  /** Hold off so the outgoing panels finish shrinking first. */
+  delay?: number;
+  /** Take the leftover column height while it's open. */
+  grow?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`grid ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"} ${
+        open && grow ? "min-h-0 flex-1" : ""
+      }`}
+      style={{
+        transition: `grid-template-rows 560ms cubic-bezier(0.32, 0.72, 0, 1) ${delay}ms, opacity 380ms ease ${delay}ms`,
+      }}
+      aria-hidden={!open}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className={`${open && grow ? "h-full" : ""} pb-5`}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 /** Click-into-a-deal dashboard: where the tenancy is, stage by stage. */
 // One wide window: the property across the top, the stage board on the left,
 // and a right-hand column of panels that expand over each other on demand.
@@ -337,6 +373,16 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
   // Which right-hand panel is opened out; null = the resting arrangement.
   type Expanded = null | "notes" | "documents" | "comms" | "tenant" | "landlord";
   const [expanded, setExpanded] = useState<Expanded>(null);
+  // Remembered so the composer keeps its content while it shrinks away.
+  const [composerWho, setComposerWho] = useState<"tenant" | "landlord">("tenant");
+  const openComposer = (who: "tenant" | "landlord") => {
+    setComposerWho(who);
+    setExpanded(who);
+  };
+  const composerOpen = expanded === "tenant" || expanded === "landlord";
+  // Opening: the others shrink first, then the chosen one opens out. Closing
+  // runs the other way round.
+  const IN = 300;
 
   const p = a.propoly!;
   const cancelled = p.statusKey === "cancelled";
@@ -444,7 +490,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
           </p>
         ) : null}
 
-        <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_1.08fr]">
+        <div className="mt-6 grid items-stretch gap-5 lg:grid-cols-[1fr_1.08fr]">
           {/* ================= left: where the tenancy is ================= */}
           <div className="card p-5 sm:p-6">
             <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
@@ -547,21 +593,26 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
             </div>
           </div>
 
-          {/* ============ right: the people, and whatever's opened out ============ */}
-          <div className={expanded === "tenant" || expanded === "landlord" ? "flex" : "space-y-5"}>
-            {expanded === "tenant" || expanded === "landlord" ? (
+          {/* ============ right: the people, and whatever's opened out ============
+               Every panel stays mounted; only its height animates, so opening
+               one visibly squeezes the rest away and closing it lets them
+               grow back — one continuous movement either way. */}
+          <div className="flex flex-col">
+            {/* ---- the message composer ---- */}
+            <CollapsePanel open={composerOpen} delay={composerOpen ? IN : 0} grow>
               <MessageComposer
-                to={expanded === "tenant" ? (lead?.email ?? null) : null}
-                who={expanded === "tenant" ? "tenant" : "landlord"}
+                key={composerWho}
+                to={composerWho === "tenant" ? (lead?.email ?? null) : null}
+                who={composerWho}
                 property={`${a.propertyName}, ${a.locality}`}
                 listingId={a.listingId ?? null}
                 onClose={() => setExpanded(null)}
               />
-            ) : null}
+            </CollapsePanel>
 
-            {/* Tenant details — squeezed away while a panel is opened out. */}
-            {expanded === null ? (
-              <div className="panel-bounce card p-5 sm:p-6">
+            {/* ---- tenant details: the first thing to fold away ---- */}
+            <CollapsePanel open={expanded === null} delay={expanded === null ? IN : 0}>
+              <div className="card p-5 sm:p-6">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
                     <DoodleIcon name="user" size={17} className="text-accent" />
@@ -632,11 +683,15 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   </div>
                 </dl>
               </div>
-            ) : null}
+            </CollapsePanel>
 
-            {/* ---- Notes ---- */}
-            {expanded === null || expanded === "notes" ? (
-              <div className={`card p-5 sm:p-6 ${expanded === "notes" ? "panel-bounce" : ""}`}>
+            {/* ---- Notes: always here, taller once it's the one in focus ---- */}
+            <CollapsePanel
+              open={expanded === null || expanded === "notes"}
+              delay={expanded === "notes" ? IN : 0}
+              grow={expanded === "notes"}
+            >
+              <div className={`card p-5 sm:p-6 ${expanded === "notes" ? "flex h-full flex-col" : ""}`}>
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
                     <DoodleIcon name="note" size={17} className="text-accent" />
@@ -655,7 +710,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                     </button>
                   )}
                 </div>
-                <div className="mt-3">
+                <div className={`mt-3 ${expanded === "notes" ? "flex-1" : ""}`}>
                   <DealNotesPanel
                     dealId={a.id}
                     placeholder="Reply to pre-tenancy — they see it instantly…"
@@ -664,10 +719,10 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   />
                 </div>
               </div>
-            ) : null}
+            </CollapsePanel>
 
-            {/* ---- Documents + Communication, side by side until one opens ---- */}
-            {expanded === null ? (
+            {/* ---- the two cards, side by side while nothing is opened ---- */}
+            <CollapsePanel open={expanded === null} delay={expanded === null ? IN : 0}>
               <div className="grid gap-5 sm:grid-cols-2">
                 <button
                   type="button"
@@ -705,11 +760,15 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   </span>
                 </button>
               </div>
-            ) : null}
+            </CollapsePanel>
 
-            {/* ---- Documents opened out: the pre-tenancy checklist in full ---- */}
-            {expanded === "documents" ? (
-              <div className="panel-bounce card p-5 sm:p-6">
+            {/* ---- Documents opened out ---- */}
+            <CollapsePanel
+              open={expanded === "documents"}
+              delay={expanded === "documents" ? IN : 0}
+              grow={expanded === "documents"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
                     <DoodleIcon name="doc" size={17} className="text-accent" />
@@ -753,7 +812,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   href={PROPOLY_APP_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn-press mt-4 inline-flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[12px] font-semibold transition hover:border-black/30"
+                  className="btn-press mt-4 inline-flex w-fit items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[12px] font-semibold transition hover:border-black/30"
                 >
                   Open the file in Propoly
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -761,11 +820,15 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   </svg>
                 </a>
               </div>
-            ) : null}
+            </CollapsePanel>
 
             {/* ---- Communication opened out ---- */}
-            {expanded === "comms" ? (
-              <div className="panel-bounce card p-5 sm:p-6">
+            <CollapsePanel
+              open={expanded === "comms"}
+              delay={expanded === "comms" ? IN : 0}
+              grow={expanded === "comms"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
                     <DoodleIcon name="message-2" size={17} className="text-accent" />
@@ -781,7 +844,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setExpanded("tenant")}
+                    onClick={() => openComposer("tenant")}
                     className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2 text-[12.5px] font-semibold transition hover:border-black/30"
                   >
                     <DoodleIcon name="user" size={14} />
@@ -789,7 +852,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   </button>
                   <button
                     type="button"
-                    onClick={() => setExpanded("landlord")}
+                    onClick={() => openComposer("landlord")}
                     className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2 text-[12.5px] font-semibold transition hover:border-black/30"
                   >
                     <DoodleIcon name="home" size={14} />
@@ -797,7 +860,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                   </button>
                 </div>
               </div>
-            ) : null}
+            </CollapsePanel>
           </div>
         </div>
 
@@ -805,7 +868,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
         <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
           <button
             type="button"
-            onClick={() => setExpanded("landlord")}
+            onClick={() => openComposer("landlord")}
             className="btn-press inline-flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-[13px] font-semibold transition hover:border-black/30"
           >
             <DoodleIcon name="home" size={15} />
@@ -813,7 +876,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
           </button>
           <button
             type="button"
-            onClick={() => setExpanded("tenant")}
+            onClick={() => openComposer("tenant")}
             className="btn-press inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-semibold text-white transition"
             style={{ background: BRAND.accent }}
           >
@@ -1010,7 +1073,7 @@ export default function ApplicationsPage() {
   return (
     <div className="outline-cards soft-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="text-xl font-semibold tracking-tight">Applications</h1>
+        <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>Applications</h1>
         <p className="mt-1 text-[13px] text-muted">
           {fromPropoly
             ? "Every tenancy in progress and exactly where it's up to — live from Propoly. Tap one for the full picture."
