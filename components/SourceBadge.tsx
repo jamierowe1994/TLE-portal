@@ -54,9 +54,11 @@ const DOT: Record<StatSource, string> = {
   "live-teg": "#22c55e",
   "live-ghl": "#22c55e",
   "live-payprop": "#22c55e",
+  // Anything not coming from a live system reads amber: it's a to-do, not a
+  // neutral fact, and grey let snapshots hide in plain sight.
   manual: "#f59e0b",
-  snapshot: "#9ca3af",
-  derived: "#94a3b8",
+  snapshot: "#f59e0b",
+  derived: "#f59e0b",
 };
 
 export default function SourceBadge({

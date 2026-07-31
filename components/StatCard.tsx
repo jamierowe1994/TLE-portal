@@ -24,9 +24,10 @@ export default function StatCard({
 
   const sizeClass = big ? "stat-value--big" : size === "sm" ? "stat-value--sm" : "";
 
-  // Dense (sm) cards use a compact colour dot so the badge never overflows;
-  // full-size cards keep the readable LIVE / SNAPSHOT text badge.
-  const compactBadge = size === "sm";
+  // Every card carries the same corner dot — green for live, amber for not.
+  // The mix of text pills and dots made it impossible to scan a tab and tell
+  // at a glance which figures were real; the wording is in the tooltip.
+  const compactBadge = true;
 
   return (
     <div className={`card card-lift relative h-full ${size === "sm" ? "p-4" : "p-5"}`}>

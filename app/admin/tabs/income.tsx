@@ -116,6 +116,7 @@ interface LiveIncome {
   byCategory: Array<{ category: string; amount: number }>;
   byAccount: Array<{ account: string; label: string; agencyIncome: number; combinedGci: number }>;
   paymentCount: number;
+  agentsEarning: number;
 }
 interface LiveMoveIns {
   count: number;
@@ -127,20 +128,30 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
 
   // Live money from PayProp — gathered in the background, so poll for it.
   const [live, setLive] = useState<LiveIncome | null>(null);
+  const [prev, setPrev] = useState<LiveIncome | null>(null);
   const [moveIns, setMoveIns] = useState<LiveMoveIns | null>(null);
   useEffect(() => {
     let cancelled = false;
     let tries = 0;
     setLive(null);
+    setPrev(null);
     setMoveIns(null);
     const ask = () => {
       fetch(`/api/admin/payprop-live?month=${month}`, { cache: "no-store" })
         .then((r) => r.json())
-        .then((d: { income?: LiveIncome | null; moveIns?: LiveMoveIns | null; refreshing?: boolean }) => {
+        .then((d: {
+          income?: LiveIncome | null;
+          prevIncome?: LiveIncome | null;
+          moveIns?: LiveMoveIns | null;
+          refreshing?: boolean;
+        }) => {
           if (cancelled) return;
           if (d.income) setLive(d.income);
+          if (d.prevIncome) setPrev(d.prevIncome);
           if (d.moveIns) setMoveIns(d.moveIns);
-          if (!d.income && tries++ < 40) setTimeout(ask, 5000);
+          // The previous month is a second walk and lands later than this
+          // month's, so keep asking until both are in.
+          if ((!d.income || !d.prevIncome) && tries++ < 40) setTimeout(ask, 5000);
         })
         .catch(() => {});
     };
@@ -163,6 +174,52 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
       source: "live-payprop" as const,
       note: `${gbp(a.agencyIncome)} kept by the agency; the rest paid to partners.`,
     };
+  };
+
+  /**
+   * The month just gone, from PayProp. Everything here is a fee figure or a
+   * ratio of two of them, so it's as final as the snapshot was — but current.
+   * Returns null until the walk lands, so the card falls back rather than
+   * flashing a zero.
+   */
+  const prevMonthKey = (() => {
+    const [y, m] = month.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
+  })();
+  const prevLabel = monthLabel(prevMonthKey);
+
+  const pv = (which: "totalGci" | "tleNet" | "gciPerAgent" | "netPerAgent" | "splitPct") => {
+    if (!prev) return null;
+    const agents = prev.agentsEarning || 0;
+    const note = `Live from PayProp — ${prevLabel} final, ${prev.paymentCount} payments.`;
+    const src = "live-payprop" as const;
+    switch (which) {
+      case "totalGci":
+        return { value: Math.round(prev.combinedGci), display: gbp(prev.combinedGci), source: src, note };
+      case "tleNet":
+        return { value: Math.round(prev.agencyIncome), display: gbp(prev.agencyIncome), source: src, note };
+      case "gciPerAgent":
+        if (!agents) return null;
+        return {
+          value: Math.round(prev.combinedGci / agents),
+          display: gbp(prev.combinedGci / agents),
+          source: src,
+          note: `${gbp(prev.combinedGci)} across ${agents} earning partners.`,
+        };
+      case "netPerAgent":
+        if (!agents) return null;
+        return {
+          value: Math.round(prev.agencyIncome / agents),
+          display: gbp(prev.agencyIncome / agents),
+          source: src,
+          note: `${gbp(prev.agencyIncome)} across ${agents} earning partners.`,
+        };
+      case "splitPct": {
+        if (!prev.combinedGci) return null;
+        const pct = Math.round((prev.agencyIncome / prev.combinedGci) * 100);
+        return { value: pct, display: `${pct}%`, source: src, note };
+      }
+    }
   };
 
   const isSnapshotMonth = month === "2026-07";
@@ -294,9 +351,24 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
         <h2 className="text-sm font-semibold">July MTD — estimates</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard
-            label="Combined GCI (est)"
-            stat={liveGciEst ?? inc.julyMtd.combinedGci}
-            sub={liveGciEst && liveMoveIns != null ? `${liveMoveIns} live move-ins × £1,200 avg` : undefined}
+            label={live ? "Combined GCI" : "Combined GCI (est)"}
+            stat={
+              live
+                ? {
+                    value: Math.round(live.combinedGci),
+                    display: gbp(live.combinedGci),
+                    source: "live-payprop",
+                    note: `Every fee charged this month across both agencies, ${live.paymentCount} payments. TLE's share plus the partners'.`,
+                  }
+                : liveGciEst ?? inc.julyMtd.combinedGci
+            }
+            sub={
+              live
+                ? `${gbp(live.agencyIncome)} TLE · ${gbp(live.paidToBeneficiaries)} partners`
+                : liveGciEst && liveMoveIns != null
+                  ? `${liveMoveIns} live move-ins × £1,200 avg`
+                  : undefined
+            }
             big
           />
           <StatCard label="E&W GCI" stat={accountGci(live, "E&W") ?? inc.julyMtd.eAndWGci} />
@@ -338,16 +410,19 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
         </section>
 
         <section className="lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold">June 2026 — final</h2>
+          <h2 className="mb-3 text-sm font-semibold">{prevLabel} — final</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <StatCard label="Total GCI" stat={inc.june.totalGci} />
+            <StatCard label="Total GCI" stat={pv("totalGci") ?? inc.june.totalGci} />
             <StatCard label="Total income" stat={inc.june.totalIncome} />
-            <StatCard label="TLE net income" stat={inc.june.tleNetIncome} />
-            <StatCard label="GCI per agent" stat={inc.june.gciPerAgent} />
-            <StatCard label="Net income per agent" stat={inc.june.netIncomePerAgent} />
+            <StatCard label="TLE net income" stat={pv("tleNet") ?? inc.june.tleNetIncome} />
+            <StatCard label="GCI per agent" stat={pv("gciPerAgent") ?? inc.june.gciPerAgent} />
+            <StatCard
+              label="Net income per agent"
+              stat={pv("netPerAgent") ?? inc.june.netIncomePerAgent}
+            />
             <StatCard
               label="TLE split of E&W GCI"
-              stat={inc.june.tleSplitPct}
+              stat={pv("splitPct") ?? inc.june.tleSplitPct}
               sub={`Partners ${100 - (inc.june.tleSplitPct.value ?? 0)}% — ${inc.june.partnerNetIncome.display ?? ""}`}
             />
             <StatCard label="Monthly licence" stat={inc.june.monthlyLicence} />

@@ -62,7 +62,15 @@ const running = new Set<string>();
  * which is far too slow to block an admin page on. The first call returns
  * null and starts the walk; once it lands every later call is instant.
  */
-function cachedAsync<T>(key: string, run: () => Promise<T>): T | null {
+/** Bump when a cached shape gains or loses a field. */
+const CACHE_VERSION = "v2";
+
+function cachedAsync<T>(rawKey: string, run: () => Promise<T>): T | null {
+  const key = `${CACHE_VERSION}:${rawKey}`;
+  return cachedAsyncInner(key, run);
+}
+
+function cachedAsyncInner<T>(key: string, run: () => Promise<T>): T | null {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.data as T;
 
@@ -133,14 +141,30 @@ function monthRange(month: string): { from: string; to: string } {
  * separate agencies).
  */
 export function getAgencyIncome(month: string): AgencyIncome | null {
-  return cachedAsync(`income:${month}`, () => computeAgencyIncome(month));
+  const { from, to } = monthRange(month);
+  return cachedAsync(`income:${month}`, () => computeIncomeRange(month, from, to));
 }
 
-async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> {
+/**
+ * Everything earned from 1 January up to the end of `month` — the year-to-date
+ * figures on the admin home. One range query, not one per month.
+ */
+export function getYtdIncome(month: string): AgencyIncome | null {
+  const { to } = monthRange(month);
+  const year = month.slice(0, 4);
+  return cachedAsync(`ytd:${month}`, () =>
+    computeIncomeRange(`${year} YTD`, `${year}-01-01`, to)
+  );
+}
+
+async function computeIncomeRange(
+  label: string,
+  from: string,
+  to: string
+): Promise<AgencyIncome | null> {
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const { from, to } = monthRange(month);
   const perAccount = await Promise.all(
     accounts.map(async (a) => ({
       account: a,
@@ -211,7 +235,7 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
   }
 
   return {
-    month,
+    month: label,
     agencyIncome,
     combinedGci: agencyIncome + paidToBeneficiaries,
     agentsEarning: earners.size,

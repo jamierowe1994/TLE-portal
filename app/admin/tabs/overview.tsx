@@ -449,14 +449,23 @@ export default function Overview({ month }: { month: string }) {
     agentsEarning: number;
     moveIns: number | null;
   } | null>(null);
+  // Year-to-date fees, straight off PayProp — the headline band's GCI.
+  const [ytdMoney, setYtdMoney] = useState<{ combinedGci: number; paymentCount: number } | null>(
+    null
+  );
   useEffect(() => {
     let cancelled = false;
     let tries = 0;
     const ask = () => {
       fetch("/api/admin/payprop-live", { cache: "no-store" })
         .then((r) => r.json())
-        .then((res: { income?: { combinedGci: number; agencyIncome: number; agentsEarning: number } | null; moveIns?: { count: number } | null }) => {
+        .then((res: {
+          income?: { combinedGci: number; agencyIncome: number; agentsEarning: number } | null;
+          ytd?: { combinedGci: number; paymentCount: number } | null;
+          moveIns?: { count: number } | null;
+        }) => {
           if (cancelled) return;
+          if (res.ytd) setYtdMoney({ combinedGci: res.ytd.combinedGci, paymentCount: res.ytd.paymentCount });
           if (res.income) {
             setLiveMoney({
               combinedGci: res.income.combinedGci,
@@ -464,7 +473,10 @@ export default function Overview({ month }: { month: string }) {
               agentsEarning: res.income.agentsEarning,
               moveIns: res.moveIns?.count ?? null,
             });
-          } else if (tries++ < 40) setTimeout(ask, 5000);
+          }
+          // The year-to-date range is a much longer walk than the month, so
+          // keep asking until it lands too.
+          if ((!res.income || !res.ytd) && tries++ < 40) setTimeout(ask, 5000);
         })
         .catch(() => {});
     };
@@ -891,7 +903,20 @@ export default function Overview({ month }: { month: string }) {
           <Tile label="Jun YTD Listings" stat={hlListings.stat} flag={hlListings.flag} compact />
           <Tile label="Jun YTD Applications" stat={hlApplications.stat} flag={hlApplications.flag} compact />
           <Tile label="Jun YTD Move-ins" stat={hlMoveIns.stat} flag={hlMoveIns.flag} compact />
-          <Tile label="Jun YTD GCI exc VAT" stat={d.headline.gciExcVat} compact />
+          <Tile
+            label="Jun YTD GCI exc VAT"
+            stat={
+              ytdMoney
+                ? {
+                    value: Math.round(ytdMoney.combinedGci),
+                    display: `£${Math.round(ytdMoney.combinedGci).toLocaleString("en-GB")}`,
+                    source: "live-payprop",
+                    note: `Live from PayProp — every fee charged since 1 January across both agencies, ${ytdMoney.paymentCount} payments.`,
+                  }
+                : d.headline.gciExcVat
+            }
+            compact
+          />
           <Tile label="Jun YTD Total Income" stat={d.headline.totalIncome} compact />
           <Tile label="Pipeline now" stat={hlPipeline} compact />
         </div>
