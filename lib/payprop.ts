@@ -253,7 +253,12 @@ export function payPropConfigured(): boolean {
 // tripping the limiter and losing whole pages — which surfaces as a plausible
 // but wrong figure rather than an error. Everything therefore goes through one
 // queue: a single request in flight at a time, with a small gap between.
-const MIN_GAP_MS = 120;
+// PayProp allows 5 requests a second, and exceeding it fails EVERY subsequent
+// request for the next 30 seconds (spec §8.2). At 120ms we were sending 8.3/s,
+// buying repeated 30-second lockouts and then waiting out our own retry
+// backoff on top — a month's walk took three minutes. Going slower per request
+// is dramatically faster overall.
+const MIN_GAP_MS = 210;
 let chain: Promise<unknown> = Promise.resolve();
 let lastAt = 0;
 

@@ -129,6 +129,61 @@ const money = (v: unknown) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/**
+ * The payments report for a date range, fetched once and shared.
+ *
+ * The admin income figures and a single partner's earnings were each doing
+ * their own full walk of the same 1,280 rows — the partner's only to filter
+ * down to their own. Now the first caller does the work, anyone asking while
+ * it's in flight waits on the same promise rather than starting a competing
+ * walk, and the result is reused for the rest of the hour.
+ */
+const RANGE_TTL_MS = 60 * 60_000;
+type AccountRows = Array<{ account: PayPropAccountId; rows: PaymentRow[] }>;
+const rangeCache = new Map<string, { at: number; data: AccountRows }>();
+const rangeInflight = new Map<string, Promise<AccountRows>>();
+
+async function paymentsForRange(from: string, to: string): Promise<AccountRows> {
+  const key = `${from}|${to}`;
+  const hit = rangeCache.get(key);
+  if (hit && Date.now() - hit.at < RANGE_TTL_MS) return hit.data;
+
+  const inflight = rangeInflight.get(key);
+  if (inflight) return inflight;
+
+  const job = (async () => {
+    const accounts = payPropAccounts();
+    const out: AccountRows = [];
+    // One account after the other: both share the same rate limit, so running
+    // them together just doubles the requests per second.
+    for (const a of accounts) {
+      out.push({
+        account: a,
+        rows: await payPropGetAll<PaymentRow>(a, "report/all-payments", {
+          from_date: from,
+          to_date: to,
+        }),
+      });
+    }
+    return out;
+  })();
+
+  rangeInflight.set(key, job);
+  try {
+    const data = await job;
+    rangeCache.set(key, { at: Date.now(), data });
+    // Only a couple of ranges are ever live at once (this month, last month,
+    // year to date) — don't let this grow unbounded.
+    if (rangeCache.size > 6) {
+      const oldest = [...rangeCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (oldest) rangeCache.delete(oldest[0]);
+    }
+    return data;
+  } finally {
+    rangeInflight.delete(key);
+  }
+}
+
 /** Last day of a YYYY-MM, so the range covers the whole month. */
 function monthRange(month: string): { from: string; to: string } {
   const [y, m] = month.split("-").map(Number);
@@ -166,15 +221,7 @@ async function computeIncomeRange(
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const perAccount = await Promise.all(
-    accounts.map(async (a) => ({
-      account: a,
-      rows: await payPropGetAll<PaymentRow>(a, "report/all-payments", {
-        from_date: from,
-        to_date: to,
-      }),
-    }))
-  );
+  const perAccount = await paymentsForRange(from, to);
   const rows = perAccount.flatMap((p) => p.rows);
   if (rows.length === 0) return null;
 
@@ -378,10 +425,34 @@ interface BeneficiaryRow {
  * one they sign in with would silently earn nothing, which is worse than a
  * slightly fuzzier match. Name is the fallback, never the first choice.
  */
-async function beneficiaryIndex(): Promise<{
+let beneficiaryCache: { at: number; data: BeneficiaryIndex } | null = null;
+let beneficiaryInflight: Promise<BeneficiaryIndex> | null = null;
+
+interface BeneficiaryIndex {
   byEmail: Map<string, Set<string>>;
   byName: Map<string, Set<string>>;
-}> {
+}
+
+async function beneficiaryIndex(): Promise<BeneficiaryIndex> {
+  // Every partner loading their dashboard was walking the whole directory.
+  // It changes when someone joins, not by the minute.
+  if (beneficiaryCache && Date.now() - beneficiaryCache.at < RANGE_TTL_MS) {
+    return beneficiaryCache.data;
+  }
+  if (beneficiaryInflight) return beneficiaryInflight;
+  beneficiaryInflight = buildBeneficiaryIndex();
+  try {
+    const data = await beneficiaryInflight;
+    if (data.byEmail.size || data.byName.size) {
+      beneficiaryCache = { at: Date.now(), data };
+    }
+    return data;
+  } finally {
+    beneficiaryInflight = null;
+  }
+}
+
+async function buildBeneficiaryIndex(): Promise<BeneficiaryIndex> {
   const accounts = payPropAccounts();
   const rows = (
     await Promise.all(
@@ -506,18 +577,12 @@ async function computeAgentEarnings(
     };
   }
 
+  // The same month's payments the admin figures use — already in hand, or
+  // being fetched right now by whoever asked first.
   const { from, to } = monthRange(month);
-  const rows = (
-    await Promise.all(
-      accounts.map((a) =>
-        payPropGetAll<PaymentRow & { beneficiary?: { id?: string } }>(
-          a,
-          "report/all-payments",
-          { from_date: from, to_date: to }
-        )
-      )
-    )
-  ).flat();
+  const rows = (await paymentsForRange(from, to)).flatMap(
+    (p) => p.rows as Array<PaymentRow & { beneficiary?: { id?: string } }>
+  );
 
   if (rows.length === 0) return null; // couldn't reach PayProp — not "earned nothing"
 
