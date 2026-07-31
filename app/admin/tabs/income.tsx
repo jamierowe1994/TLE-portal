@@ -110,9 +110,11 @@ const AVG_GCI_PER_MOVE_IN = 1200;
 
 interface LiveIncome {
   agencyIncome: number;
+  combinedGci: number;
   paidToBeneficiaries: number;
   ownerPayments: number;
   byCategory: Array<{ category: string; amount: number }>;
+  byAccount: Array<{ account: string; label: string; agencyIncome: number; combinedGci: number }>;
   paymentCount: number;
 }
 interface LiveMoveIns {
@@ -150,6 +152,19 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
 
   const gbp = (n: number) =>
     `£${n.toLocaleString("en-GB", { maximumFractionDigits: 0 })}`;
+
+  /** One agency's GCI, or null when it isn't there yet. */
+  const accountGci = (l: LiveIncome | null, label: string) => {
+    const a = l?.byAccount?.find((x) => x.label === label);
+    if (!a) return null;
+    return {
+      value: Math.round(a.combinedGci),
+      display: gbp(a.combinedGci),
+      source: "live-payprop" as const,
+      note: `${gbp(a.agencyIncome)} kept by the agency; the rest paid to partners.`,
+    };
+  };
+
   const isSnapshotMonth = month === "2026-07";
 
   // Live estimate input: this month's completed move-ins from Propoly.
@@ -219,34 +234,32 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">{monthLabel(month)} — live from PayProp</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="card p-5">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Agency income (GCI)
-              </div>
-              <div className="stat-value mt-1 text-[28px]">{gbp(live.agencyIncome)}</div>
-            </div>
-            <div className="card p-5">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Paid to partners
-              </div>
-              <div className="stat-value mt-1 text-[28px]">{gbp(live.paidToBeneficiaries)}</div>
-            </div>
-            <div className="card p-5">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Rent to landlords
-              </div>
-              <div className="stat-value mt-1 text-[28px]">{gbp(live.ownerPayments)}</div>
-              <div className="mt-0.5 text-[11px] text-muted">Passed through, not income</div>
-            </div>
-            <div className="card p-5">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Move-ins
-              </div>
-              <div className="stat-value mt-1 text-[28px]">{moveIns?.count ?? "—"}</div>
-              <div className="mt-0.5 text-[11px] text-muted">
-                {moveIns ? `${gbp(moveIns.rentAdded)} rent added` : "Tenancies starting"}
-              </div>
-            </div>
+            <StatCard
+              label="Agency income (GCI)"
+              stat={{ value: Math.round(live.agencyIncome), display: gbp(live.agencyIncome), source: "live-payprop", note: `TLE's own share of the fees, across ${live.paymentCount} payments.` }}
+              big
+            />
+            <StatCard
+              label="Paid to partners"
+              stat={{ value: Math.round(live.paidToBeneficiaries), display: gbp(live.paidToBeneficiaries), source: "live-payprop", note: "The partners' share of the same fees." }}
+              big
+            />
+            <StatCard
+              label="Rent to landlords"
+              stat={{ value: Math.round(live.ownerPayments), display: gbp(live.ownerPayments), source: "live-payprop", note: "Rent passed through to owners — volume, not income." }}
+              big
+              sub="Passed through, not income"
+            />
+            <StatCard
+              label="Move-ins"
+              stat={
+                moveIns
+                  ? { value: moveIns.count, source: "live-payprop", note: "Rent schedules starting this month." }
+                  : { value: null, source: "live-payprop" }
+              }
+              big
+              sub={moveIns ? `${gbp(moveIns.rentAdded)} rent added` : "Tenancies starting"}
+            />
           </div>
 
           <div className="card p-5">
@@ -286,10 +299,24 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
             sub={liveGciEst && liveMoveIns != null ? `${liveMoveIns} live move-ins × £1,200 avg` : undefined}
             big
           />
-          <StatCard label="E&W GCI (est)" stat={inc.julyMtd.eAndWGci} />
-          <StatCard label="Glasgow GCI (est)" stat={inc.julyMtd.glasgowGci} />
-          <StatCard label="TLE net income (est)" stat={inc.julyMtd.tleNetIncome} />
-          <StatCard label="Paid to associates (est)" stat={inc.julyMtd.paidToAssociates} />
+          <StatCard label="E&W GCI" stat={accountGci(live, "E&W") ?? inc.julyMtd.eAndWGci} />
+          <StatCard label="Glasgow GCI" stat={accountGci(live, "Glasgow") ?? inc.julyMtd.glasgowGci} />
+          <StatCard
+            label="TLE net income"
+            stat={
+              live
+                ? { value: Math.round(live.agencyIncome), display: gbp(live.agencyIncome), source: "live-payprop", note: "Fees kept by the agency this month." }
+                : inc.julyMtd.tleNetIncome
+            }
+          />
+          <StatCard
+            label="Paid to associates"
+            stat={
+              live
+                ? { value: Math.round(live.paidToBeneficiaries), display: gbp(live.paidToBeneficiaries), source: "live-payprop", note: "Fees paid out to partners this month." }
+                : inc.julyMtd.paidToAssociates
+            }
+          />
           <StatCard label="June final GCI" stat={inc.julyMtd.juneFinalGci} sub="Previous month, final" />
         </div>
       </section>

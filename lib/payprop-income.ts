@@ -42,6 +42,8 @@ export interface AgencyIncome {
   byCategory: Array<{ category: string; amount: number }>;
   /** What each partner earned this month, biggest first. */
   byPartner: Array<{ name: string; amount: number; payments: number }>;
+  /** GCI per agency — the Income tab shows E&W and Glasgow separately. */
+  byAccount: Array<{ account: PayPropAccountId; label: string; agencyIncome: number; combinedGci: number }>;
   paymentCount: number;
   accounts: PayPropAccountId[];
 }
@@ -140,15 +142,36 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
 
   const { from, to } = monthRange(month);
   const perAccount = await Promise.all(
-    accounts.map((a) =>
-      payPropGetAll<PaymentRow>(a, "report/all-payments", {
+    accounts.map(async (a) => ({
+      account: a,
+      rows: await payPropGetAll<PaymentRow>(a, "report/all-payments", {
         from_date: from,
         to_date: to,
-      })
-    )
+      }),
+    }))
   );
-  const rows = perAccount.flat();
+  const rows = perAccount.flatMap((p) => p.rows);
   if (rows.length === 0) return null;
+
+  // Same classification per agency, so the parts sum to the whole.
+  const sliceOf = (list: PaymentRow[]) => {
+    let agency = 0;
+    let partners = 0;
+    for (const r of list) {
+      const amt = money(r.amount);
+      const cat = r.category?.name ?? "Other";
+      if (!FEE_CATEGORIES.has(cat)) continue;
+      const t = r.beneficiary?.type;
+      if (t === "agency") agency += amt;
+      else if (t === "beneficiary" || t === "global_beneficiary") partners += amt;
+    }
+    return { agencyIncome: agency, combinedGci: agency + partners };
+  };
+  const byAccount = perAccount.map((p) => ({
+    account: p.account,
+    label: p.account === "scotland" ? "Glasgow" : "E&W",
+    ...sliceOf(p.rows),
+  }));
 
   let agencyIncome = 0;
   let paidToBeneficiaries = 0;
@@ -201,6 +224,7 @@ async function computeAgencyIncome(month: string): Promise<AgencyIncome | null> 
     byPartner: [...partners.entries()]
       .map(([name, v]) => ({ name, amount: v.amount, payments: v.payments }))
       .sort((a, b) => b.amount - a.amount),
+    byAccount,
     paymentCount: rows.length,
     accounts,
   };
