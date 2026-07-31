@@ -1,7 +1,7 @@
 import "server-only";
 import { payPropAccounts, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
 import { readCache, writeCache } from "@/lib/integration-cache";
-import { normaliseAgentName } from "@/lib/payprop-portfolio";
+import { normaliseAgentName, propertyKey } from "@/lib/payprop-portfolio";
 
 // Live money out of PayProp, replacing the figures the admin centre has been
 // reading off the 11 Jul 2026 dashboard snapshot.
@@ -624,6 +624,7 @@ interface InvoiceRow {
   invoice_type?: string;
   from_date?: string;
   gross_amount?: number;
+  property_id?: string;
   property?: { id?: string; property_name?: string; address?: { first_line?: string; city?: string } };
   tenant?: { display_name?: string };
 }
@@ -637,6 +638,8 @@ export interface MoveIns {
   properties: Array<{
     /** PayProp's id — the only reliable join key across reports. */
     propertyId: string;
+    /** Address-derived fallback key — move-in rows often carry no id. */
+    propertyKey: string;
     property: string;
     tenant: string;
     rent: number;
@@ -681,7 +684,10 @@ async function computeMoveIns(month: string): Promise<MoveIns | null> {
       // PayProp's id, so callers can join without relying on the name — the
       // fallback below produces "11 Albion Street, Motherwell" where the
       // properties export says "Albion Street, 11", and the two never match.
-      propertyId: r.property?.id ?? "",
+      propertyId: r.property?.id ?? r.property_id ?? "",
+      propertyKey: propertyKey(
+        r.property?.property_name || r.property?.address?.first_line || ""
+      ),
       property:
         r.property?.property_name ??
         [r.property?.address?.first_line, r.property?.address?.city]

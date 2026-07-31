@@ -49,6 +49,32 @@ export function normaliseAgentName(name: string): string {
     .trim();
 }
 
+/**
+ * A join key for a property, built from its address.
+ *
+ * PayProp names the same property differently between reports — the properties
+ * export says "Belgrave, 7" while the move-ins report says "11 Albion Street,
+ * Motherwell" — and move-in rows carry no id at all. What both always contain
+ * is a house number and a street, so the key is those two: the number plus the
+ * first real word of the street name.
+ *
+ * Deliberately loose. It will collide for the same number and street in two
+ * towns, so it's only ever used as a fallback behind an id match.
+ */
+export function propertyKey(name: string): string {
+  const cleaned = String(name ?? "").toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const number = words.find((w) => /^\d+$/.test(w));
+  const street = words.find((w) => /^[a-z]{3,}$/.test(w) && !STREET_NOISE.has(w));
+  return number && street ? `${number}|${street}` : "";
+}
+
+/** Words that appear in every address and so identify nothing. */
+const STREET_NOISE = new Set([
+  "flat", "room", "apt", "apartment", "unit", "the", "street", "road", "avenue",
+  "close", "court", "place", "drive", "lane", "way", "gardens", "rest",
+]);
+
 export interface AgentBook {
   /** As PayProp spells it, for showing back to a human. */
   names: string[];
@@ -63,6 +89,8 @@ export interface AgentBook {
   /** PayProp ids for the same properties. Names are formatted differently
    *  between reports, so anything joining across reports uses these. */
   propertyIds: string[];
+  /** Address-derived keys, for reports that carry no id (see propertyKey). */
+  propertyKeys: string[];
   accounts: PayPropAccountId[];
 }
 
@@ -235,6 +263,7 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
         activeTenancies: 0,
         propertyNames: [],
         propertyIds: [],
+        propertyKeys: [],
         accounts: [],
       });
       if (raw && !book.names.includes(raw)) book.names.push(raw);
@@ -245,6 +274,8 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
       if (pname) book.propertyNames.push(pname);
       const pid = text(r.id);
       if (pid) book.propertyIds.push(pid);
+      const pkey = propertyKey(pname || text(r.address?.first_line));
+      if (pkey) book.propertyKeys.push(pkey);
       if (!book.accounts.includes(account)) book.accounts.push(account);
     }
     slices.push({
@@ -289,6 +320,7 @@ export function getAgentBook(displayName: string): AgentBook | null {
       activeTenancies: 0,
       propertyNames: [],
       propertyIds: [],
+      propertyKeys: [],
       accounts: [],
     }
   );

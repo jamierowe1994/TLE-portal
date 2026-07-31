@@ -26,8 +26,13 @@ export async function GET(req: NextRequest) {
   const all = getMoveIns(month);
   const portfolio = getPortfolioBook();
 
-  const mine = new Set(book?.propertyIds ?? []);
-  const matched = (all?.properties ?? []).filter((p) => p.propertyId && mine.has(p.propertyId));
+  const mineIds = new Set(book?.propertyIds ?? []);
+  const mineKeys = new Set(book?.propertyKeys ?? []);
+  const matched = (all?.properties ?? []).filter(
+    (p) =>
+      (p.propertyId && mineIds.has(p.propertyId)) ||
+      (p.propertyKey && mineKeys.has(p.propertyKey))
+  );
 
     return NextResponse.json({
       month,
@@ -44,6 +49,7 @@ export async function GET(req: NextRequest) {
           properties: book.properties,
           samplePropertyNames: (book.propertyNames ?? []).slice(0, 5),
           samplePropertyIds: (book.propertyIds ?? []).slice(0, 5),
+          samplePropertyKeys: (book.propertyKeys ?? []).slice(0, 5),
         }
       : null,
 
@@ -54,6 +60,7 @@ export async function GET(req: NextRequest) {
       businessWide: all?.count ?? null,
       samplePropertyNames: (all?.properties ?? []).slice(0, 5).map((p) => p.property),
       samplePropertyIds: (all?.properties ?? []).slice(0, 5).map((p) => p.propertyId),
+      samplePropertyKeys: (all?.properties ?? []).slice(0, 5).map((p) => p.propertyKey),
       matchedToYou: matched.length,
       matchedRows: matched,
     },

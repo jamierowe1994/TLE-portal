@@ -196,8 +196,16 @@ export async function GET(req: NextRequest) {
     // formatted address ("11 Albion Street, Motherwell") where the properties
     // export gives a name ("Albion Street, 11"), so matching on names found
     // nothing and every partner's tile stayed amber.
-    const mine = new Set(book.propertyIds);
-    const rows = allMoveIns.properties.filter((p) => p.propertyId && mine.has(p.propertyId));
+    // Id first, address key second. PayProp returns no id at all on move-in
+    // rows and names the same property differently between reports, so an
+    // exact match on either alone finds nothing.
+    const mineIds = new Set(book.propertyIds);
+    const mineKeys = new Set(book.propertyKeys);
+    const rows = allMoveIns.properties.filter(
+      (p) =>
+        (p.propertyId && mineIds.has(p.propertyId)) ||
+        (p.propertyKey && mineKeys.has(p.propertyKey))
+    );
     moveInRows = rows.map((r) => ({
       property: r.property,
       tenant: r.tenant,
