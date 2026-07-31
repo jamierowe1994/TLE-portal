@@ -670,10 +670,18 @@ function statFrom(value: number | null, src: string): StatValue {
  * Per-agent funnel stats for July MTD, from the Agent Detail KPI table.
  * Agents not in the table (e.g. Tony Poon in July) get all-null StatValues.
  */
-export function agentSeedStats(agentKey: string): FunnelStats {
+/** The month the frozen KPI rows describe. */
+const SNAPSHOT_MONTH = "2026-07";
+
+export function agentSeedStats(agentKey: string, month?: string): FunnelStats {
   const row = SEED.agentKpisJulyMtd.rows.find((r) => nameMatchesAgent(r.agent, agentKey));
   const src = "REX KPI reports · Agent Detail tab · Jul MTD";
-  if (!row) {
+  // These rows are July 2026 month-to-date, frozen from the KPI report. They
+  // were being returned for whatever month was asked for, so a partner looking
+  // at June saw July's numbers labelled as June — silently wrong, and the kind
+  // of thing someone builds a decision on. Only answer for the month they
+  // actually describe.
+  if (!row || (month && month !== SNAPSHOT_MONTH)) {
     return {
       marketAppraisals: nullStat(),
       listings: nullStat(),

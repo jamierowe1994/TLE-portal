@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
-import { getAgentFunnel, getAgentPortfolio } from "@/lib/rex-stats";
-import { getPropolyPipelineCount } from "@/lib/propoly-deals";
+import {
+  getAgentAppraisals,
+  getAgentFunnel,
+  getAgentListings,
+  getAgentPortfolio,
+} from "@/lib/rex-stats";
+import { getPropolyAgentDeals } from "@/lib/propoly-deals";
 import { getMoveIns } from "@/lib/payprop-income";
 import { getAgentBook } from "@/lib/payprop-portfolio";
 import { resolveRexUserId } from "@/lib/agent-link";
@@ -21,10 +26,13 @@ import {
 import { formatGBP, formatPct, currentMonth } from "@/lib/format";
 import type {
   ActualOverride,
+  AppraisalsDrillRow,
   ConversionStats,
   FunnelRows,
   FunnelStats,
+  ListingsDrillRow,
   MoveInsDrillRow,
+  PipelineDrillRow,
   StatValue,
 } from "@/lib/types";
 
@@ -136,21 +144,31 @@ export async function GET(req: NextRequest) {
   const rexUserId = await resolveRexUserId(user);
 
   // Gather the layers in parallel — each one degrades to null/[] alone.
-  const [live, livePortfolio, meta, overrides, propolyPipeline] = await Promise.all([
-    rexUserId
-      ? getAgentFunnel(rexUserId, month).catch(() => null)
-      : Promise.resolve(null),
-    rexUserId
-      ? getAgentPortfolio(rexUserId).catch(() => null)
-      : Promise.resolve(null),
-    getAgentMetaStats(user).catch(() => ({ configured: false as const })),
-    getOverrides(month).catch(() => [] as ActualOverride[]),
-    getPropolyPipelineCount({ email: user.email, agentKey: user.agentKey ?? null }).catch(
-      () => null
-    ),
-  ]);
+  // The REX pulls double as the drill-down sources: each funnel figure below is
+  // counted from the very array it hands the dashboard, so a tile can never
+  // disagree with the list it opens.
+  const [live, livePortfolio, meta, overrides, propolyDeals, liveListings, liveAppraisals] =
+    await Promise.all([
+      rexUserId
+        ? getAgentFunnel(rexUserId, month).catch(() => null)
+        : Promise.resolve(null),
+      rexUserId
+        ? getAgentPortfolio(rexUserId).catch(() => null)
+        : Promise.resolve(null),
+      getAgentMetaStats(user).catch(() => ({ configured: false as const })),
+      getOverrides(month).catch(() => [] as ActualOverride[]),
+      getPropolyAgentDeals({ email: user.email, agentKey: user.agentKey ?? null }).catch(
+        () => null
+      ),
+      rexUserId ? getAgentListings(rexUserId).catch(() => null) : Promise.resolve(null),
+      rexUserId
+        ? getAgentAppraisals(rexUserId, month).catch(() => null)
+        : Promise.resolve(null),
+    ]);
 
-  const snapshot = agentKey ? agentSeedStats(agentKey) : nullFunnel();
+  // Pass the month: the seed rows only describe July 2026, and returning them
+  // for any other month presented July's numbers as that month's.
+  const snapshot = agentKey ? agentSeedStats(agentKey, month) : nullFunnel();
 
   // ---- Funnel: field-by-field live → manual → snapshot merge ----
   const funnel = {} as FunnelStats;
@@ -173,14 +191,69 @@ export async function GET(req: NextRequest) {
 
   // Pipeline: Propoly outranks everything — it's the system actually running
   // the progression, counted per agent via their property-manager email.
-  if (propolyPipeline != null) {
+  // Cancelled deals come back in the same pull (the drawer's hidden section
+  // uses them), so they're filtered out here rather than counted.
+  let pipelineRows: PipelineDrillRow[] | null = null;
+  if (propolyDeals != null) {
+    const active = propolyDeals.filter((a) => a.stage !== "unsuccessful");
+    pipelineRows = active.map((a) => ({
+      property: [a.propertyName, a.locality].filter(Boolean).join(", "),
+      // Propoly holds every applicant on the deal; the list only has room for
+      // whose name is on it, so the lead tenant plus a count of the rest.
+      tenant:
+        a.tenants.length === 0
+          ? "—"
+          : a.tenants.length === 1
+            ? a.tenants[0].name
+            : `${a.tenants[0].name} +${a.tenants.length - 1}`,
+      stage: a.status,
+      moveIn: a.startDate,
+      rent: a.offer,
+    }));
     funnel.pipeline = {
-      value: propolyPipeline,
+      value: active.length,
       source: "live-propoly",
       note: "Live count of your deals in progression on Propoly — deal started through signing & move-in monies.",
       asOf: new Date().toISOString().slice(0, 10),
     };
   }
+
+  // Listings: the agent's REX "current" listings. The tile counts what's on the
+  // market now (let-agreed excluded, as it always has), but the list shows the
+  // whole current book so a partner can see the let-agreed ones too — both read
+  // off this one array.
+  let listingRows: ListingsDrillRow[] | null = null;
+  if (liveListings != null) {
+    listingRows = liveListings.map((l) => ({
+      address: l.address,
+      rent: l.rent,
+      letAgreed: l.letAgreed,
+      status: l.letAgreed ? "Let agreed" : (l.publicationStatus ?? "On the market"),
+      availableFrom: l.availableFrom,
+    }));
+    const onMarket = listingRows.filter((l) => !l.letAgreed).length;
+    funnel.listings = {
+      value: onMarket,
+      source: "live-rex",
+      note: `Live from REX — ${onMarket} on the market now${
+        listingRows.length - onMarket > 0
+          ? `, plus ${listingRows.length - onMarket} let agreed`
+          : ""
+      }.`,
+      asOf: new Date().toISOString().slice(0, 10),
+    };
+  }
+
+  // Market appraisals: the same records getAgentFunnel counted the tile from
+  // (it calls getAgentAppraisals too, and the result is cached), so the figure
+  // above and the list below are one array.
+  const appraisalRows: AppraisalsDrillRow[] | null = liveAppraisals
+    ? liveAppraisals.rows.map((a) => ({
+        property: a.address,
+        date: a.date,
+        kind: a.kind,
+      }))
+    : null;
 
   // Move-ins: PayProp knows which tenancies started this month and the
   // portfolio book knows whose properties they are, so the two join on
@@ -322,7 +395,12 @@ export async function GET(req: NextRequest) {
     funnel,
     // Drill-down rows. Only the stages joined to a real source appear here;
     // the rest stay null so the dashboard can label them honestly.
-    funnelRows: { moveIns: moveInRows } satisfies FunnelRows,
+    funnelRows: {
+      marketAppraisals: appraisalRows,
+      listings: listingRows,
+      moveIns: moveInRows,
+      pipeline: pipelineRows,
+    } satisfies FunnelRows,
     conversions,
     portfolio,
     // Full snapshot mix (managed / let-only / RLP / avg rent) for the donut.
