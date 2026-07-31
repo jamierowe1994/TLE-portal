@@ -24,8 +24,9 @@ export default function NoPhoto({
   label?: string;
   className?: string;
   /**
-   * "zoom" (tiles): the figure fills the frame large and crops at the edges —
-   * losing his legs beats not being able to see him at all.
+   * "zoom" (tiles): the figure sits large in the frame. At 100% the whole
+   * illustration fits — the moon needs its own breathing room in a card, where
+   * the previous line-art figure could be cropped without losing anything.
    * "contain" (drawer banner): whole figure, caption underneath.
    */
   fit?: "zoom" | "contain";
@@ -58,7 +59,7 @@ export default function NoPhoto({
         src={FIGURE}
         alt=""
         aria-hidden
-        className="absolute left-1/2 top-1/2 h-[125%] w-auto max-w-none -translate-x-1/2 -translate-y-1/2"
+        className="absolute left-1/2 top-1/2 h-[100%] w-auto max-w-none -translate-x-1/2 -translate-y-1/2"
       />
     </div>
   );
