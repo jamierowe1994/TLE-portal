@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import StatCard from "@/components/StatCard";
 import SourceBadge from "@/components/SourceBadge";
+import FindingData from "@/components/FindingData";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Collapsible from "@/components/Collapsible";
 import Sparkline from "@/components/charts/Sparkline";
@@ -277,7 +278,11 @@ export default function MyDashboardPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
                     <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
-                      {periodEarnings != null ? formatGBP(periodEarnings) : "—"}
+                      {periodEarnings != null ? (
+                        formatGBP(periodEarnings)
+                      ) : (
+                        <FindingData className="text-[13px]" />
+                      )}
                     </div>
                     <div className="pb-1">
                       <Sparkline values={periodValues} />
@@ -381,11 +386,15 @@ export default function MyDashboardPage() {
                   {/* rent roll underneath, with the supporting stats */}
                   <div className="mt-auto grid grid-cols-2 gap-x-6 gap-y-3 border-t border-line pt-4">
                     <div>
-                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>{stats.portfolio.rentRoll.display ?? "—"}</div>
+                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
+                        {stats.portfolio.rentRoll.display ?? <FindingData className="text-[13px]" />}
+                      </div>
                       <div className="mt-0.5 text-[11px] text-muted">Rent roll / month</div>
                     </div>
                     <div>
-                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>{estFees != null ? formatGBP(estFees) : "—"}</div>
+                      <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
+                        {estFees != null ? formatGBP(estFees) : <FindingData className="text-[13px]" />}
+                      </div>
                       <div
                         className="mt-0.5 text-[11px] text-muted"
                         title="Estimated at ~9% of rent roll — the actual management fee and your share are confirmed with head office."
@@ -395,7 +404,7 @@ export default function MyDashboardPage() {
                     </div>
                     <div>
                       <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
-                        {detail?.avgRent != null ? formatGBP(detail.avgRent) : "—"}
+                        {detail?.avgRent != null ? formatGBP(detail.avgRent) : <FindingData className="text-[13px]" />}
                       </div>
                       <div className="mt-0.5 text-[11px] text-muted">Avg rent</div>
                     </div>

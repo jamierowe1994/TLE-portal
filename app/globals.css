@@ -827,3 +827,41 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .note-fly { animation: none; }
 }
+
+/* "Finding data …" — the three dots bob in sequence rather than together, so
+   it reads as progress rather than a pulse. Each dot is a third of a cycle
+   behind the one before it. */
+.bob-dot {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: bob 1.05s ease-in-out infinite;
+}
+.bob-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.bob-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes bob {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bob-dot {
+    animation: none;
+    opacity: 0.55;
+  }
+}
