@@ -521,7 +521,7 @@ export default function MyDashboardPage() {
                   src="/illustrations/notioly/moving.svg"
                   alt=""
                   aria-hidden
-                  className="pointer-events-none absolute -top-9 right-0 hidden h-[105px] lg:block"
+                  className="pointer-events-none absolute -top-14 right-0 hidden h-[140px] lg:block"
                 />
                 {(
                   [
