@@ -102,6 +102,13 @@ let cache: { at: number; data: PortfolioBook } | null = null;
 let running = false;
 const TTL_MS = 60 * 60_000;
 
+// Why the last walk failed. It was being caught and discarded, which left the
+// tab on "fetching…" forever with nothing anywhere saying why.
+let lastError: string | null = null;
+export function portfolioError(): string | null {
+  return lastError;
+}
+
 /**
  * The managed book, grouped by responsible agent. Non-blocking in the same way
  * as the income figures: serves what's cached and refreshes behind.
@@ -122,10 +129,15 @@ export function getPortfolioBook(): PortfolioBook | null {
       const data = await computePortfolioBook();
       if (data) {
         cache = { at: Date.now(), data };
+        lastError = null;
         await writeCache("payprop:portfolio", data);
+      } else {
+        lastError = "PayProp returned no properties.";
       }
     })()
-      .catch(() => {})
+      .catch((e: unknown) => {
+        lastError = e instanceof Error ? e.message : String(e);
+      })
       .finally(() => {
         running = false;
       });
@@ -137,17 +149,23 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const perAccount = await Promise.all(
-    accounts.map(async (a) => ({
-      account: a,
-      rows: await payPropGetAll<PropertyRow>(a, "export/properties", {
-        is_archived: "false",
-        include_active_tenancies: "true",
-        include_commission: "true",
-        include_contract_amount: "true",
-      }),
-    }))
-  );
+  const perAccount: Array<{ account: PayPropAccountId; rows: PropertyRow[] }> = [];
+  for (const a of accounts) {
+    try {
+      perAccount.push({
+        account: a,
+        rows: await payPropGetAll<PropertyRow>(a, "export/properties", {
+          is_archived: "false",
+          include_active_tenancies: "true",
+          include_contract_amount: "true",
+        }),
+      });
+    } catch (e) {
+      // One agency short means the business-wide total would be wrong, so the
+      // whole book fails — but say which agency, so it's diagnosable.
+      throw new Error(`${a}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   if (perAccount.every((p) => p.rows.length === 0)) return null;
 
   const byAgent: Record<string, AgentBook> = {};

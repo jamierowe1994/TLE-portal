@@ -35,7 +35,9 @@ import "server-only";
 const DEFAULT_BASE = "https://uk.payprop.com/api/agency/v1.1";
 const PAGE_ROWS = 25; // PayProp's hard cap — larger values are silently clamped
 const MAX_PAGES = 200; // hard stop (5k rows) so a bad total_pages can't spin
-const TIMEOUT_MS = 12_000;
+// export/properties with tenancy and contract includes is the slowest call
+// we make; 12s was tight enough to look like a failed page under load.
+const TIMEOUT_MS = 25_000;
 
 export type PayPropAccountId = "scotland" | "uk";
 

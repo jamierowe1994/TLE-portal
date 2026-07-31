@@ -9,7 +9,7 @@ import {
   getMoveIns,
   payPropRefreshing,
 } from "@/lib/payprop-income";
-import { getPortfolioBook } from "@/lib/payprop-portfolio";
+import { getPortfolioBook, portfolioError } from "@/lib/payprop-portfolio";
 import { currentMonth } from "@/lib/format";
 
 // Live PayProp money for the admin centre — the figures that used to come off
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     arrears,
     moveIns,
     portfolio,
+    portfolioError: portfolioError(),
     refreshing: payPropRefreshing(),
   });
 }
