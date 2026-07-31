@@ -140,7 +140,7 @@ export function getPortfolioBook(): PortfolioBook | null {
     void (async () => {
       // Survive a deploy: the last good book is in the database.
       if (!cache) {
-        const stored = await readCache<PortfolioBook>("payprop:portfolio").catch(() => null);
+        const stored = await readCache<PortfolioBook>("payprop:portfolio:v2").catch(() => null);
         if (stored) {
           cache = { at: stored.at, data: stored.data };
           if (Date.now() - stored.at < TTL_MS) return;
@@ -150,7 +150,7 @@ export function getPortfolioBook(): PortfolioBook | null {
       if (data) {
         cache = { at: Date.now(), data };
         lastError = null;
-        await writeCache("payprop:portfolio", data);
+        await writeCache("payprop:portfolio:v2", data);
       } else {
         lastError = "PayProp returned no properties.";
       }

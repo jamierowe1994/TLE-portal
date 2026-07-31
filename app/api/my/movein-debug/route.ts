@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   const month = req.nextUrl.searchParams.get("month") ?? currentMonth();
+  try {
   const name = user.name ?? "";
   const book = getAgentBook(name);
   const all = getMoveIns(month);
@@ -28,9 +29,9 @@ export async function GET(req: NextRequest) {
   const mine = new Set(book?.propertyIds ?? []);
   const matched = (all?.properties ?? []).filter((p) => p.propertyId && mine.has(p.propertyId));
 
-  return NextResponse.json({
-    month,
-    you: { name, normalised: normaliseAgentName(name) },
+    return NextResponse.json({
+      month,
+      you: { name, normalised: normaliseAgentName(name) },
 
     // Has the portfolio walk finished? Everything below is meaningless if not.
     portfolioLoaded: portfolio != null,
@@ -41,8 +42,8 @@ export async function GET(req: NextRequest) {
       ? {
           matchedNames: book.names,
           properties: book.properties,
-          samplePropertyNames: book.propertyNames.slice(0, 5),
-          samplePropertyIds: book.propertyIds.slice(0, 5),
+          samplePropertyNames: (book.propertyNames ?? []).slice(0, 5),
+          samplePropertyIds: (book.propertyIds ?? []).slice(0, 5),
         }
       : null,
 
@@ -64,5 +65,13 @@ export async function GET(req: NextRequest) {
         : matched.length === 0 && (all?.count ?? 0) > 0
           ? "You have properties, but none of this month's move-ins are on them — most likely genuinely none this month, since the join is now on PayProp ids rather than names."
           : "Joined fine — the tile should be live.",
-  });
+    });
+  } catch (e) {
+    // A blank page is the least useful failure there is — a debug route that
+    // dies silently is worse than no debug route.
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : String(e), month },
+      { status: 500 }
+    );
+  }
 }
