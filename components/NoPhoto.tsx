@@ -1,6 +1,19 @@
-// The no-photo state, everywhere a property photo would sit: the Notioly
-// "lost the way" chap inside the same rounded frame — hairline outline,
-// see-through middle — so a missing photo never reads as a blank hole.
+// The no-photo state, everywhere a property photo would sit: a Notioly figure
+// inside the same rounded frame — hairline outline, see-through middle — so a
+// missing photo never reads as a blank hole.
+
+/**
+ * "Embracing the Universe" (Notioly 260). One constant rather than two literals,
+ * because this has now been swapped twice and the header comment fell out of
+ * date both times.
+ *
+ * The sizing below is deliberately unchanged from the illustration it replaced,
+ * despite this one's ink box being narrower (364x397 against 425x419 in the same
+ * 520 canvas). Matching the box would have overfilled the frame: the moon is a
+ * solid mass where the previous figure was line art, so it carries far more
+ * visual weight per unit of area. Checked at tile, drawer-thumb and banner sizes.
+ */
+const FIGURE = "/illustrations/notioly/embracing-the-universe.svg";
 
 export default function NoPhoto({
   label,
@@ -24,7 +37,7 @@ export default function NoPhoto({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/illustrations/notioly/adventurous-cat.svg"
+          src={FIGURE}
           alt=""
           aria-hidden
           className="max-h-[72%] max-w-[72%] object-contain"
@@ -42,7 +55,7 @@ export default function NoPhoto({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/illustrations/notioly/adventurous-cat.svg"
+        src={FIGURE}
         alt=""
         aria-hidden
         className="absolute left-1/2 top-1/2 h-[125%] w-auto max-w-none -translate-x-1/2 -translate-y-1/2"
