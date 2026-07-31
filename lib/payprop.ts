@@ -34,10 +34,38 @@ import "server-only";
 
 const DEFAULT_BASE = "https://uk.payprop.com/api/agency/v1.1";
 const PAGE_ROWS = 25; // PayProp's hard cap — larger values are silently clamped
-const MAX_PAGES = 200; // hard stop (5k rows) so a bad total_pages can't spin
+// Hard stop so a bad total_pages can't spin: 200 pages × 25 rows = 5,000 rows.
+//
+// THAT CEILING IS PER ACCOUNT, NOT PER RANGE. This bounds the loop in
+// payPropGetAll, which walks ONE account; the business-wide callers fan out
+// over payPropAccounts() and walk each separately (paymentsForRange does this),
+// so a business-wide range gets 5,000 rows per agency — 10,000 across Scotland
+// and the rest of the UK. Reading it as one 5,000-row budget for the range is
+// wrong, and the arithmetic that used to sit here ("~291 pages, so year-to-date
+// reports about 69% of itself") was that misreading.
+//
+// KNOWN DEFECT, not fixed here: a walk that needs more than MAX_PAGES pages
+// exits on this condition with `short` still false, so it returns a partial
+// figure and says nothing. Whether it currently bites depends on the split
+// between the two agencies, which nobody has measured. At the 1,039
+// payments/month verified in payprop-income.ts a year-to-date range is ~9k rows
+// business-wide — inside the combined 10,000, but one agency truncates the
+// moment it carries more than 5,000 of them, i.e. more than ~56% of the total.
+// A 56/44 split is entirely ordinary, so treat this as unknown rather than
+// safe. The right fix is to treat "hit the ceiling while total_pages says there
+// is more" as a dropped page and throw, which is a deliberate behaviour change:
+// the YTD tile would go amber rather than quietly wrong, and it wants landing
+// with the walk-once-and-slice work rather than on its own.
+const MAX_PAGES = 200;
 // export/properties with tenancy and contract includes is the slowest call
 // we make; 12s was tight enough to look like a failed page under load.
 const TIMEOUT_MS = 25_000;
+/** Genuine failures we'll re-try one page through, before giving up on it. */
+const PAGE_RETRIES = 4;
+/** Ceiling on total patience per page. Waiting out a rate-limiter is worth it;
+ *  waiting out a dead endpoint is a hang, and it holds a queue slot while it
+ *  does. Bounds the retry loop no matter how often the gate re-arms. */
+const PAGE_RETRY_BUDGET_MS = 90_000;
 
 export type PayPropAccountId = "scotland" | "uk";
 
@@ -247,37 +275,201 @@ export function payPropConfigured(): boolean {
 
 /* --------------------------- request throttling --------------------------- */
 
-// PayProp rate-limits hard: three concurrent requests are fine, sustained
-// parallelism starts returning 429s. Several background walks now run at once
+// PayProp rate-limits hard: several background walks now run at once
 // (payments, balances, invoices, properties), and between them they were
 // tripping the limiter and losing whole pages — which surfaces as a plausible
 // but wrong figure rather than an error. Everything therefore goes through one
-// queue: a single request in flight at a time, with a small gap between.
+// queue.
+//
 // PayProp allows 5 requests a second, and exceeding it fails EVERY subsequent
 // request for the next 30 seconds (spec §8.2). At 120ms we were sending 8.3/s,
 // buying repeated 30-second lockouts and then waiting out our own retry
-// backoff on top — a month's walk took three minutes. Going slower per request
-// is dramatically faster overall.
-const MIN_GAP_MS = 210;
-let chain: Promise<unknown> = Promise.resolve();
-let lastAt = 0;
+// backoff on top — a month's walk took three minutes.
+//
+// WHY A RESERVED START TIME RATHER THAN A GAP AFTER THE RESPONSE. The previous
+// queue slept `MIN_GAP_MS` and then stamped the clock in a `finally` once the
+// response had landed, so the real period was the gap PLUS the request's own
+// latency — 210ms of configured gap ran at 1.2–2.2 req/s depending on how
+// PayProp felt that minute. A request now reserves its start slot BEFORE it
+// sleeps, so spacing is measured request-to-request and the configured rate
+// means what it says regardless of latency.
+//
+// WHY THIS RATE. 2.5/s is half the documented allowance. The only empirical
+// points this project has are "8.3/s trips the limiter" (a lockout loop that
+// turned a month's walk into three minutes) and "~1.2–2.2/s does not"
+// (production for months); nothing in between has ever been observed. 2.5/s
+// sits just above the known-good end of that gap rather than in the middle of
+// it, because the penalty for guessing high is not a slow page — it is a
+// 30-second blackout that discards a 50-page walk. Raise PAYPROP_RPS towards 3
+// after a clean week if the walks are still the bottleneck; it is env-read so
+// an incident can be dialled back without a deploy.
+//
+// WHY CONCURRENCY 2 AND NOT 1. Concurrency is NOT a rate control here — pacing
+// is, and it is enforced whatever the slot count. One slot cannot sustain the
+// configured rate at all: the next request cannot start until the previous one
+// returns, so a 400ms period behind a 500ms response degrades to 2/s. Two slots
+// sustain 2.5/s up to ~800ms latency, and mean one page stuck on the 25s
+// timeout no longer stalls every other caller behind it. Above the sustaining
+// point the queue simply runs slower than configured, which is the safe
+// direction to fail. Capped at 3, which is the most this file has ever recorded
+// as observed-fine against PayProp; going beyond that is a deliberate decision
+// somebody should have to make in code, not in an env var.
+//
+// CONSTRAINT WORTH KNOWING: this gate is per-process module state. Two Railway
+// instances means twice the rate against one PayProp allowance. If this is ever
+// scaled out horizontally, set PAYPROP_RPS to (allowance / instances) or move
+// the gate into Postgres.
+//
+// WHY PAYPROP_RPS IS CAPPED WELL BELOW THE ALLOWANCE. Spacing is exact in the
+// arithmetic and not on the wire: a timer that fires a few milliseconds late
+// pulls one start closer to the next, so the worst one-second window holds
+// floor(1000 / period) + 1 requests, not floor(1000 / period). Simulating this
+// scheduler bore that out — at a 200ms period (5/s) SIX starts landed inside
+// one second, and at 250ms (4/s) five did, which is the allowance exactly.
+// 3.5/s is therefore the highest we let anyone configure (worst window 4 of 5),
+// and the 2.5/s default holds a worst window of 3.
+const num = (v: string | undefined, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const RPS = Math.min(num(process.env.PAYPROP_RPS, 2.5), 3.5);
+const PERIOD_MS = Math.max(Math.ceil(1000 / RPS), 100);
+const MAX_CONCURRENT = Math.min(
+  Math.max(Math.floor(num(process.env.PAYPROP_MAX_CONCURRENT, 2)), 1),
+  3
+);
+/** Longest we will ever honour a lockout for — a hostile or absurd
+ *  Retry-After must not be able to wedge the queue for hours. */
+const MAX_LOCKOUT_MS = 60_000;
+/** What to assume when a 429 arrives with no usable Retry-After: the
+ *  documented penalty, not the 2 seconds this used to guess. */
+const DEFAULT_LOCKOUT_MS = 30_000;
+/** After a 429, run at half rate for this long before recovering — one AIMD
+ *  step, so a partial lockout can't settle into a loop. */
+const SLOW_WINDOW_MS = 60_000;
+/** Backstop on any single sleep. Nothing should ever reach it (a reservation
+ *  is at most one lockout plus MAX_CONCURRENT periods ahead); it exists so a
+ *  clock jump can't park a request forever. */
+const MAX_SLEEP_MS = 90_000;
+/** The old chain was unbounded. Beyond this, callers get null and degrade —
+ *  which they all already handle — rather than the process growing a queue it
+ *  can never drain. */
+const MAX_WAITERS = 2_000;
 
-function enqueue<T>(job: () => Promise<T>): Promise<T> {
-  const run = chain.then(async () => {
-    const wait = MIN_GAP_MS - (Date.now() - lastAt);
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    try {
-      return await job();
-    } finally {
-      lastAt = Date.now();
-    }
+/** Earliest wall-clock time the next request may be ISSUED. */
+let nextStart = 0;
+/** Shared 429 gate. Every caller respects it, so a lockout is waited out once
+ *  rather than once per in-flight request. */
+let lockedUntil = 0;
+/** Halve the rate until this time — set on any 429. */
+let slowUntil = 0;
+let inFlight = 0;
+const waiting: Array<() => void> = [];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, MAX_SLEEP_MS)));
+
+function pump(): void {
+  while (inFlight < MAX_CONCURRENT && waiting.length > 0) {
+    const go = waiting.shift();
+    if (!go) break;
+    // Count the slot here, not in the woken continuation: the continuation is
+    // a microtask, and until it runs this loop would otherwise hand the same
+    // slot to everybody left in the queue.
+    inFlight++;
+    go();
+  }
+}
+
+/**
+ * Claim the next issue slot. Pure arithmetic — deliberately nothing here can
+ * throw, because a pacing bug must never take the integration offline.
+ *
+ * Reservations are naturally bounded: one is only ever taken while holding a
+ * concurrency slot, so at most MAX_CONCURRENT are outstanding and `nextStart`
+ * cannot run away into next week however long the queue behind it is.
+ */
+function reserve(): number {
+  const now = Date.now();
+  const period = now < slowUntil ? PERIOD_MS * 2 : PERIOD_MS;
+  const start = Math.max(now, nextStart, lockedUntil);
+  nextStart = start + period;
+  return start;
+}
+
+/** Hold every caller off until the limiter has cleared. */
+function lockOut(ms: number): void {
+  const until = Date.now() + Math.min(Math.max(ms, 1_000), MAX_LOCKOUT_MS);
+  if (until > lockedUntil) lockedUntil = until;
+  // Slots already reserved would otherwise fire straight into the live
+  // lockout — the gate has to move the cursor as well as the floor.
+  if (lockedUntil > nextStart) nextStart = lockedUntil;
+  slowUntil = Date.now() + SLOW_WINDOW_MS;
+}
+
+/** True while the shared 429 gate is holding. Used by the paging retry loop:
+ *  a lockout is a wait, not a failed page, and shouldn't spend a retry. */
+function lockedOut(): boolean {
+  return Date.now() < lockedUntil;
+}
+
+/** Retry-After as milliseconds. Integer seconds and HTTP-dates are both legal;
+ *  anything else (absent, empty, malformed) falls back to the documented
+ *  30-second penalty rather than optimistically guessing small. */
+function retryAfterMs(header: string | null): number {
+  if (header) {
+    const secs = Number(header.trim());
+    if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+    const at = Date.parse(header);
+    if (Number.isFinite(at) && at - Date.now() > 0) return at - Date.now();
+  }
+  return DEFAULT_LOCKOUT_MS;
+}
+
+async function enqueue<T>(job: () => Promise<T>): Promise<T | null> {
+  if (waiting.length >= MAX_WAITERS) return null;
+  await new Promise<void>((resolve) => {
+    waiting.push(resolve);
+    pump();
   });
-  // Keep the chain alive even when a job rejects.
-  chain = run.then(
-    () => undefined,
-    () => undefined
-  );
-  return run as Promise<T>;
+  // A slot is held from here. EVERY path out of this block must go through the
+  // finally: a leaked slot doesn't fail loudly, it deadlocks the whole
+  // integration until the process restarts, with every PayProp figure quietly
+  // going blank at once.
+  try {
+    const start = reserve();
+    const wait = start - Date.now();
+    if (wait > 0) await sleep(wait);
+    // reserve() is the only place the 429 gate is consulted, and it ran before
+    // that sleep — up to ~800ms ago. A lockout armed in between would otherwise
+    // find this request already holding its slot and let it fire straight into
+    // the live blackout, taking a second 429 that re-bases `lockedUntil` and
+    // extends a nominally 30-second lockout past it. Observed: a caller issuing
+    // 29,660ms into one.
+    //
+    // A LOOP, NOT ONE CHECK, because the wait itself is another such window.
+    // MAX_CONCURRENT requests go out ~PERIOD_MS apart, so their 429s land
+    // seconds apart: the first arms the gate, we sleep to it, the second
+    // re-bases `lockedUntil` while we sleep, and a single check would wake us
+    // into precisely the live blackout it was added to prevent. Re-read after
+    // every sleep and only issue once the gate is genuinely clear.
+    //
+    // This terminates. lockOut() is the only writer of `lockedUntil` and clamps
+    // each arming to MAX_LOCKOUT_MS ahead of the instant it fires; it is only
+    // ever called by a request that already holds a slot and is past this gate.
+    // Anything still queued is floored to `lockedUntil` by reserve() and then
+    // held here, so it never issues and never 429s. Only requests already in
+    // flight when the gate armed can re-base it, and there are at most
+    // MAX_CONCURRENT of those. The iteration cap turns that argument into a
+    // hard bound, and stops a backwards clock jump parking this slot the way
+    // MAX_SLEEP_MS stops it parking a single sleep.
+    for (let i = 0; i <= MAX_CONCURRENT && Date.now() < lockedUntil; i++) {
+      await sleep(lockedUntil - Date.now());
+    }
+    return await job();
+  } finally {
+    inFlight--;
+    pump();
+  }
 }
 
 export interface PayPropPagination {
@@ -322,11 +514,17 @@ export async function payPropGet<T = Record<string, unknown>>(
     // A rejected token is usually one revoked early — drop it so the next
     // call re-authenticates instead of repeating the failure.
     if (res.status === 401) tokens.delete(account);
-    // Throttled: wait out the limiter and let the caller retry, rather than
-    // returning null and having the page silently drop.
+    // Throttled. Don't sleep here — record the lockout on the shared gate and
+    // return. Sleeping in place was only correct while exactly one request
+    // could exist: with a second slot, two 429s would each sleep their own
+    // countdown and then fire together the moment they woke, straight back
+    // into the limiter. The gate holds every caller through two separate
+    // checks: reserve() puts still-queued requests behind `lockedUntil`, and
+    // enqueue() re-reads it after every pre-issue sleep until it is clear,
+    // which is what catches a request that reserved its slot before the gate
+    // was armed — including one the second 429 re-bases mid-wait.
     if (res.status === 429) {
-      const retryAfter = Number(res.headers.get("retry-after")) || 2;
-      await new Promise((r) => setTimeout(r, Math.min(retryAfter, 10) * 1000));
+      lockOut(retryAfterMs(res.headers.get("retry-after")));
       return null;
     }
     if (!res.ok) return null;
@@ -357,10 +555,10 @@ export async function payPropGetAll<T = Record<string, unknown>>(
   path: string,
   params: Record<string, string | number | boolean | undefined> = {}
 ): Promise<T[]> {
-  // Sequential on purpose. PayProp rate-limits: three concurrent requests are
-  // fine, but sustained parallel batches start returning 429 and pages get
-  // dropped — silent data loss, which is exactly what the caller can't detect.
-  // The cost is paid once and cached by the callers (see payprop-income.ts).
+  // Sequential because each page needs the previous page's `total_pages` to
+  // know whether there is another one — not as rate control, which the shared
+  // queue in this file now owns outright. The cost is paid once and cached by
+  // the callers (see payprop-income.ts).
   // No credentials for this account at all — nothing to walk, and not an error.
   if (!(await authHeader(account))) return [];
 
@@ -372,9 +570,30 @@ export async function payPropGetAll<T = Record<string, unknown>>(
     let res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
     // Retry a few times with growing pauses — a dropped page is invisible
     // data loss, so it's worth being patient before giving up on one.
-    for (let attempt = 1; !res && attempt <= 4; attempt++) {
-      await new Promise((r) => setTimeout(r, 500 * attempt));
-      res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
+    //
+    // A 429 must NOT spend a retry. The old budget was 500+1000+1500+2000ms of
+    // backoff plus a 2s in-slot sleep per attempt: 15 seconds against a
+    // documented 30-second lockout, so every attempt landed inside the lockout,
+    // the walk threw, and the caller restarted it from page 1 — discarding the
+    // fifty pages already in hand and walking straight back into the limiter.
+    // That is the loop that turned a month's walk into three minutes. Now the
+    // shared gate does the waiting and only genuine failures cost an attempt.
+    if (!res) {
+      const deadline = Date.now() + PAGE_RETRY_BUDGET_MS;
+      let attempt = 0;
+      while (!res && Date.now() < deadline) {
+        if (lockedOut()) {
+          // Wait the limiter out; it doesn't cost an attempt. Always sleep at
+          // least a beat, because not every null comes back from the queue —
+          // a missing token or a full queue returns immediately, and without
+          // the floor those would spin here for the whole budget.
+          await sleep(Math.max(lockedUntil - Date.now(), 250));
+        } else {
+          if (++attempt > PAGE_RETRIES) break;
+          await sleep(Math.min(1000 * 2 ** (attempt - 1), 8_000));
+        }
+        res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
+      }
     }
     if (!res) {
       short = true;
@@ -410,23 +629,6 @@ export async function payPropGetAll<T = Record<string, unknown>>(
     console.warn(
       `[payprop] ${path}: ${all.length} rows against total_rows ${expected} — expected when filtering.`
     );
-  }
-  return all;
-}
-
-/** Fallback for endpoints that don't report total_pages — walk until short. */
-async function sequentialRest<T>(
-  account: PayPropAccountId,
-  path: string,
-  params: Record<string, string | number | boolean | undefined>,
-  firstPage: T[]
-): Promise<T[]> {
-  const all = [...firstPage];
-  for (let page = 2; page <= MAX_PAGES; page++) {
-    const res = await payPropGet<T>(account, path, { ...params, rows: PAGE_ROWS, page });
-    if (!res) break;
-    all.push(...res.items);
-    if (res.items.length < PAGE_ROWS) break;
   }
   return all;
 }

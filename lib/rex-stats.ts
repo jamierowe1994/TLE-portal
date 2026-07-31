@@ -869,7 +869,23 @@ export async function getAgentListings(
 
 // Property compliance only. REX also stores contact-level checks (AML, Right to
 // Rent, NRL) as ComplianceEntries hanging off contacts — different job, kept out.
-const PROPERTY_COMPLIANCE: Record<string, string> = {
+//
+// These 14 ids started as a sample. They are now VERIFIED: a full census of the
+// live account on 31 Jul 2026 (6,397 entries, every page walked) found exactly
+// 20 distinct type_ids — these 14 plus six contact-level ones (contact_id_check,
+// contact_proof_of_address, contact_aml_check, contact_nrl, contact_right_to_rent,
+// contact_referencing_certificate) that belong to the different job above. So
+// there is no property certificate type going unrecognised, and no spelling
+// mismatch — the US "license" spelling below is REX's own. Counts, for scale:
+// epc 2939, terms_of_business 420, listing_proof_of_ownership 239, gas_safety
+// 136, eicr 125, oil_safety 107, the three hmo_license ids 80/68/62.
+//
+// Anything REX returns that isn't here is still DROPPED, and a dropped type used
+// to be indistinguishable from a compliant one. It no longer is: unrecognised
+// ids are collected per property (`unmapped`) and listed by
+// /api/my/compliance-debug, which is how this list gets extended if REX's
+// configuration ever grows a new one.
+export const PROPERTY_COMPLIANCE: Record<string, string> = {
   epc: "EPC",
   gas_safety: "Gas safety",
   eicr: "Electrical (EICR)",
@@ -897,8 +913,17 @@ export interface ComplianceItem {
   type: string;
   label: string;
   state: ComplianceState;
+  /** REX's issue_date, verbatim. Read for years, only now passed on. */
+  issued: string | null;
   expiry: string | null;
   notes: string | null;
+  /**
+   * REX gave an expiry string we can't read as a date. The state is forced to
+   * "missing" so a human looks: NaN comparisons are all false, so an unreadable
+   * date used to fall out of the days<0 / days<=60 chain as "valid" — the worst
+   * possible answer, a certificate passing on a date nobody could parse.
+   */
+  dateUnparsed?: boolean;
 }
 
 export interface PropertyCompliance {
@@ -909,6 +934,18 @@ export interface PropertyCompliance {
   items: ComplianceItem[];
   /** How many items need a human — drives the "needs attention" sort. */
   outstanding: number;
+  /**
+   * Did REX give us a COMPLETE answer for this property? False when its chunk
+   * failed or hit the row cap. An empty `items` with checked=false means "we
+   * don't know", which must never render as "all clear" — that is the whole
+   * reason this flag exists.
+   */
+  checked: boolean;
+  /**
+   * Raw type_ids REX holds against this property that PROPERTY_COMPLIANCE
+   * doesn't recognise, so they were dropped before the agent saw them.
+   */
+  unmapped: string[];
 }
 
 const EXPIRING_DAYS = 60;
@@ -918,36 +955,102 @@ export function complianceNeedsWork(s: ComplianceState): boolean {
 }
 
 /**
- * Every entry carries the same shape under details[type]:
+ * The block inside `details` that holds the dates:
  *   { notes, issue_date, expiry_date, not_required }
+ *
+ * `details` is keyed by the entry's SCHEMA GROUP id, which is usually but NOT
+ * always the type_id. Censused against the live account 31 Jul 2026: 13 of our
+ * 14 property types key on themselves, and one does not —
+ *   type_id "listing_proof_of_ownership" → details.proof_of_ownership
+ * All 239 of those carry an issue_date, and indexing on type_id alone returned
+ * {} for every one, so all 239 read as "Nothing on file" and counted against
+ * the property. A certificate that exists in REX, reported as absent.
+ *
+ * Every entry in the account carries exactly one block, so the sole block is the
+ * fallback. Two blocks and no type match gets nothing rather than a guess:
+ * dating a certificate from the wrong block is worse than admitting we can't.
+ */
+function complianceDetailKey(details: Record<string, unknown>, type: string): string | null {
+  const byType = details[type];
+  if (byType && typeof byType === "object") return type;
+  const keys = Object.keys(details);
+  if (keys.length === 1 && details[keys[0]] && typeof details[keys[0]] === "object") {
+    return keys[0];
+  }
+  return null;
+}
+
+function complianceDetailBlock(
+  details: Record<string, unknown>,
+  type: string
+): Record<string, unknown> {
+  const key = complianceDetailKey(details, type);
+  return key ? (details[key] as Record<string, unknown>) : {};
+}
+
+/**
+ * Dates come back as whatever string REX stored; nothing is normalised here, so
+ * the caller sees exactly what REX said.
+ */
+function readComplianceEntry(entry: Record<string, unknown>) {
+  const type = String(label(entry.type_id) ?? "");
+  const details = (entry.details ?? {}) as Record<string, unknown>;
+  const d = complianceDetailBlock(details, type);
+  return {
+    type,
+    detailsKeys: Object.keys(details),
+    blockKey: complianceDetailKey(details, type),
+    expiry: typeof d.expiry_date === "string" && d.expiry_date ? d.expiry_date : null,
+    issued: typeof d.issue_date === "string" && d.issue_date ? d.issue_date : null,
+    notes: typeof d.notes === "string" && d.notes.trim() ? d.notes.trim() : null,
+    notRequired: d.not_required,
+  };
+}
+
+/**
  * `not_required` is an explicit answer ("No gas in building"), not a gap — so
  * it's never outstanding. A record with no dates at all is genuinely
- * incomplete; one with an issue_date but no expiry simply doesn't expire.
+ * incomplete; one with an issue_date but no expiry simply doesn't expire. An
+ * expiry we can't parse is treated as incomplete, NOT as valid.
  */
-function toComplianceItem(entry: Record<string, unknown>): ComplianceItem | null {
-  const type = String(label(entry.type_id) ?? "");
-  const name = PROPERTY_COMPLIANCE[type];
-  if (!name) return null; // contact-level or unknown — not our concern here
-
-  const details = (entry.details ?? {}) as Record<string, unknown>;
-  const d = (details[type] ?? {}) as Record<string, unknown>;
-  const expiry = typeof d.expiry_date === "string" ? d.expiry_date : null;
-  const issued = typeof d.issue_date === "string" ? d.issue_date : null;
-  const notes = typeof d.notes === "string" && d.notes.trim() ? d.notes.trim() : null;
-
-  let state: ComplianceState;
-  if (d.not_required === true) {
-    state = "not-required";
-  } else if (expiry) {
-    const days = Math.round((new Date(expiry).getTime() - Date.now()) / 86_400_000);
-    state = days < 0 ? "expired" : days <= EXPIRING_DAYS ? "expiring" : "valid";
-  } else if (issued) {
-    state = "valid"; // recorded, and this type doesn't carry an expiry
-  } else {
-    state = "missing";
+function complianceStateOf(
+  expiry: string | null,
+  issued: string | null,
+  notRequired: unknown
+): { state: ComplianceState; days: number | null; unparsed: boolean } {
+  if (notRequired === true) return { state: "not-required", days: null, unparsed: false };
+  if (expiry) {
+    const t = new Date(expiry).getTime();
+    // Guard the parse. Every comparison against NaN is false, so an unreadable
+    // date used to slide past both the "expired" and "expiring" tests and land
+    // on valid — a silent false pass on the one page that must not have any.
+    if (!Number.isFinite(t)) return { state: "missing", days: null, unparsed: true };
+    const days = Math.round((t - Date.now()) / 86_400_000);
+    return {
+      state: days < 0 ? "expired" : days <= EXPIRING_DAYS ? "expiring" : "valid",
+      days,
+      unparsed: false,
+    };
   }
+  if (issued) return { state: "valid", days: null, unparsed: false }; // doesn't expire
+  return { state: "missing", days: null, unparsed: false };
+}
 
-  return { type, label: name, state, expiry, notes };
+function toComplianceItem(entry: Record<string, unknown>): ComplianceItem | null {
+  const raw = readComplianceEntry(entry);
+  const name = PROPERTY_COMPLIANCE[raw.type];
+  if (!name) return null; // unrecognised type — the caller records it, see below
+
+  const { state, unparsed } = complianceStateOf(raw.expiry, raw.issued, raw.notRequired);
+  return {
+    type: raw.type,
+    label: name,
+    state,
+    issued: raw.issued,
+    expiry: raw.expiry,
+    notes: raw.notes,
+    ...(unparsed ? { dateUnparsed: true } : {}),
+  };
 }
 
 // REX can hold the same certificate against BOTH the property and the listing
@@ -964,40 +1067,85 @@ const STATE_URGENCY: Record<ComplianceState, number> = {
 
 // ComplianceEntries searches slow superlinearly with the id count (92 ids →
 // 21s measured 29 Jul 2026) and hard-cap at 100 rows. Small parallel chunks
-// keep each call fast and under the cap. A failed chunk costs its properties'
-// items, not the whole page.
+// keep each call fast and under the cap.
 const COMPLIANCE_CHUNK = 10;
+// 10 parents can genuinely exceed one page — a property holds up to 14 types
+// against BOTH its property and listing record, so ~5 properties per chunk can
+// reach 100+ rows. Page until a page comes back short; a chunk still full at
+// the ceiling is reported as unchecked rather than quietly cut off.
+const COMPLIANCE_MAX_PAGES = 5;
 
-async function fetchComplianceByParent(
-  ids: string[]
-): Promise<Map<string, ComplianceItem[]>> {
+interface ComplianceFetch {
+  byParent: Map<string, ComplianceItem[]>;
+  /** Parent ids REX did NOT give a complete answer for — cap hit, or the call failed. */
+  unchecked: Set<string>;
+  /** Raw type_ids REX returned that PROPERTY_COMPLIANCE doesn't know, per parent. */
+  unmappedByParent: Map<string, Set<string>>;
+}
+
+/**
+ * Compliance entries for a set of property/listing ids.
+ *
+ * The old version asked for 100 rows per chunk with no paging and skipped any
+ * chunk that errored, so a capped or failed chunk left its properties with an
+ * empty item list — which the page then printed as ALL CLEAR. Anything we
+ * couldn't fully read now comes back named in `unchecked`, and the caller is
+ * expected to say so on screen. Losing items is survivable; claiming a property
+ * is compliant because we didn't finish reading it is not.
+ */
+async function fetchComplianceByParent(ids: string[]): Promise<ComplianceFetch> {
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += COMPLIANCE_CHUNK) {
     chunks.push(ids.slice(i, i + COMPLIANCE_CHUNK));
   }
+
   const results = await Promise.all(
-    chunks.map((chunk) =>
-      rexCall("ComplianceEntries", "search", {
-        criteria: [{ name: "parent_object_id", type: "in", value: chunk }],
-        limit: COUNT_LIMIT,
-      }).catch(() => null)
-    )
+    chunks.map(async (chunk) => {
+      const rows: Array<Record<string, unknown>> = [];
+      for (let page = 0; page < COMPLIANCE_MAX_PAGES; page++) {
+        const res = await rexCall("ComplianceEntries", "search", {
+          criteria: [{ name: "parent_object_id", type: "in", value: chunk }],
+          limit: COUNT_LIMIT,
+          offset: page * COUNT_LIMIT,
+        }).catch(() => null);
+        // Keep whatever earlier pages gave us, but the answer is incomplete.
+        if (!res || !res.ok) return { chunk, rows, complete: false };
+        const batch = rexRows(res.result);
+        rows.push(...batch);
+        if (batch.length < COUNT_LIMIT) return { chunk, rows, complete: true };
+      }
+      return { chunk, rows, complete: false }; // still full at the ceiling
+    })
   );
 
   const byParent = new Map<string, ComplianceItem[]>();
-  for (const res of results) {
-    if (!res || !res.ok) continue;
-    for (const row of rexRows(res.result)) {
-      const item = toComplianceItem(row);
-      if (!item) continue;
+  const unchecked = new Set<string>();
+  const unmappedByParent = new Map<string, Set<string>>();
+
+  for (const { chunk, rows, complete } of results) {
+    if (!complete) for (const id of chunk) unchecked.add(id);
+    for (const row of rows) {
       const parent = String(row.parent_object_id ?? "");
       if (!parent) continue;
+      const item = toComplianceItem(row);
+      if (!item) {
+        // We only ask about property and listing ids, so this isn't a
+        // contact-level check — it's a property certificate type nobody has
+        // added to PROPERTY_COMPLIANCE. Carried through instead of vanishing.
+        const type = String(label(row.type_id) ?? "").trim();
+        if (type) {
+          const seen = unmappedByParent.get(parent) ?? new Set<string>();
+          seen.add(type);
+          unmappedByParent.set(parent, seen);
+        }
+        continue;
+      }
       const list = byParent.get(parent) ?? [];
       list.push(item);
       byParent.set(parent, list);
     }
   }
-  return byParent;
+  return { byParent, unchecked, unmappedByParent };
 }
 
 function dedupeComplianceItems(items: ComplianceItem[]): ComplianceItem[] {
@@ -1017,6 +1165,10 @@ function dedupeComplianceItems(items: ComplianceItem[]): ComplianceItem[] {
 }
 
 const COMPLIANCE_TTL_MS = 60_000;
+// Paging past the row cap can cost an extra round-trip per chunk, and losing
+// the race returns null — "Couldn't reach REX just now" on a page that used to
+// load. A little more headroom than the shared 8s budget buys the honest read.
+const COMPLIANCE_DEADLINE_MS = 12_000;
 const complianceCache = new Map<string, { at: number; data: PropertyCompliance[] }>();
 
 /**
@@ -1042,7 +1194,7 @@ export async function getAgentCompliance(
     const ids = [...new Set([...propertyIds, ...listings.map((l) => l.id)])];
     if (ids.length === 0) return [];
 
-    const byParent = await fetchComplianceByParent(ids);
+    const { byParent, unchecked, unmappedByParent } = await fetchComplianceByParent(ids);
 
     const out = listings.map((l) => {
       const items = dedupeComplianceItems([
@@ -1056,25 +1208,211 @@ export async function getAgentCompliance(
         image: l.image,
         items,
         outstanding: items.filter((i) => complianceNeedsWork(i.state)).length,
+        // Either parent coming back short makes the whole property untrusted —
+        // the missing rows could be on either record.
+        checked: !unchecked.has(l.propertyId) && !unchecked.has(l.id),
+        unmapped: [
+          ...new Set([
+            ...(unmappedByParent.get(l.propertyId) ?? []),
+            ...(unmappedByParent.get(l.id) ?? []),
+          ]),
+        ].sort(),
       };
     });
 
-    // Worst first — this page exists to surface what needs doing.
+    // Worst first — this page exists to surface what needs doing. Properties we
+    // couldn't finish reading lead, ahead of any known problem: an unanswered
+    // question outranks a known one.
     out.sort(
-      (a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name, "en-GB")
+      (a, b) =>
+        Number(a.checked) - Number(b.checked) ||
+        b.outstanding - a.outstanding ||
+        a.name.localeCompare(b.name, "en-GB")
     );
     complianceCache.set(rexUserId, { at: Date.now(), data: out });
     return out;
   })();
 
   const deadline = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), OVERALL_DEADLINE_MS)
+    setTimeout(() => resolve(null), COMPLIANCE_DEADLINE_MS)
   );
   try {
     return await Promise.race([work, deadline]);
   } catch {
     return null;
   }
+}
+
+/* -------------------- compliance diagnostic (slow, honest) -------------------- */
+
+// Everything below exists for /api/my/compliance-debug and nothing else. The
+// pages trade completeness for speed — batched ids, one page, no cap check —
+// and this is how we measure what that trade costs against the live account
+// instead of arguing about it. It shares readComplianceEntry/complianceStateOf
+// with production on purpose: a probe that parses differently proves nothing.
+
+/** One ComplianceEntry as REX sent it, beside the values the UI would derive. */
+export interface ComplianceProbeRow {
+  id: string;
+  parentObjectId: string;
+  /** Verbatim, before label() flattens a REX lookup to a string. */
+  typeIdRaw: unknown;
+  /** What the parser keys on — both details[type] and PROPERTY_COMPLIANCE[type]. */
+  typeId: string;
+  /** False = the portal drops this entry before anyone sees it. */
+  mapped: boolean;
+  recordState: string | null;
+  /** Proves whether details really is keyed by the entry type, and single-keyed. */
+  detailsKeys: string[];
+  /** Which block the dates were actually read from. null = none, so no dates. */
+  detailsBlockRead: string | null;
+  /** Raw strings. Nothing is parsed or reformatted on the way out. */
+  issueDate: string | null;
+  expiryDate: string | null;
+  notRequired: unknown;
+  notes: string | null;
+  /** Recorded as null account-wide (see getListingDocuments) — this is the check. */
+  file: unknown;
+  createdAt: string | null;
+  /** What the tile would say. "valid" with expiryParses:false is a false pass. */
+  derivedState: ComplianceState;
+  daysToExpiry: number | null;
+  /** null = no expiry recorded at all; false = REX gave a date we can't read. */
+  expiryParses: boolean | null;
+}
+
+export interface ComplianceProbeParent {
+  parentId: string;
+  rowsReturned: number;
+  pages: number;
+  /** Still a full page at the ceiling — there is more we never saw. */
+  capped: boolean;
+  /** REX refused or timed out part-way through. */
+  failed: boolean;
+}
+
+export interface ComplianceProbe {
+  perParent: ComplianceProbeParent[];
+  rows: ComplianceProbeRow[];
+  /**
+   * The same question asked the way the pages used to ask it — 10 ids, one
+   * page, no offset. The gap against the per-id walk IS the truncation, in rows.
+   */
+  productionShape: {
+    chunkSize: number;
+    limit: number;
+    chunks: Array<{ ids: string[]; rowsReturned: number; capped: boolean; failed: boolean }>;
+    chunkRowsReturned: number;
+    perIdRowsReturned: number;
+    entriesLost: number;
+  };
+}
+
+// One parent at a time, so the row cap can only bite on a single enormous
+// property — and paging catches even that.
+const PROBE_PAGE_CEILING = 20;
+// REX slows superlinearly with concurrency as well as id count; six at a time
+// keeps a book-wide sweep inside the route's maxDuration.
+const PROBE_CONCURRENCY = 6;
+
+function toProbeRow(entry: Record<string, unknown>): ComplianceProbeRow {
+  const raw = readComplianceEntry(entry);
+  const { state, days, unparsed } = complianceStateOf(raw.expiry, raw.issued, raw.notRequired);
+  return {
+    id: String(entry.id ?? ""),
+    parentObjectId: String(entry.parent_object_id ?? ""),
+    typeIdRaw: entry.type_id ?? null,
+    typeId: raw.type,
+    mapped: !!PROPERTY_COMPLIANCE[raw.type],
+    recordState: label(entry.system_record_state),
+    detailsKeys: raw.detailsKeys,
+    detailsBlockRead: raw.blockKey,
+    issueDate: raw.issued,
+    expiryDate: raw.expiry,
+    notRequired: raw.notRequired ?? null,
+    notes: raw.notes,
+    file: entry.file ?? null,
+    createdAt: stamp(entry.system_ctime),
+    derivedState: state,
+    daysToExpiry: days,
+    expiryParses: raw.expiry ? !unparsed : null,
+  };
+}
+
+async function probeOneParent(
+  parentId: string
+): Promise<{ parent: ComplianceProbeParent; rows: Array<Record<string, unknown>> }> {
+  const rows: Array<Record<string, unknown>> = [];
+  for (let page = 0; page < PROBE_PAGE_CEILING; page++) {
+    const res = await rexCall("ComplianceEntries", "search", {
+      criteria: [{ name: "parent_object_id", type: "in", value: [parentId] }],
+      limit: COUNT_LIMIT,
+      offset: page * COUNT_LIMIT,
+    }).catch(() => null);
+    const pages = page + 1;
+    if (!res || !res.ok) {
+      return { parent: { parentId, rowsReturned: rows.length, pages, capped: false, failed: true }, rows };
+    }
+    const batch = rexRows(res.result);
+    rows.push(...batch);
+    if (batch.length < COUNT_LIMIT) {
+      return { parent: { parentId, rowsReturned: rows.length, pages, capped: false, failed: false }, rows };
+    }
+  }
+  return {
+    parent: { parentId, rowsReturned: rows.length, pages: PROBE_PAGE_CEILING, capped: true, failed: false },
+    rows,
+  };
+}
+
+/**
+ * Read every compliance entry on these parent ids twice: once per id with full
+ * offset paging (the truth), once in the shape the pages use (the measurement).
+ * Deliberately slow — never call this from a page.
+ */
+export async function probeCompliance(ids: string[]): Promise<ComplianceProbe> {
+  const parents: ComplianceProbeParent[] = [];
+  const rawRows: Array<Record<string, unknown>> = [];
+
+  for (let i = 0; i < ids.length; i += PROBE_CONCURRENCY) {
+    const wave = await Promise.all(ids.slice(i, i + PROBE_CONCURRENCY).map(probeOneParent));
+    for (const { parent, rows } of wave) {
+      parents.push(parent);
+      rawRows.push(...rows);
+    }
+  }
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += COMPLIANCE_CHUNK) {
+    chunks.push(ids.slice(i, i + COMPLIANCE_CHUNK));
+  }
+  const shaped = await Promise.all(
+    chunks.map(async (chunk) => {
+      const res = await rexCall("ComplianceEntries", "search", {
+        criteria: [{ name: "parent_object_id", type: "in", value: chunk }],
+        limit: COUNT_LIMIT, // no offset — this is the old shape, faults and all
+      }).catch(() => null);
+      if (!res || !res.ok) {
+        return { ids: chunk, rowsReturned: 0, capped: false, failed: true };
+      }
+      const n = rexRows(res.result).length;
+      return { ids: chunk, rowsReturned: n, capped: n >= COUNT_LIMIT, failed: false };
+    })
+  );
+
+  const chunkRowsReturned = shaped.reduce((t, c) => t + c.rowsReturned, 0);
+  return {
+    perParent: parents,
+    rows: rawRows.map(toProbeRow),
+    productionShape: {
+      chunkSize: COMPLIANCE_CHUNK,
+      limit: COUNT_LIMIT,
+      chunks: shaped,
+      chunkRowsReturned,
+      perIdRowsReturned: rawRows.length,
+      entriesLost: Math.max(0, rawRows.length - chunkRowsReturned),
+    },
+  };
 }
 
 /* ------------------------------ my portfolio ------------------------------ */
@@ -1109,6 +1447,10 @@ export interface PortfolioProperty {
   outstanding: number;
   /** The soonest certificate renewal (incl. overdue), or null if none dated. */
   nextRenewal: { label: string; expiry: string } | null;
+  /** False when REX's answer for this property was cut short — see PropertyCompliance. */
+  checked: boolean;
+  /** Raw REX type_ids dropped because PROPERTY_COMPLIANCE doesn't know them. */
+  unmapped: string[];
 }
 
 // The managed book is much bigger than the market book (50 properties vs ~12),
@@ -1157,7 +1499,7 @@ export async function getAgentPortfolioProperties(
         listings.flatMap((l) => [l.base.propertyId, l.base.id]).filter(Boolean)
       ),
     ];
-    const byParent = await fetchComplianceByParent(ids);
+    const { byParent, unchecked, unmappedByParent } = await fetchComplianceByParent(ids);
 
     const out: PortfolioProperty[] = listings.map(({ base: l, sinceISO }) => {
       const items = dedupeComplianceItems([
@@ -1190,11 +1532,23 @@ export async function getAgentPortfolioProperties(
         items,
         outstanding: items.filter((i) => complianceNeedsWork(i.state)).length,
         nextRenewal: next ? { label: next.label, expiry: String(next.expiry) } : null,
+        checked: !unchecked.has(l.propertyId) && !unchecked.has(l.id),
+        unmapped: [
+          ...new Set([
+            ...(unmappedByParent.get(l.propertyId) ?? []),
+            ...(unmappedByParent.get(l.id) ?? []),
+          ]),
+        ].sort(),
       };
     });
 
+    // Worst first, and properties we couldn't finish reading lead the lot —
+    // same order as compliance: an unanswered question outranks a known one.
     out.sort(
-      (a, b) => b.outstanding - a.outstanding || a.address.localeCompare(b.address, "en-GB")
+      (a, b) =>
+        Number(a.checked) - Number(b.checked) ||
+        b.outstanding - a.outstanding ||
+        a.address.localeCompare(b.address, "en-GB")
     );
     portfolioCache.set(rexUserId, { at: Date.now(), data: out });
     return out;
@@ -1625,6 +1979,12 @@ export interface BusinessCompliance {
 
 const businessComplianceCache = { at: 0, data: null as BusinessCompliance | null };
 const BUSINESS_COMPLIANCE_TTL_MS = 60 * 60_000;
+// Bumped from "rex:compliance" when byType started keying on the entry's real
+// type (label(type_id), and the expiry read from details[type] rather than
+// whichever block sorted first). The durable Postgres row survives deploys, so
+// the key has to change or the old numbers keep being served for an hour and
+// the fix looks like it did nothing.
+const BUSINESS_COMPLIANCE_KEY = "rex:compliance:v2";
 
 /**
  * Every compliance entry in REX, classified. Queried across the account in one
@@ -1648,7 +2008,7 @@ export async function getBusinessCompliance(): Promise<BusinessCompliance | null
   // process serves the last stored result rather than re-sweeping REX.
   const { readCache, writeCache } = await import("@/lib/integration-cache");
   if (!businessComplianceCache.data) {
-    const stored = await readCache<BusinessCompliance>("rex:compliance").catch(() => null);
+    const stored = await readCache<BusinessCompliance>(BUSINESS_COMPLIANCE_KEY).catch(() => null);
     if (stored) {
       businessComplianceCache.at = stored.at;
       businessComplianceCache.data = stored.data;
@@ -1687,10 +2047,12 @@ export async function getBusinessCompliance(): Promise<BusinessCompliance | null
   let valid = 0;
 
   for (const r of rows) {
-    const type = String(r.type_id ?? "unknown");
-    // details is keyed by the entry type; pull whichever block is there.
-    const details = (r.details ?? {}) as Record<string, { expiry_date?: string | null }>;
-    const block = Object.values(details)[0] ?? {};
+    const type = String(label(r.type_id) ?? "unknown");
+    // Same rule as the per-property path — type key first, sole block as the
+    // fallback. This used to take Object.values(details)[0] unconditionally,
+    // which dates an entry from whichever block happened to sort first.
+    const details = (r.details ?? {}) as Record<string, unknown>;
+    const block = complianceDetailBlock(details, type) as { expiry_date?: string | null };
     const expiry = block.expiry_date ? Date.parse(block.expiry_date) : NaN;
 
     const bucket = byType.get(type) ?? { total: 0, overdue: 0, upcoming: 0 };
@@ -1725,6 +2087,6 @@ export async function getBusinessCompliance(): Promise<BusinessCompliance | null
   };
   businessComplianceCache.at = Date.now();
   businessComplianceCache.data = data;
-  await writeCache("rex:compliance", data);
+  await writeCache(BUSINESS_COMPLIANCE_KEY, data);
   return data;
 }

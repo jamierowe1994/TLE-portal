@@ -6,8 +6,8 @@ import {
   setForecast,
   listUserForecasts,
 } from "@/lib/forecast-store";
-import { currentMonth } from "@/lib/format";
-import { agentNetIncomeYtd } from "@/lib/seed-data";
+import { currentMonth, monthLabel } from "@/lib/format";
+import { agentNetIncomeYtd, SNAPSHOT_MONTH } from "@/lib/seed-data";
 import type { AgentForecast } from "@/lib/types";
 
 // The signed-in agent's OWN monthly forecast (targets).
@@ -84,6 +84,21 @@ export async function PUT(req: NextRequest) {
   if (!MONTH_RE.test(month)) {
     return NextResponse.json(
       { error: 'month must look like "2026-07".' },
+      { status: 400 }
+    );
+  }
+  // A forecast is a statement about a month that hasn't finished. Months before
+  // the snapshot are closed and already carry an actual, and setForecast upserts
+  // unconditionally — so a client bug that offers a handle on a closed month
+  // would silently overwrite a partner's history. Shape validation alone never
+  // caught that; this does.
+  if (month < SNAPSHOT_MONTH) {
+    return NextResponse.json(
+      {
+        error: `${monthLabel(month)} is closed — forecasts can only be set from ${monthLabel(
+          SNAPSHOT_MONTH
+        )} onwards.`,
+      },
       { status: 400 }
     );
   }

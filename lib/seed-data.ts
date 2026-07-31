@@ -670,8 +670,14 @@ function statFrom(value: number | null, src: string): StatValue {
  * Per-agent funnel stats for July MTD, from the Agent Detail KPI table.
  * Agents not in the table (e.g. Tony Poon in July) get all-null StatValues.
  */
-/** The month the frozen KPI rows describe. */
-const SNAPSHOT_MONTH = "2026-07";
+/**
+ * The month the frozen KPI rows describe. Exported because the callers that
+ * decide whether a figure may be shown for the selected period have to ask
+ * "is this the month the seed actually describes?" — /api/my/stats does it for
+ * every funnel field. Hardcoding "2026-07" in each of them is how July's
+ * numbers ended up under other months' headings in the first place.
+ */
+export const SNAPSHOT_MONTH = "2026-07";
 
 export function agentSeedStats(agentKey: string, month?: string): FunnelStats {
   const row = SEED.agentKpisJulyMtd.rows.find((r) => nameMatchesAgent(r.agent, agentKey));
@@ -703,8 +709,16 @@ export function agentSeedStats(agentKey: string, month?: string): FunnelStats {
   };
 }
 
-/** July move-ins for one agent (rows verbatim from the Move-ins Jul table). */
-export function agentMoveIns(agentKey: string): MoveInRow[] {
+/**
+ * July move-ins for one agent (rows verbatim from the Move-ins Jul table).
+ *
+ * Same rule as agentSeedStats above: these rows describe July 2026 and nothing
+ * else, so when a month is asked for they only answer for July. Without it the
+ * dashboard's move-in fallback listed July's tenancies under a June heading
+ * whenever PayProp couldn't be reached — a confident, checkable, wrong answer.
+ */
+export function agentMoveIns(agentKey: string, month?: string): MoveInRow[] {
+  if (month && month !== SNAPSHOT_MONTH) return [];
   return SEED.moveInsJuly.rows.filter((r) => nameMatchesAgent(r.agent, agentKey));
 }
 

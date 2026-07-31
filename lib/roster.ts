@@ -93,14 +93,14 @@ export const SOURCES: Record<SourceKey, SourceInfo> = {
     note: "Feeds KPI funnel, agent KPIs and compliance (REX PM). Live integration being attempted — snapshot fallback until endpoints confirmed.",
   },
   payprop: {
-    status: "no-access-yet",
+    status: "live",
     label: "PayProp",
-    note: "Feeds GCI/income actuals, portfolio, rent roll and arrears. No API access yet — figures from dashboard snapshot.",
+    note: "Live via the PayProp API (OAuth) — GCI and income actuals, the managed portfolio, rent roll and arrears.",
   },
   ghl: {
-    status: "no-access-yet",
+    status: "attempting-live",
     label: "Go High Level",
-    note: "Feeds paid leads and lead→MA funnel. No API access yet — figures from dashboard snapshot.",
+    note: "Feeds paid leads and lead→MA funnel. Live pull built (v2 private-integration token) — snapshot fallback until the Paid Leads pipelines answer.",
   },
   meta: {
     status: "live",

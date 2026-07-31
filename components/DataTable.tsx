@@ -71,6 +71,19 @@ export default function DataTable<
               <tr
                 key={i}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                // Only a clickable row gets a keyboard path — a plain row must
+                // not become a tab stop with nothing to activate.
+                role={onRowClick ? "button" : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (e) => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        onRowClick(row);
+                      }
+                    : undefined
+                }
                 className={`border-b border-line/60 last:border-b-0 hover:bg-gray-50/60 ${
                   onRowClick ? "cursor-pointer" : ""
                 }`}

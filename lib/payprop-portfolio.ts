@@ -157,6 +157,12 @@ export function portfolioError(): string | null {
   return lastError;
 }
 
+// A failing walk used to relaunch on the very next request, which kept a
+// 26-page walk permanently resident in the shared PayProp queue and pushed
+// every partner's request behind it. Wait a little before trying again.
+let failedAt = 0;
+const FAILURE_COOLDOWN_MS = 45_000;
+
 /**
  * The managed book, grouped by responsible agent. Non-blocking in the same way
  * as the income figures: serves what's cached and refreshes behind.
@@ -171,20 +177,23 @@ export async function getPortfolioBook(): Promise<PortfolioBook | null> {
     if (stored) cache = { at: stored.at, data: stored.data };
   }
   if (cache && Date.now() - cache.at < TTL_MS) return cache.data;
-  if (!running) {
+  if (!running && Date.now() - failedAt > FAILURE_COOLDOWN_MS) {
     running = true;
     void (async () => {
       const data = await computePortfolioBook();
       if (data) {
         cache = { at: Date.now(), data };
         lastError = null;
+        failedAt = 0;
         await writeCache("payprop:portfolio:v3", data);
       } else {
         lastError = "PayProp returned no properties.";
+        failedAt = Date.now();
       }
     })()
       .catch((e: unknown) => {
         lastError = e instanceof Error ? e.message : String(e);
+        failedAt = Date.now();
       })
       .finally(() => {
         running = false;

@@ -40,12 +40,15 @@ export async function GET(req: NextRequest) {
     listTodos(user.id),
   ]);
 
-  // Only what needs a human — the model doesn't need the whole book.
+  // Only what needs a human — the model doesn't need the whole book. A property
+  // REX couldn't finish answering for needs a human too: outstanding>0 alone
+  // dropped it, and "no suggestion" reads to the agent as "nothing to do".
   const outstanding = (compliance ?? [])
-    .filter((p) => p.outstanding > 0)
+    .filter((p) => p.outstanding > 0 || !p.checked)
     .slice(0, 25)
     .map((p) => ({
       property: p.name,
+      fullyRead: p.checked,
       items: p.items
         .filter((i) => ["expired", "expiring", "missing"].includes(i.state))
         .map((i) => `${i.label} (${i.state}${i.expiry ? `, ${i.expiry}` : ""})`),
@@ -69,7 +72,9 @@ export async function GET(req: NextRequest) {
 
   const prompt = `You are helping a UK lettings agent decide what to do next.
 
-OUTSTANDING COMPLIANCE (property → items needing action):
+COMPLIANCE NEEDING ATTENTION (property → items needing action).
+fullyRead:false means REX's answer for that property was cut short — its status
+is UNKNOWN, its item list is partial, and it is NOT known to be clear:
 ${JSON.stringify(outstanding, null, 1)}
 
 DRAFT LISTINGS NOT YET LIVE:
@@ -84,6 +89,8 @@ Suggest up to 5 concrete next actions, most urgent first. Rules:
 - Never duplicate something already on their list.
 - Prefer expired/missing certificates over expiring ones, and expiring
   over draft listings.
+- For a property with fullyRead:false, the only honest action is to check its
+  certificates in REX directly — never state what is or isn't due there.
 - Use British English.
 
 Reply with ONLY a JSON array, no prose:

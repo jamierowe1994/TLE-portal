@@ -45,6 +45,11 @@ const STATE_DOT: Record<ComplianceState, string> = {
 };
 
 function stateLabel(i: ComplianceItem): string {
+  // A date REX gave us but nobody can read is its own problem, and it outranks
+  // whatever state we fell back to — say what's actually wrong.
+  if (i.dateUnparsed) {
+    return `Expiry date on file can't be read${i.expiry ? ` — "${i.expiry}"` : ""}`;
+  }
   switch (i.state) {
     case "expired":
       return `Expired ${i.expiry ?? ""}`.trim();
@@ -59,8 +64,29 @@ function stateLabel(i: ComplianceItem): string {
     case "not-required":
       return "Not required";
     default:
-      return i.expiry ? `Valid to ${i.expiry}` : "Recorded";
+      return i.expiry ? `Valid to ${i.expiry}` : i.issued ? `Recorded ${i.issued}` : "Recorded";
   }
+}
+
+/**
+ * The badge every view of a property leads with. "Couldn't check" comes first
+ * on purpose: when REX's answer was cut short we know nothing about this
+ * property, and the two reassuring branches below would both be a guess.
+ */
+function badge(p: PropertyCompliance): { text: string; style: string } {
+  if (!p.checked) return { text: "COULDN'T CHECK", style: STATE_STYLE.missing };
+  if (p.outstanding > 0) {
+    return {
+      text: `${p.outstanding} OUTSTANDING`,
+      style: p.items.some((i) => i.state === "expired")
+        ? STATE_STYLE.expired
+        : STATE_STYLE.expiring,
+    };
+  }
+  return {
+    text: p.items.length ? "ALL CLEAR" : "NOTHING RECORDED",
+    style: STATE_STYLE.valid,
+  };
 }
 
 /* -------------------------------- photo -------------------------------- */
@@ -84,11 +110,7 @@ function ComplianceTile({
   delay: number;
   onOpen: () => void;
 }) {
-  const worst = p.items.some((i) => i.state === "expired")
-    ? "expired"
-    : p.outstanding > 0
-      ? "expiring"
-      : "valid";
+  const { text, style } = badge(p);
   return (
     <button
       type="button"
@@ -97,16 +119,8 @@ function ComplianceTile({
       style={enterAt(delay)}
     >
       <div className="flex min-w-0 flex-1 flex-col p-6">
-        <span
-          className={`w-fit rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
-            STATE_STYLE[worst as ComplianceState]
-          }`}
-        >
-          {p.outstanding > 0
-            ? `${p.outstanding} OUTSTANDING`
-            : p.items.length
-              ? "ALL CLEAR"
-              : "NOTHING RECORDED"}
+        <span className={`w-fit rounded-full border px-2 py-0.5 text-[9px] font-semibold ${style}`}>
+          {text}
         </span>
 
         <h3 className="mt-3.5 truncate text-[14px] font-semibold leading-snug">{p.name}</h3>
@@ -122,9 +136,17 @@ function ComplianceTile({
                 className={`h-1.5 w-1.5 rounded-full ${STATE_DOT[i.state]}`}
               />
             ))
-          ) : (
+          ) : p.checked ? (
             <span className="text-[11px] text-muted">No compliance records</span>
-          )}
+          ) : null}
+
+          {/* The dots are still worth showing — they're just not the whole
+              picture, and the tile has to say which. */}
+          {!p.checked ? (
+            <span className="w-full text-[11px] text-amber-700">
+              REX didn&apos;t finish answering — there may be more
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -160,6 +182,11 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
   const nextDue = [...p.items]
     .filter((i) => i.expiry)
     .sort((a, b) => (a.expiry ?? "").localeCompare(b.expiry ?? ""))[0];
+
+  // When REX's answer was cut short, every number on this screen is a count of
+  // what we managed to read, not a total — so nothing may be labelled as one,
+  // and no empty list may be worded as "there's nothing there".
+  const partial = !p.checked;
 
   const collapse = (
     <button
@@ -203,20 +230,10 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
             <p className="mt-1 text-[13px] text-muted">{p.locality}</p>
             <span
               className={`mt-2 inline-block rounded-full border px-2.5 py-0.5 text-[9px] font-semibold ${
-                STATE_STYLE[
-                  (p.items.some((i) => i.state === "expired")
-                    ? "expired"
-                    : p.outstanding > 0
-                      ? "expiring"
-                      : "valid") as ComplianceState
-                ]
+                badge(p).style
               }`}
             >
-              {p.outstanding > 0
-                ? `${p.outstanding} OUTSTANDING`
-                : p.items.length
-                  ? "ALL CLEAR"
-                  : "NOTHING RECORDED"}
+              {badge(p).text}
             </span>
           </div>
 
@@ -225,23 +242,31 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
               <DoodleIcon name="shield" size={22} className="mt-[3px] shrink-0 text-ink" />
               <div>
                 <div className="text-[14px] font-semibold text-ink">{p.outstanding}</div>
-                <div className="text-[11.5px] text-muted">Need attention</div>
+                <div className="text-[11.5px] text-muted">
+                  {partial ? "Need attention so far" : "Need attention"}
+                </div>
               </div>
             </div>
             <div className="flex min-w-0 items-start gap-2.5">
               <DoodleIcon name="checklist" size={22} className="mt-[3px] shrink-0 text-ink" />
               <div>
                 <div className="text-[14px] font-semibold text-ink">{p.items.length}</div>
-                <div className="text-[11.5px] text-muted">Items on file</div>
+                <div className="text-[11.5px] text-muted">
+                  {partial ? "Items read so far" : "Items on file"}
+                </div>
               </div>
             </div>
             <div className="flex min-w-0 items-start gap-2.5">
               <DoodleIcon name="calendar" size={22} className="mt-[3px] shrink-0 text-ink" />
               <div>
                 <div className="text-[14px] font-semibold text-ink">
-                  {nextDue?.expiry ?? "—"}
+                  {/* An em dash here would read as "nothing due" — on a short
+                      read we simply never got that far. */}
+                  {nextDue?.expiry ?? (partial ? "Unknown" : "—")}
                 </div>
-                <div className="text-[11.5px] text-muted">Next renewal</div>
+                <div className="text-[11.5px] text-muted">
+                  {partial ? "Soonest we could see" : "Next renewal"}
+                </div>
               </div>
             </div>
           </div>
@@ -255,6 +280,30 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
               What needs doing
             </h3>
 
+            {/* Said before the list, not after it: whatever follows is a partial
+                answer, and the reader has to know that before they read it. */}
+            {!p.checked ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-[12px] text-amber-800">
+                REX cut us off part-way through this property, so anything below is
+                what we managed to read — not necessarily everything on file. Open
+                it in REX to be sure.
+              </div>
+            ) : null}
+
+            {/* `unmapped` is a set of distinct type ids, not of entries — three
+                fire_alarm entries are one type, so "3 entries" would be a
+                number nobody counted. Says types, like the banner up top. */}
+            {p.unmapped.length ? (
+              <div className="mt-4 rounded-xl border border-line bg-page p-4 text-[12px] text-muted">
+                REX also holds{" "}
+                {p.unmapped.length === 1
+                  ? "a certificate type"
+                  : `${p.unmapped.length} certificate types`}{" "}
+                this page doesn&apos;t recognise ({p.unmapped.join(", ")}), so
+                {p.unmapped.length === 1 ? " it isn't" : " they aren't"} counted here.
+              </div>
+            ) : null}
+
             {outstanding.length ? (
               <div className="mt-4 space-y-2.5">
                 {outstanding.map((i) => (
@@ -266,6 +315,12 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-medium text-ink">{i.label}</p>
                       <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
+                      {/* The issue date has been in REX all along and never
+                          reached this page — it's how you tell a lapsed
+                          certificate from one that was never renewed. */}
+                      {i.issued ? (
+                        <p className="mt-0.5 text-[11px] text-muted">Issued {i.issued}</p>
+                      ) : null}
                       {i.notes ? (
                         <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
                       ) : null}
@@ -279,7 +334,13 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                   className="text-left font-light leading-tight tracking-tight text-ink"
                   style={{ fontSize: "clamp(26px, 2.4vw, 34px)" }}
                 >
-                  {p.items.length ? (
+                  {!p.checked ? (
+                    <>
+                      Couldn&apos;t
+                      <br />
+                      check this one
+                    </>
+                  ) : p.items.length ? (
                     <>
                       Everything
                       <br />
@@ -319,10 +380,17 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                     <DoodleIcon name="checklist" size={16} className="text-accent" />
                     In date
                   </h3>
+                  {/* The card sitting beside "Couldn't check this one" can't
+                      say "nothing recorded" — that's the reassuring half of a
+                      drawer whose other half has already said we don't know. */}
                   <p className="mt-2 text-[12px] text-muted">
                     {settled.length
-                      ? `${settled.length} item${settled.length === 1 ? "" : "s"} on file`
-                      : "Nothing recorded yet"}
+                      ? `${settled.length} item${settled.length === 1 ? "" : "s"} ${
+                          partial ? "read so far" : "on file"
+                        }`
+                      : partial
+                        ? "Couldn't check this one"
+                        : "Nothing recorded yet"}
                   </p>
                   <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
                     View all
@@ -379,6 +447,16 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                   </h3>
                   {collapse}
                 </div>
+                {/* Same caveat as the left card, said before the list rather
+                    than after it. */}
+                {partial ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">
+                    REX didn&apos;t finish answering for this property
+                    {settled.length
+                      ? ", so this is what we could read — not the full list."
+                      : ", and nothing in-date came back before it stopped. We can't say what's on file here — check it in REX."}
+                  </div>
+                ) : null}
                 {settled.length ? (
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
                     {settled.map((i) => (
@@ -394,12 +472,13 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                           </span>
                           <span className="block truncate text-[10px] text-muted">
                             {stateLabel(i)}
+                            {i.issued ? ` · issued ${i.issued}` : ""}
                           </span>
                         </span>
                       </div>
                     ))}
                   </div>
-                ) : (
+                ) : partial ? null : (
                   <p className="mt-4 text-[13px] text-muted">
                     Nothing on file for this property yet.
                   </p>
@@ -498,6 +577,10 @@ export default function CompliancePage() {
   const all = properties ?? [];
   const flagged = all.filter((p) => p.outstanding > 0);
   const totalOutstanding = all.reduce((t, p) => t + p.outstanding, 0);
+  // Properties REX cut us off on, and certificate types it holds that this page
+  // has no label for. Both are gaps in what's shown, so both get said out loud.
+  const unchecked = all.filter((p) => !p.checked);
+  const unmapped = [...new Set(all.flatMap((p) => p.unmapped))].sort();
 
   // The slices both the quick tabs and the Filter dropdown drive.
   const expiringSoon = (p: PropertyCompliance) =>
@@ -507,8 +590,11 @@ export default function CompliancePage() {
     if (key === "outstanding") return p.outstanding > 0;
     if (key === "expired") return expired(p);
     if (key === "expiring") return expiringSoon(p);
-    if (key === "clear") return p.items.length > 0 && p.outstanding === 0;
-    if (key === "none") return p.items.length === 0;
+    // "All clear" and "Nothing recorded" both mean we got a complete answer —
+    // an unchecked property belongs in neither.
+    if (key === "clear") return p.checked && p.items.length > 0 && p.outstanding === 0;
+    if (key === "none") return p.checked && p.items.length === 0;
+    if (key === "unchecked") return !p.checked;
     return true;
   };
 
@@ -525,11 +611,18 @@ export default function CompliancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all, filter, search, sort]);
 
-  const clearCount = all.filter((p) => p.items.length > 0 && p.outstanding === 0).length;
-  const withItems = all.filter((p) => p.items.length > 0).length;
-  const complianceRate = withItems ? Math.round((clearCount / withItems) * 100) : 100;
+  // The rate is computed over properties REX actually answered for. It used to
+  // fall back to 100% when nothing had items, so a fetch that returned nothing
+  // at all displayed a green "100% compliance rate" — null now, shown as "—".
+  const checkedProps = all.filter((p) => p.checked);
+  const clearCount = checkedProps.filter(
+    (p) => p.items.length > 0 && p.outstanding === 0
+  ).length;
+  const withItems = checkedProps.filter((p) => p.items.length > 0).length;
+  const complianceRate = withItems ? Math.round((clearCount / withItems) * 100) : null;
   const expiredCount = all.filter(expired).length;
   const expiringCount = all.filter(expiringSoon).length;
+  const noneCount = all.filter((p) => p.checked && p.items.length === 0).length;
 
   return (
     // Same outline treatment as the rest of the portal.
@@ -550,6 +643,33 @@ export default function CompliancePage() {
       ) : null}
 
       {error ? <div className="card p-6 text-center text-sm text-muted">{error}</div> : null}
+
+      {/* A partial answer that looks complete is the one failure this page can't
+          afford, so it leads with what's missing rather than burying it. */}
+      {unchecked.length ? (
+        <div className="card border-amber-200 bg-amber-50 p-4 text-[13px]">
+          <span className="font-semibold text-amber-800">
+            REX didn&apos;t finish answering for {unchecked.length}{" "}
+            {unchecked.length === 1 ? "property" : "properties"}.
+          </span>{" "}
+          <span className="text-ink">
+            They&apos;re marked &ldquo;couldn&apos;t check&rdquo; and left out of the
+            compliance rate — treat them as unknown, not as clear.
+          </span>
+        </div>
+      ) : null}
+
+      {unmapped.length ? (
+        <div className="card p-4 text-[13px]">
+          <span className="font-semibold text-ink">
+            REX holds {unmapped.length === 1 ? "a certificate type" : `${unmapped.length} certificate types`}{" "}
+            this page doesn&apos;t recognise.
+          </span>{" "}
+          <span className="text-muted">
+            {unmapped.join(", ")} — on the REX record, but not counted in anything below.
+          </span>
+        </div>
+      ) : null}
 
       {loading ? (
         <Loader label="Checking your certificates…" />
@@ -583,6 +703,7 @@ export default function CompliancePage() {
                 { key: "expiring", label: "Expiring soon" },
                 { key: "clear", label: "All clear" },
                 { key: "none", label: "Nothing recorded" },
+                { key: "unchecked", label: "Couldn't check" },
               ]}
               value={filter}
               onChange={setFilter}
@@ -605,15 +726,20 @@ export default function CompliancePage() {
                 {
                   icon: "clock",
                   value: String(expiredCount),
-                  label: "Properties with an expiry",
+                  // Was "Properties with an expiry", which reads as the opposite
+                  // of what it counts — properties holding an EXPIRED item.
+                  label: "With something expired",
                   dot: expiredCount > 0 ? "red" : undefined,
                 },
                 { icon: "checklist", value: String(clearCount), label: "All clear" },
                 {
                   icon: "star",
-                  value: `${complianceRate}%`,
-                  label: "Compliance rate",
-                  tone: complianceRate >= 90 ? "green" : "red",
+                  value: complianceRate == null ? "—" : `${complianceRate}%`,
+                  label: unchecked.length
+                    ? `Compliance rate — ${unchecked.length} unchecked`
+                    : "Compliance rate",
+                  tone:
+                    complianceRate == null ? "ink" : complianceRate >= 90 ? "green" : "red",
                 },
               ]}
             />
@@ -628,7 +754,17 @@ export default function CompliancePage() {
                 { key: "expired", label: "Expired", count: expiredCount, dot: "red" },
                 { key: "expiring", label: "Expiring soon", count: expiringCount, dot: "amber" },
                 { key: "clear", label: "All clear", count: clearCount, dot: "green" },
-                { key: "none", label: "Nothing recorded", count: all.filter((p) => p.items.length === 0).length },
+                { key: "none", label: "Nothing recorded", count: noneCount },
+                ...(unchecked.length
+                  ? [
+                      {
+                        key: "unchecked",
+                        label: "Couldn't check",
+                        count: unchecked.length,
+                        dot: "amber" as const,
+                      },
+                    ]
+                  : []),
               ]}
               value={filter}
               onChange={setFilter}

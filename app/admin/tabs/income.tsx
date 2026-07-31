@@ -222,6 +222,15 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
     }
   };
 
+  // Resolved once so the card and its sub-line quote the SAME split — computed
+  // twice, the sub kept reading the snapshot while the stat had gone live.
+  const liveSplit = pv("splitPct");
+  const splitStat = liveSplit ?? inc.june.tleSplitPct;
+  // The partners' cash sits next to that percentage, so it has to come off the
+  // same month: prev's own beneficiary total, not June's snapshot.
+  const splitPartnerNet =
+    liveSplit && prev ? gbp(prev.paidToBeneficiaries) : inc.june.partnerNetIncome.display ?? "";
+
   const isSnapshotMonth = month === "2026-07";
 
   // Live estimate input: this month's completed move-ins from Propoly.
@@ -422,8 +431,12 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
             />
             <StatCard
               label="TLE split of E&W GCI"
-              stat={pv("splitPct") ?? inc.june.tleSplitPct}
-              sub={`Partners ${100 - (inc.june.tleSplitPct.value ?? 0)}% — ${inc.june.partnerNetIncome.display ?? ""}`}
+              stat={splitStat}
+              sub={
+                splitStat.value != null
+                  ? `Partners ${100 - splitStat.value}%${splitPartnerNet ? ` — ${splitPartnerNet}` : ""}`
+                  : undefined
+              }
             />
             <StatCard label="Monthly licence" stat={inc.june.monthlyLicence} />
             <StatCard label="Pro licence" stat={inc.june.proLicence} />

@@ -694,6 +694,17 @@ export default function TodosPage() {
           party ? "done-collapse" : ""
         }`}
         onClick={() => !party && startEdit(t)}
+        role="button"
+        tabIndex={0}
+        // Only the tile itself: the done button and the date chip stop click
+        // propagation, but key events still bubble, so without this Enter on
+        // "Mark as done" would open the editor too.
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          if (!party) startEdit(t);
+        }}
       >
         <div className="overflow-hidden">
         <div className="flex h-full flex-col p-4">

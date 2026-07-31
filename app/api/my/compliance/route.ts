@@ -6,7 +6,7 @@ import { getAgentCompliance } from "@/lib/rex-stats";
 
 // The signed-in agent's property compliance, live from REX, worst first.
 //
-// GET /api/my/compliance → { linked, properties, error? }
+// GET /api/my/compliance → { linked, properties, unchecked, unmapped, error? }
 export async function GET(req: NextRequest) {
   const userId = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   const user = userId ? await findById(userId) : null;
@@ -28,5 +28,11 @@ export async function GET(req: NextRequest) {
       error: "Couldn't reach REX just now — compliance will be back shortly.",
     });
   }
-  return NextResponse.json({ linked: true, properties });
+
+  // Same principle one level down: REX can answer for most of the book and cut
+  // us off for the rest. Those properties carry checked:false, and the page has
+  // to be told about them or an unread property renders as a compliant one.
+  const unchecked = properties.filter((p) => !p.checked).length;
+  const unmapped = [...new Set(properties.flatMap((p) => p.unmapped))].sort();
+  return NextResponse.json({ linked: true, properties, unchecked, unmapped });
 }

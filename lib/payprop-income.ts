@@ -14,12 +14,54 @@ import { normaliseAgentName, propertyKey } from "@/lib/payprop-portfolio";
 // than a report we're missing. Verified against July 2026: 1,039 payments,
 // £19,804.02 to the agency.
 
+/** What report/all-payments puts on the wire (the fields we care about). */
 export interface PaymentRow {
   amount?: string;
   category?: { id?: string; name?: string };
   beneficiary?: { id?: string; name?: string; type?: string };
   due_date?: string;
   description?: string;
+}
+
+/**
+ * A payment reduced to what anything actually reads.
+ *
+ * PayProp's rows carry roughly 850 bytes each of envelope nobody here looks at
+ * — tenant, property, batch, reconciliation date, references. That's harmless
+ * in memory and not harmless at all in jsonb: a year-to-date range is ~9,000
+ * rows, so 7.7 MB to write and then JSON.parse on the request path of every
+ * cold process. Reduced, the same range is about 1 MB.
+ *
+ * Single-letter keys because at this row count the field names would be most
+ * of the bytes. `d` is read by nothing today; it's stored anyway because
+ * serving a month by slicing the year-to-date rows locally is the next win
+ * here, and a field dropped from a cached shape can only be got back by
+ * re-walking every live range.
+ */
+interface Payment {
+  /** amount, already parsed — PayProp sends money as a string. */
+  a: number;
+  /** category name; "" reads as "Other", same as a missing category did. */
+  c: string;
+  /** beneficiary id */
+  b: string;
+  /** beneficiary type — "agency", "beneficiary", "global_beneficiary" */
+  t: string;
+  /** beneficiary name, trimmed */
+  n: string;
+  /** due date */
+  d: string;
+}
+
+function reduceRows(rows: PaymentRow[]): Payment[] {
+  return rows.map((r) => ({
+    a: money(r.amount),
+    c: r.category?.name ?? "",
+    b: r.beneficiary?.id ?? "",
+    t: r.beneficiary?.type ?? "",
+    n: r.beneficiary?.name?.trim() ?? "",
+    d: r.due_date ?? "",
+  }));
 }
 
 export interface AgencyIncome {
@@ -71,6 +113,16 @@ async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T 
   return cachedAsyncInner(key, run);
 }
 
+// A run that returns null means "we couldn't find out", not "the answer is
+// nothing" — but the null was being cached with a fresh timestamp and written
+// to Postgres, where JSON null becomes a jsonb null and passes the NOT NULL
+// column, so it survived deploys too. The dashboard then polled a dead key
+// every five seconds for 200 seconds and was served the same null every time.
+// Remember the FAILURE instead, briefly: long enough that the poll can't turn
+// one bad walk into forty, short enough to recover on its own.
+const FAILURE_COOLDOWN_MS = 45_000;
+const failedAt = new Map<string, number>();
+
 async function cachedAsyncInner<T>(key: string, run: () => Promise<T>): Promise<T | null> {
   let hit = cache.get(key);
 
@@ -81,7 +133,11 @@ async function cachedAsyncInner<T>(key: string, run: () => Promise<T>): Promise<
   // the durable cache was the one request guaranteed not to see it.
   if (!hit) {
     const stored = await readCache<T>(key).catch(() => null);
-    if (stored) {
+    // `stored.data == null` is a failure result written by an older build —
+    // rows like that are already in the table. Treat one as a miss rather than
+    // an answer, or it goes on being served for the whole TTL and the refresh
+    // below never even starts.
+    if (stored && stored.data != null) {
       hit = { at: stored.at, data: stored.data };
       cache.set(key, hit);
     }
@@ -89,14 +145,22 @@ async function cachedAsyncInner<T>(key: string, run: () => Promise<T>): Promise<
 
   if (hit && Date.now() - hit.at < TTL_MS) return hit.data as T;
 
-  if (!running.has(key)) {
+  const cooling = Date.now() - (failedAt.get(key) ?? 0) < FAILURE_COOLDOWN_MS;
+  if (!running.has(key) && !cooling) {
     running.add(key);
     void (async () => {
       const data = await run();
+      if (data == null) {
+        failedAt.set(key, Date.now());
+        return;
+      }
+      failedAt.delete(key);
       cache.set(key, { at: Date.now(), data });
       await writeCache(key, data);
     })()
-      .catch(() => {})
+      .catch(() => {
+        failedAt.set(key, Date.now());
+      })
       .finally(() => running.delete(key));
   }
   // Stale beats nothing while the refresh is in flight.
@@ -143,39 +207,99 @@ const money = (v: unknown) => {
  * walk, and the result is reused for the rest of the hour.
  */
 const RANGE_TTL_MS = 60 * 60_000;
-type AccountRows = Array<{ account: PayPropAccountId; rows: PaymentRow[] }>;
+type AccountRows = Array<{ account: PayPropAccountId; rows: Payment[] }>;
 const rangeCache = new Map<string, { at: number; data: AccountRows }>();
 const rangeInflight = new Map<string, Promise<AccountRows>>();
+/** Ranges we've already asked Postgres about, hit or miss — one round-trip per
+ *  range per process, rather than one per call. */
+const rangeRead = new Set<string>();
+
+/** Bump with the Payment shape. A stored range the readers no longer
+ *  understand isn't an error, it's a wrong money figure — see the cached-shape
+ *  rule; forgetting this has cost this project four misdiagnoses. */
+const RANGE_CACHE_VERSION = "v1";
+const rangeKey = (range: string) => `payprop:payments:${RANGE_CACHE_VERSION}:${range}`;
+
+/** Past this, in-memory is enough: a multi-megabyte jsonb round-trip on every
+ *  cold start costs more than it saves. ~30k reduced rows is ~3.5 MB, well
+ *  beyond the ~9k a year-to-date range actually needs — and that ~9k is both
+ *  agencies' rows together, each walked separately under payprop.ts's 5,000-row
+ *  per-account ceiling, so it is not evidence that the range fits under one. */
+const MAX_PERSISTED_ROWS = 30_000;
+
+/** Cheap structural check — a stored blob from a shape we no longer read must
+ *  fall back to the walk rather than quietly total up to nothing. */
+function isAccountRows(v: unknown): v is AccountRows {
+  if (!Array.isArray(v)) return false;
+  return v.every((p) => {
+    if (!p || typeof p !== "object") return false;
+    const { account, rows } = p as { account?: unknown; rows?: unknown };
+    if (typeof account !== "string" || !Array.isArray(rows)) return false;
+    return rows.length === 0 || typeof (rows[0] as Payment | undefined)?.a === "number";
+  });
+}
 
 async function paymentsForRange(from: string, to: string): Promise<AccountRows> {
   const key = `${from}|${to}`;
-  const hit = rangeCache.get(key);
-  if (hit && Date.now() - hit.at < RANGE_TTL_MS) return hit.data;
+  const fresh = () => {
+    const hit = rangeCache.get(key);
+    return hit && Date.now() - hit.at < RANGE_TTL_MS ? hit.data : null;
+  };
+
+  const hot = fresh();
+  if (hot) return hot;
 
   const inflight = rangeInflight.get(key);
   if (inflight) return inflight;
 
+  // Cold process: this range is usually still in Postgres from before the last
+  // deploy, and reading it costs milliseconds against a walk that costs a
+  // minute. Reduced rows (see Payment) are what make that affordable.
+  if (!rangeRead.has(key)) {
+    rangeRead.add(key);
+    const stored = await readCache<unknown>(rangeKey(key)).catch(() => null);
+    if (stored && isAccountRows(stored.data)) {
+      rangeCache.set(key, { at: stored.at, data: stored.data });
+    }
+    // Someone may have started the walk while that read was in flight.
+    const raced = fresh() ?? rangeInflight.get(key);
+    if (raced) return raced;
+  }
+
   const job = (async () => {
     const accounts = payPropAccounts();
-    const out: AccountRows = [];
-    // One account after the other: both share the same rate limit, so running
-    // them together just doubles the requests per second.
-    for (const a of accounts) {
-      out.push({
+    // Both agencies at once. Every request already funnels through the single
+    // global queue in payprop.ts, so this cannot raise the requests per second
+    // — it only stops the second agency waiting out the first. (The comment
+    // that used to sit here claimed running them together doubled the rate,
+    // which stopped being true when the queue became global.)
+    const settled = await Promise.allSettled(
+      accounts.map(async (a) => ({
         account: a,
-        rows: await payPropGetAll<PaymentRow>(a, "report/all-payments", {
-          from_date: from,
-          to_date: to,
-        }),
-      });
-    }
-    return out;
+        rows: reduceRows(
+          await payPropGetAll<PaymentRow>(a, "report/all-payments", {
+            from_date: from,
+            to_date: to,
+          })
+        ),
+      }))
+    );
+    // allSettled, not all: bailing on the first rejection would leave the other
+    // agency's walk running orphaned in the shared queue, and the caller's
+    // retry would then start a second copy of it alongside.
+    const failed = settled.find((s) => s.status === "rejected");
+    if (failed) throw failed.reason;
+    return settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
   })();
 
   rangeInflight.set(key, job);
   try {
     const data = await job;
     rangeCache.set(key, { at: Date.now(), data });
+    const rows = data.reduce((n, p) => n + p.rows.length, 0);
+    if (rows > 0 && rows <= MAX_PERSISTED_ROWS) {
+      await writeCache(rangeKey(key), data);
+    }
     // Only a couple of ranges are ever live at once (this month, last month,
     // year to date) — don't let this grow unbounded.
     if (rangeCache.size > 6) {
@@ -230,16 +354,14 @@ async function computeIncomeRange(
   if (rows.length === 0) return null;
 
   // Same classification per agency, so the parts sum to the whole.
-  const sliceOf = (list: PaymentRow[]) => {
+  const sliceOf = (list: Payment[]) => {
     let agency = 0;
     let partners = 0;
     for (const r of list) {
-      const amt = money(r.amount);
-      const cat = r.category?.name ?? "Other";
+      const cat = r.c || "Other";
       if (!FEE_CATEGORIES.has(cat)) continue;
-      const t = r.beneficiary?.type;
-      if (t === "agency") agency += amt;
-      else if (t === "beneficiary" || t === "global_beneficiary") partners += amt;
+      if (r.t === "agency") agency += r.a;
+      else if (r.t === "beneficiary" || r.t === "global_beneficiary") partners += r.a;
     }
     return { agencyIncome: agency, combinedGci: agency + partners };
   };
@@ -259,9 +381,9 @@ async function computeIncomeRange(
   const partners = new Map<string, { amount: number; payments: number }>();
 
   for (const r of rows) {
-    const amount = money(r.amount);
-    const type = r.beneficiary?.type;
-    const category = r.category?.name ?? "Other";
+    const amount = r.a;
+    const type = r.t;
+    const category = r.c || "Other";
 
     if (category === "Owner") {
       ownerPayments += amount;
@@ -275,8 +397,8 @@ async function computeIncomeRange(
     } else if (type === "beneficiary" || type === "global_beneficiary") {
       // The partners' share of the same fees.
       paidToBeneficiaries += amount;
-      if (r.beneficiary?.id) earners.add(r.beneficiary.id);
-      const who = r.beneficiary?.name?.trim();
+      if (r.b) earners.add(r.b);
+      const who = r.n;
       if (who) {
         const p = partners.get(who) ?? { amount: 0, payments: 0 };
         p.amount += amount;
@@ -437,23 +559,137 @@ interface BeneficiaryIndex {
   byName: Map<string, Set<string>>;
 }
 
-async function beneficiaryIndex(): Promise<BeneficiaryIndex> {
+/** Bump with the encoded shape below. */
+const BENEFICIARY_KEY = "payprop:beneficiaries:v1";
+
+/**
+ * Maps and Sets do not survive JSON, and they fail SILENTLY: round-tripping
+ * this index gives `{"byEmail":{},"byName":{}}` with no error anywhere. The
+ * empty-directory guard in computeAgentEarnings tests `.size === 0`, which is
+ * false against `undefined`, so execution would carry on to `byEmail.get(...)`
+ * and throw "is not a function" on every partner's earnings card. Hence the
+ * explicit entry-array encoding, and the `instanceof Map` check on the guard.
+ *
+ * Small enough to be worth persisting whole: ~100 bytes per person across both
+ * indexes, so ~29 KB for 300 beneficiaries. Both indexes are kept — the
+ * near-miss suggestions in describeAgentMatch iterate byName.
+ */
+interface StoredIndex {
+  byEmail: Array<[string, string[]]>;
+  byName: Array<[string, string[]]>;
+}
+
+const encodeMap = (m: Map<string, Set<string>>): Array<[string, string[]]> =>
+  [...m].map(([k, v]) => [k, [...v]]);
+
+function decodeIndex(raw: unknown): BeneficiaryIndex | null {
+  const s = raw as Partial<StoredIndex> | null;
+  if (!s || !Array.isArray(s.byEmail) || !Array.isArray(s.byName)) return null;
+  const decode = (pairs: Array<[string, string[]]>) => {
+    const m = new Map<string, Set<string>>();
+    for (const p of pairs) {
+      if (!Array.isArray(p) || typeof p[0] !== "string" || !Array.isArray(p[1])) continue;
+      m.set(p[0], new Set(p[1].filter((x): x is string => typeof x === "string")));
+    }
+    return m;
+  };
+  const byEmail = decode(s.byEmail);
+  const byName = decode(s.byName);
+  // An empty stored index is indistinguishable from a failed walk that got
+  // written by mistake — treat it as a miss and go and fetch.
+  if (byEmail.size === 0 && byName.size === 0) return null;
+  return { byEmail, byName };
+}
+
+/** Whether Postgres has already been consulted this process. */
+let beneficiaryRead = false;
+/** A rejecting walk used to relaunch on the very next request, putting twelve
+ *  pages straight back into the shared PayProp queue. The other two cache paths
+ *  (cachedAsyncInner, getPortfolioBook) both wait before retrying; so does this
+ *  one now. */
+let beneficiaryFailedAt = 0;
+
+/** An index we know nothing from — the shape callers already read as "the walk
+ *  failed", never as "nobody matched". Built fresh so no caller can mutate a
+ *  shared one. */
+const unknownIndex = (): BeneficiaryIndex => ({ byEmail: new Map(), byName: new Map() });
+
+/**
+ * @param waitForRefresh - block on the walk rather than serve a stale index.
+ *   Set by the money path only; see the note at the bottom of this function.
+ */
+async function beneficiaryIndex(waitForRefresh = false): Promise<BeneficiaryIndex> {
   // Every partner loading their dashboard was walking the whole directory.
   // It changes when someone joins, not by the minute.
   if (beneficiaryCache && Date.now() - beneficiaryCache.at < RANGE_TTL_MS) {
     return beneficiaryCache.data;
   }
-  if (beneficiaryInflight) return beneficiaryInflight;
-  beneficiaryInflight = buildBeneficiaryIndex();
-  try {
-    const data = await beneficiaryInflight;
-    if (data.byEmail.size || data.byName.size) {
-      beneficiaryCache = { at: Date.now(), data };
+
+  // Cold process: the directory is in Postgres from before the deploy, and a
+  // few milliseconds of read beats twelve pages of walk on a request path.
+  if (!beneficiaryCache && !beneficiaryRead) {
+    beneficiaryRead = true;
+    const stored = await readCache<unknown>(BENEFICIARY_KEY).catch(() => null);
+    if (stored) {
+      const decoded = decodeIndex(stored.data);
+      if (decoded) beneficiaryCache = { at: stored.at, data: decoded };
     }
-    return data;
-  } finally {
-    beneficiaryInflight = null;
+    if (beneficiaryCache && Date.now() - beneficiaryCache.at < RANGE_TTL_MS) {
+      return beneficiaryCache.data;
+    }
   }
+
+  const cooling = Date.now() - beneficiaryFailedAt < FAILURE_COOLDOWN_MS;
+  const job = beneficiaryInflight ?? (cooling ? null : startBeneficiaryWalk());
+
+  // WHY THE MONEY PATH WAITS AND THE DIAGNOSTIC ONE DOESN'T. Serving a stale
+  // index to computeAgentEarnings under-counts SILENTLY: a partner who has
+  // gained a second PayProp beneficiary record — precisely the case this index
+  // exists to handle — resolves to their old id alone, so the fees paid to the
+  // new record are skipped and the result still comes back matched:true, which
+  // the dashboard badges as live. That figure is then cached for an hour and
+  // written to Postgres, so the refresh landing seconds later never corrects
+  // it. An unmatched partner degrades honestly; a PARTIALLY matched one must
+  // not render as complete. Waiting costs nothing on the request path either:
+  // cachedAsync only ever calls computeAgentEarnings from its background job.
+  // describeAgentMatch is a ?debug=1 read on the request path with no money in
+  // it, so it keeps the stale answer and the speed.
+  if (waitForRefresh) return job ?? unknownIndex();
+  if (beneficiaryCache) {
+    if (job) void job.catch(() => {});
+    return beneficiaryCache.data;
+  }
+  return job ?? unknownIndex();
+}
+
+function startBeneficiaryWalk(): Promise<BeneficiaryIndex> {
+  const job = buildBeneficiaryIndex()
+    .then(async (data) => {
+      // Never cache an empty index — that's a failed walk, and caching it
+      // would report every partner as unmatched for the whole hour.
+      if (data.byEmail.size || data.byName.size) {
+        beneficiaryCache = { at: Date.now(), data };
+        beneficiaryFailedAt = 0;
+        await writeCache(BENEFICIARY_KEY, {
+          byEmail: encodeMap(data.byEmail),
+          byName: encodeMap(data.byName),
+        } satisfies StoredIndex);
+      } else {
+        // Nothing was cached, so without the cooldown the next request starts
+        // another twelve-page walk immediately — same spin as a rejection.
+        beneficiaryFailedAt = Date.now();
+      }
+      return data;
+    })
+    .catch((e: unknown) => {
+      beneficiaryFailedAt = Date.now();
+      throw e;
+    })
+    .finally(() => {
+      beneficiaryInflight = null;
+    });
+  beneficiaryInflight = job;
+  return job;
 }
 
 async function buildBeneficiaryIndex(): Promise<BeneficiaryIndex> {
@@ -480,29 +716,6 @@ async function buildBeneficiaryIndex(): Promise<BeneficiaryIndex> {
     if (name) add(byName, name, b.id);
   }
   return { byEmail, byName };
-}
-
-/** email (lowercased) → PayProp beneficiary id, for every connected account. */
-async function beneficiaryIdsByEmail(): Promise<Map<string, Set<string>>> {
-  const accounts = payPropAccounts();
-  const rows = (
-    await Promise.all(
-      accounts.map((a) =>
-        payPropGetAll<BeneficiaryRow>(a, "export/beneficiaries")
-      )
-    )
-  ).flat();
-
-  const map = new Map<string, Set<string>>();
-  for (const b of rows) {
-    const email = b.email_address?.trim().toLowerCase();
-    if (!email || !b.id) continue;
-    // One person can hold more than one beneficiary record.
-    const set = map.get(email) ?? new Set<string>();
-    set.add(b.id);
-    map.set(email, set);
-  }
-  return map;
 }
 
 /**
@@ -557,12 +770,18 @@ async function computeAgentEarnings(
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const { byEmail, byName } = await beneficiaryIndex();
+  // `true`: never resolve a partner's ids against a directory past its TTL —
+  // an out-of-date one under-counts and still says matched. See beneficiaryIndex.
+  const { byEmail, byName } = await beneficiaryIndex(true);
   // An empty directory means the fetch failed, not that nobody matched.
   // Returning a "no match" here would cache £0 as though it were the answer,
   // and the card would sit on zero for the whole TTL. Null means "unknown",
   // so the caller falls back and we try again.
-  if (byEmail.size === 0) return null;
+  //
+  // `instanceof Map` as well as size: a stored index that lost its Maps to a
+  // JSON round-trip has `size === undefined`, which slips straight past a
+  // `=== 0` test and then throws on the `.get` below.
+  if (!(byEmail instanceof Map) || byEmail.size === 0) return null;
 
   let ids = byEmail.get(email.trim().toLowerCase());
   let matchedBy: "email" | "name" = "email";
@@ -584,9 +803,7 @@ async function computeAgentEarnings(
   // The same month's payments the admin figures use — already in hand, or
   // being fetched right now by whoever asked first.
   const { from, to } = monthRange(month);
-  const rows = (await paymentsForRange(from, to)).flatMap(
-    (p) => p.rows as Array<PaymentRow & { beneficiary?: { id?: string } }>
-  );
+  const rows = (await paymentsForRange(from, to)).flatMap((p) => p.rows);
 
   if (rows.length === 0) return null; // couldn't reach PayProp — not "earned nothing"
 
@@ -596,16 +813,14 @@ async function computeAgentEarnings(
   const cats = new Map<string, number>();
 
   for (const r of rows) {
-    const bid = r.beneficiary?.id;
-    if (!bid || !ids.has(bid)) continue;
-    const amount = money(r.amount);
-    const category = r.category?.name ?? "Other";
+    if (!r.b || !ids.has(r.b)) continue;
+    const category = r.c || "Other";
     paymentCount++;
     if (FEE_CATEGORIES.has(category)) {
-      earned += amount;
-      cats.set(category, (cats.get(category) ?? 0) + amount);
+      earned += r.a;
+      cats.set(category, (cats.get(category) ?? 0) + r.a);
     } else {
-      passedThrough += amount;
+      passedThrough += r.a;
     }
   }
 

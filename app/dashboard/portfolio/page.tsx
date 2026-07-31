@@ -124,11 +124,16 @@ function PortfolioTile({
   delay: number;
   onOpen: () => void;
 }) {
-  const worst: ComplianceState = p.items.some((i) => i.state === "expired")
-    ? "expired"
-    : p.outstanding > 0
-      ? "expiring"
-      : "valid";
+  // "Couldn't check" outranks everything, same as on Compliance: when REX's
+  // answer was cut short we know nothing about this property, so both of the
+  // reassuring badges below would be a guess dressed as a fact.
+  const worst: ComplianceState = !p.checked
+    ? "missing"
+    : p.items.some((i) => i.state === "expired")
+      ? "expired"
+      : p.outstanding > 0
+        ? "expiring"
+        : "valid";
   const renewal = renewalLabel(p);
   const since = sinceLabel(p.sinceISO);
 
@@ -143,11 +148,13 @@ function PortfolioTile({
         <span
           className={`w-fit rounded-full border px-2 py-0.5 text-[9px] font-semibold ${STATE_STYLE[worst]}`}
         >
-          {p.outstanding > 0
-            ? `${p.outstanding} RENEWAL${p.outstanding === 1 ? "" : "S"} DUE`
-            : p.items.length
-              ? "ALL IN DATE"
-              : "NOTHING RECORDED"}
+          {!p.checked
+            ? "COULDN'T CHECK"
+            : p.outstanding > 0
+              ? `${p.outstanding} RENEWAL${p.outstanding === 1 ? "" : "S"} DUE`
+              : p.items.length
+                ? "ALL IN DATE"
+                : "NOTHING RECORDED"}
         </span>
 
         <h3 className="mt-3.5 truncate text-[14px] font-semibold leading-snug">{p.name}</h3>
@@ -168,9 +175,17 @@ function PortfolioTile({
             >
               {renewal.text}
             </span>
-          ) : (
+          ) : p.checked ? (
             <span className="text-[11px] text-muted">No renewals on file</span>
-          )}
+          ) : null}
+
+          {/* The badge already says we don't know; this line would otherwise sit
+              underneath it asserting the opposite. */}
+          {!p.checked ? (
+            <span className="w-full text-[11px] text-amber-700">
+              REX didn&apos;t finish answering — there may be more
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -201,6 +216,11 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
   const outstanding = p.items.filter((i) => needsWork(i.state));
   const settled = p.items.filter((i) => !needsWork(i.state));
   const since = sinceLabel(p.sinceISO);
+
+  // When REX's answer was cut short, every number on this screen is a count of
+  // what we managed to read, not a total — so nothing may be labelled as one,
+  // and no empty list may be worded as "there's nothing there".
+  const partial = !p.checked;
 
   const collapse = (
     <button
@@ -272,15 +292,25 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
 
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-line px-4 py-3">
-                <div className="text-[11px] text-muted">Needs attention</div>
+                <div className="text-[11px] text-muted">
+                  {partial ? "Needs attention so far" : "Needs attention"}
+                </div>
                 <div className="stat-value mt-1 text-[19px] leading-none" style={{ fontWeight: 400 }}>
                   {p.outstanding}
                 </div>
               </div>
               <div className="rounded-2xl border border-line px-4 py-3">
-                <div className="text-[11px] text-muted">Next renewal</div>
+                <div className="text-[11px] text-muted">
+                  {partial ? "Soonest we could see" : "Next renewal"}
+                </div>
                 <div className="mt-1 truncate text-[13px] font-medium text-ink">
-                  {p.nextRenewal ? `${p.nextRenewal.label} ${p.nextRenewal.expiry}` : "None on file"}
+                  {/* "None on file" here would read as "nothing is due" — on a
+                      short read we simply never got that far. */}
+                  {p.nextRenewal
+                    ? `${p.nextRenewal.label} ${p.nextRenewal.expiry}`
+                    : partial
+                      ? "Unknown"
+                      : "None on file"}
                 </div>
               </div>
             </div>
@@ -294,6 +324,17 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
               <DoodleIcon name="shield" size={17} className="text-accent" />
               What needs doing
             </h3>
+
+            {/* Said before the list, not after it: whatever follows is a partial
+                answer, and the reader has to know that before they read it. */}
+            {partial ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-[12px] text-amber-800">
+                REX cut us off part-way through this property, so anything below is
+                what we managed to read — not necessarily everything on file. Open
+                it in REX to be sure.
+              </div>
+            ) : null}
+
             {outstanding.length ? (
               <div className="mt-4 space-y-2.5">
                 {outstanding.map((i) => (
@@ -315,9 +356,21 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
                   className="text-left font-light leading-tight tracking-tight text-ink"
                   style={{ fontSize: "clamp(26px, 2.4vw, 34px)" }}
                 >
-                  Everything
-                  <br />
-                  in date
+                  {/* An empty outstanding list only means "in date" if we got
+                      the whole list — on a short read it means nothing. */}
+                  {partial ? (
+                    <>
+                      Couldn&apos;t
+                      <br />
+                      check this one
+                    </>
+                  ) : (
+                    <>
+                      Everything
+                      <br />
+                      in date
+                    </>
+                  )}
                 </p>
               </div>
             )}
@@ -336,10 +389,17 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
                     <DoodleIcon name="checklist" size={16} className="text-accent" />
                     In date
                   </h3>
+                  {/* The card sitting beside "Couldn't check this one" can't
+                      say "nothing recorded" — that's the reassuring half of a
+                      drawer whose other half has already said we don't know. */}
                   <p className="mt-2 text-[12px] text-muted">
                     {settled.length
-                      ? `${settled.length} item${settled.length === 1 ? "" : "s"} on file`
-                      : "Nothing recorded yet"}
+                      ? `${settled.length} item${settled.length === 1 ? "" : "s"} ${
+                          partial ? "read so far" : "on file"
+                        }`
+                      : partial
+                        ? "Couldn't check this one"
+                        : "Nothing recorded yet"}
                   </p>
                   <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
                     View all
@@ -378,6 +438,16 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
                   </h3>
                   {collapse}
                 </div>
+                {/* Same caveat as the left card, said before the list rather
+                    than after it. */}
+                {partial ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">
+                    REX didn&apos;t finish answering for this property
+                    {settled.length
+                      ? ", so this is what we could read — not the full list."
+                      : ", and nothing in-date came back before it stopped. We can't say what's on file here — check it in REX."}
+                  </div>
+                ) : null}
                 {settled.length ? (
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
                     {settled.map((i) => (
@@ -397,7 +467,7 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
                       </div>
                     ))}
                   </div>
-                ) : (
+                ) : partial ? null : (
                   <p className="mt-4 text-[13px] text-muted">
                     Nothing on file for this property yet.
                   </p>
@@ -499,8 +569,12 @@ export default function PortfolioPage() {
   const matches = (p: PortfolioProperty, key: string) => {
     if (key === "renewals") return p.outstanding > 0;
     if (key === "epc") return epcNeedsWork(p);
-    if (key === "norenewal") return !p.nextRenewal;
-    if (key === "clear") return p.items.length > 0 && p.outstanding === 0;
+    // "No renewals on file" and "All clear" each state a fact about the whole
+    // record, so each needs a complete answer — the tile already refuses to say
+    // "No renewals on file" for a property REX cut us off on.
+    if (key === "norenewal") return p.checked && !p.nextRenewal;
+    if (key === "clear") return p.checked && p.items.length > 0 && p.outstanding === 0;
+    if (key === "unchecked") return !p.checked;
     return true;
   };
 
@@ -524,9 +598,19 @@ export default function PortfolioPage() {
   }, [all, filter, search, sort]);
 
   const renewals30 = all.filter(renewalSoon).length;
-  const clearCount = all.filter((p) => p.items.length > 0 && p.outstanding === 0).length;
-  const withItems = all.filter((p) => p.items.length > 0).length;
-  const complianceRate = withItems ? Math.round((clearCount / withItems) * 100) : 100;
+
+  // Properties REX cut us off on, and everything computed over the ones it did
+  // answer for. The rate used to fall back to 100% when nothing had items, so a
+  // fetch where every chunk failed showed a green "100% compliance rate" over a
+  // book nobody had checked — null now, rendered as "—".
+  const unchecked = all.filter((p) => !p.checked);
+  const checkedProps = all.filter((p) => p.checked);
+  const clearCount = checkedProps.filter(
+    (p) => p.items.length > 0 && p.outstanding === 0
+  ).length;
+  const noRenewalCount = checkedProps.filter((p) => !p.nextRenewal).length;
+  const withItems = checkedProps.filter((p) => p.items.length > 0).length;
+  const complianceRate = withItems ? Math.round((clearCount / withItems) * 100) : null;
 
   return (
     // Same outline treatment as the rest of the portal.
@@ -547,6 +631,21 @@ export default function PortfolioPage() {
       ) : null}
 
       {error ? <div className="card p-6 text-center text-sm text-muted">{error}</div> : null}
+
+      {/* A partial answer that looks complete is the one failure this page can't
+          afford, so it leads with what's missing rather than burying it. */}
+      {unchecked.length ? (
+        <div className="card border-amber-200 bg-amber-50 p-4 text-[13px]">
+          <span className="font-semibold text-amber-800">
+            REX didn&apos;t finish answering for {unchecked.length}{" "}
+            {unchecked.length === 1 ? "property" : "properties"}.
+          </span>{" "}
+          <span className="text-ink">
+            They&apos;re marked &ldquo;couldn&apos;t check&rdquo; and left out of the
+            compliance rate — treat them as unknown, not as clear.
+          </span>
+        </div>
+      ) : null}
 
       {loading ? (
         <Loader label="Loading your portfolio…" />
@@ -590,6 +689,7 @@ export default function PortfolioPage() {
                 { key: "epc", label: "Expiring EPC" },
                 { key: "norenewal", label: "No renewals on file" },
                 { key: "clear", label: "All clear" },
+                { key: "unchecked", label: "Couldn't check" },
               ]}
               value={filter}
               onChange={setFilter}
@@ -613,9 +713,13 @@ export default function PortfolioPage() {
                 { icon: "doc", value: money(rentRoll * 12) ?? "—", label: "Annual rental income" },
                 {
                   icon: "shield",
-                  value: `${complianceRate}%`,
-                  label: "Compliance rate",
-                  tone: complianceRate >= 90 ? "green" : "red",
+                  value: complianceRate == null ? "—" : `${complianceRate}%`,
+                  label: unchecked.length
+                    ? `Compliance rate — ${unchecked.length} unchecked`
+                    : "Compliance rate",
+                  // No rate is not a bad rate: neutral ink, never red or green.
+                  tone:
+                    complianceRate == null ? "ink" : complianceRate >= 90 ? "green" : "red",
                 },
               ]}
             />
@@ -628,8 +732,18 @@ export default function PortfolioPage() {
                 { key: "all", label: "All properties", count: all.length },
                 { key: "renewals", label: "Renewals due", count: all.filter((p) => matches(p, "renewals")).length, dot: "amber" },
                 { key: "epc", label: "Expiring EPC", count: all.filter(epcNeedsWork).length, dot: "red" },
-                { key: "norenewal", label: "No renewals on file", count: all.filter((p) => !p.nextRenewal).length },
+                { key: "norenewal", label: "No renewals on file", count: noRenewalCount },
                 { key: "clear", label: "All clear", count: clearCount, dot: "green" },
+                ...(unchecked.length
+                  ? [
+                      {
+                        key: "unchecked",
+                        label: "Couldn't check",
+                        count: unchecked.length,
+                        dot: "amber" as const,
+                      },
+                    ]
+                  : []),
               ]}
               value={filter}
               onChange={setFilter}

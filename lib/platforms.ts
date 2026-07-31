@@ -78,6 +78,14 @@ export const PLATFORMS: Platform[] = [
     section: "platforms",
     accent: "#0f766e",
   },
+  {
+    id: "homesearch",
+    name: "Homesearch",
+    blurb: "Property data and prospecting — ownership, market intel and leads.",
+    url: "https://homesearch.co.uk",
+    section: "platforms",
+    accent: "#4338ca",
+  },
   // Meta deliberately isn't here — "My Ads" is already a top-level nav item, so
   // listing it again just duplicated it.
   {

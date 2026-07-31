@@ -19,6 +19,13 @@ import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilde
 const YEAR = "2026";
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_KEYS = MONTH_LABELS.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
+// The latest month the portal holds anything for — the same value as
+// SNAPSHOT_MONTH in lib/seed-data.ts and ANCHOR in components/PeriodPicker.tsx
+// and app/dashboard/page.tsx. The builder's floor comes from here, never the
+// wall clock: monthIdx throws the year away, so at 2027-01 the clock made every
+// month of 2026 draggable and a drag PUTs a forecast over a closed month that
+// already has an actual against it.
+const ANCHOR = "2026-07";
 const monthIdx = (m: string) => Number(m.slice(5, 7)) - 1;
 
 // Standard management fee assumption for the estimated-income figure. TLE bills
@@ -290,7 +297,11 @@ export default function ForecastPage() {
 
   /* ------------------------ interactive builder inputs ---------------------- */
 
-  const currentMonthIndex = monthIdx(thisMonth);
+  // ANCHOR, deliberately — NOT thisMonth. The builder reads this as
+  // editableFrom: the first draggable dot and the start of the forecast total.
+  // The forward plan starts where the data ends; a closed month keeps its
+  // actual and gets no handle.
+  const currentMonthIndex = monthIdx(ANCHOR);
   const actualsNetIncome = useMemo(
     () => MONTH_KEYS.map((k) => actuals[k] ?? null),
     [actuals]

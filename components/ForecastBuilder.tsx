@@ -94,6 +94,11 @@ export default function ForecastBuilder({
   }, []);
 
   async function commit(i: number, rawValue: number) {
+    // A month before editableFrom is closed and already carries an actual —
+    // writing a forecast over one destroys a partner's history. The chart only
+    // hands out handles from editableFrom, but this is the write path, so it
+    // checks for itself rather than trusting its caller.
+    if (i < editableFrom) return;
     const monthKey = monthKeys[i];
     let gciTarget: number;
     let portfolioTarget: number;

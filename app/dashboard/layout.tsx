@@ -10,7 +10,7 @@ import SearchOverlay from "@/components/SearchOverlay";
 import DoodleIcon from "@/components/DoodleIcon";
 import Loader from "@/components/Loader";
 import { refreshUser, signOut } from "@/lib/session";
-import { platformsIn } from "@/lib/platforms";
+import { PLATFORMS } from "@/lib/platforms";
 import type { UserProfile } from "@/lib/types";
 
 // Agent dashboard shell — a flat, Notion-style layout: one grey canvas, a grey
@@ -33,6 +33,21 @@ const NAV = [
 // Hairlines a shade darker than the grey canvas — the only thing that breaks
 // the rail up, exactly like the reference.
 const RAIL_LINE = "border-black/[0.16]";
+
+// Two columns leave about eleven characters per chip, so a name that would
+// otherwise ellipsise can give the rail a shorter label than the copy its
+// tools-page card uses. "Training platform" reads fine as a card title and
+// terribly as "Training pl…".
+const CHIP_LABEL: Record<string, string> = { training: "Training" };
+
+// TLE OS launcher. There's no "All tools →" chip any more — the grid is apps
+// only — which is why it reads the whole registry rather than the "platforms"
+// slice, and why the registry is the only list. Adding an app is one entry in
+// lib/platforms.ts and it shows up in both the rail and /dashboard/tools.
+const LAUNCHER = PLATFORMS.map((a) => ({ name: CHIP_LABEL[a.id] ?? a.name, url: a.url }));
+
+const CHIP_COLS = 2;
+const CHIP_ROWS = Math.ceil(LAUNCHER.length / CHIP_COLS);
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
@@ -187,6 +202,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const isActive = (href: string) =>
     href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
+  // TLE OS isn't in NAV, so its active state is read by hand — in three places
+  // (the rail toggle, the rail's link through to the page, the mobile item).
+  const toolsActive = isActive("/dashboard/tools");
   const { hello, prompt } = greeting(user.name);
   // Clicking the illustration flicks through the other times of day — a
 
@@ -318,7 +336,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className={`mx-4 mt-3 border-t ${RAIL_LINE}`} />
 
-        <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-3">
+        {/* The one shrinkable child of the rail: everything below is shrink-0
+            or floored at its content height, so a short viewport has to come
+            out of here. grow/basis-auto rather than flex-1 because a zero
+            basis makes this nav's scaled shrink factor zero — nothing would
+            take the deficit and the rail would simply overflow. An auto basis
+            lets it absorb the squeeze and scroll, which is what its
+            overflow-y-auto was always there for. */}
+        <nav className="mt-3 min-h-0 grow basis-auto space-y-0.5 overflow-y-auto px-3">
           <NavLinks />
         </nav>
 
@@ -326,25 +351,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             the brand chips up from behind the line (spring box); clicking
             again tumbles them back down behind it. ── */}
         {tleOpen || tleClosing ? (
-          <div className="overflow-hidden px-3">
-            <div className="flex flex-col gap-1.5 pb-2">
-              {[
-                { name: "All tools →", url: "/dashboard/tools", external: false },
-                ...platformsIn("platforms").map((p) => ({
-                  name: p.name,
-                  url: p.url,
-                  external: true,
-                })),
-              ].map((c, i, arr) => {
+          <div className="shrink-0 overflow-hidden px-3">
+            {/* Two columns, not one: at eight apps a single stack is taller
+                than the rail has left, and the box is overflow-hidden, so the
+                bottom chips would be silently clipped rather than scroll. */}
+            <div className="grid grid-cols-2 gap-1.5 pb-2">
+              {LAUNCHER.map((c, i) => {
                 // Alternating tilts + uneven delays = thrown in the air,
                 // knocking about, landing in place. --travel is each chip's
                 // distance past the bottom line, so every chip rises from
-                // behind it and falls fully back behind it — the top chip
-                // travels the furthest, no fading.
+                // behind it and falls fully back behind it — the top row
+                // travels the furthest, no fading. Travel is per ROW, not per
+                // chip: two chips side by side have to set off from the same
+                // height or the row arrives crooked. The delays stay per chip
+                // — that mismatch is the knocking-about.
                 const tilt = [-7, 6, -5, 8, -6, 5, -8, 4][i % 8];
                 const delay = [0, 70, 35, 105, 55, 120, 20, 90][i % 8];
-                const travel = (arr.length - i) * 38 + 24;
-                const cls = `${tleClosing ? "chip-fall" : "chip-pop"} flex items-center rounded-lg border ${RAIL_LINE} bg-white/70 px-3 py-1.5 text-[12.5px] font-medium`;
+                const travel = (CHIP_ROWS - Math.floor(i / CHIP_COLS)) * 38 + 24;
+                // truncate does double duty: it ellipsises the long names and,
+                // by clipping overflow, stops one of them widening its grid
+                // track past the 240px rail.
+                const cls = `${tleClosing ? "chip-fall" : "chip-pop"} block min-w-0 truncate rounded-lg border ${RAIL_LINE} bg-white/70 px-2.5 py-1.5 text-[12.5px] font-medium`;
                 const style = {
                   "--tilt": `${tilt}deg`,
                   "--delay": `${delay}ms`,
@@ -352,44 +379,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 } as React.CSSProperties;
                 if (!c.url) {
                   return (
-                    <span key={c.name} title="Link coming" className={`${cls} cursor-default text-muted/50`} style={style}>
+                    <span key={c.name} title={`${c.name} — link coming`} className={`${cls} cursor-default text-muted/50`} style={style}>
                       {c.name}
                     </span>
                   );
                 }
-                return c.external ? (
+                // Every app in the rail lives outside the portal, so there's
+                // no internal-route branch left — add one back if that stops
+                // being true rather than sending a portal page to a new tab.
+                return (
                   <a
                     key={c.name}
                     href={c.url}
                     target="_blank"
                     rel="noopener noreferrer"
+                    title={c.name}
                     className={`${cls} text-ink transition hover:bg-white`}
                     style={style}
                   >
                     {c.name}
                   </a>
-                ) : (
-                  <Link key={c.name} href={c.url} className={`${cls} text-ink transition hover:bg-white`} style={style}>
-                    {c.name}
-                  </Link>
                 );
               })}
             </div>
           </div>
         ) : null}
         <div className={`mx-4 border-t ${RAIL_LINE}`} />
-        <div className="px-3 py-2">
+        {/* Two controls, not one: the label toggles the chip box, and "All"
+            goes to /dashboard/tools. The box only ever holds apps now, so
+            without this link the page has no desktop entry point at all —
+            the mobile bar's TLE OS item is inside a lg:hidden header. */}
+        <div className="flex items-center px-3 py-2">
           <button
             type="button"
             onClick={toggleTle}
             aria-expanded={tleOpen}
-            className={`${navItem} w-full ${
-              tleOpen || pathname.startsWith("/dashboard/tools")
+            className={`${navItem} min-w-0 flex-1 ${
+              tleOpen || toolsActive
                 ? "font-semibold text-ink"
                 : "text-muted hover:bg-black/[0.04] hover:text-ink"
             }`}
           >
-            <NavIcon active={tleOpen || pathname.startsWith("/dashboard/tools")} name="grid" />
+            <NavIcon active={tleOpen || toolsActive} name="grid" />
             TLE OS
             <svg
               className={`ml-auto h-3 w-3 text-muted transition-transform duration-200 ${tleOpen ? "rotate-180" : ""}`}
@@ -404,6 +435,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <path d="M18 15l-6-6-6 6" />
             </svg>
           </button>
+          <Link
+            href="/dashboard/tools"
+            onClick={(e) => {
+              e.preventDefault();
+              navTo("/dashboard/tools");
+            }}
+            title="All tools"
+            className={`shrink-0 rounded-md px-2 py-2 text-[12px] transition-colors ${
+              toolsActive
+                ? "font-semibold text-ink"
+                : "text-muted hover:bg-black/[0.04] hover:text-ink"
+            }`}
+          >
+            All
+          </Link>
         </div>
 
         {/* Small print, reference-style */}
@@ -433,7 +479,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link
             href="/dashboard/tools"
             className={`${navItem} whitespace-nowrap ${
-              pathname.startsWith("/dashboard/tools")
+              toolsActive
                 ? "bg-black/[0.05] font-semibold text-ink"
                 : "text-muted hover:bg-black/[0.03] hover:text-ink"
             }`}

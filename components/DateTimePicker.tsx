@@ -172,6 +172,7 @@ export default function DateTimePicker({
                 <div className="mb-2 flex items-center justify-between">
                   <button
                     type="button"
+                    aria-label="Previous month"
                     onClick={() => setView(new Date(year, month - 1, 1))}
                     className="btn-press flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-page hover:text-ink"
                   >
@@ -180,6 +181,7 @@ export default function DateTimePicker({
                   <span className="text-[13px] font-semibold">{DP_MONTHS[month]} {year}</span>
                   <button
                     type="button"
+                    aria-label="Next month"
                     onClick={() => setView(new Date(year, month + 1, 1))}
                     className="btn-press flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-page hover:text-ink"
                   >

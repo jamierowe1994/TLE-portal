@@ -31,15 +31,20 @@ export async function GET(req: NextRequest) {
   }
 
   const month = req.nextUrl.searchParams.get("month") ?? currentMonth();
-  // Never blocks: returns what's cached and kicks off a refresh if it's stale.
-  const income = getAgencyIncome(month);
   // The finals block shows the month just gone, and the admin home carries
   // year-to-date. Both are the same walk over a different date range.
   const [y, m] = month.split("-").map(Number);
   const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
-  // All five read their durable cache first, so they settle together in a few
-  // milliseconds on a warm database rather than one after another.
-  const [prevIncome, ytd, arrears, moveIns, portfolio] = await Promise.all([
+  // None of these block on a walk: each returns what's cached and kicks off a
+  // refresh if it's stale. All six read their durable cache first, so they
+  // settle together in a few milliseconds on a warm database rather than one
+  // after another.
+  //
+  // `income` belongs IN here. Left outside and unawaited it serialised as {},
+  // which the Income tab reads as a live answer — green banner, then a throw on
+  // the first field it touches.
+  const [income, prevIncome, ytd, arrears, moveIns, portfolio] = await Promise.all([
+    getAgencyIncome(month),
     getAgencyIncome(prev),
     getYtdIncome(month),
     getArrears(),

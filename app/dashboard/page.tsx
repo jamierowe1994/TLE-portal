@@ -14,7 +14,7 @@ import DoodleIcon from "@/components/DoodleIcon";
 import Loader from "@/components/Loader";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
-import { formatDate, formatGBP, formatNum, monthLabel } from "@/lib/format";
+import { formatDate, formatDateShort, formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
   AppraisalsDrillRow,
   ConversionStats,
@@ -36,22 +36,77 @@ import type {
 // My Dashboard — the signed-in agent's year at a glance. Decluttered around
 // what agents actually asked for: earnings YTD (hero), the basics, a live
 // forecast graph they can drag, conversion rates, and detail tucked away.
+//
+// THE PERIOD RULE, which everything below follows: a figure never appears under
+// a heading it isn't an answer to. The picker resolves to a set of months and
+// the page reads in two zones —
+//   period zone      the flow figures for those months (earnings, appraisals,
+//                    move-ins, listings instructed) and every heading that
+//                    carries the period label;
+//   as-at-today zone the stocks that only exist right now (portfolio mix,
+//                    what's on the market, deals in progression), each stamped
+//                    with the date it was read and NEVER the period label.
+// Where a figure can't be computed for the selected period, the API says why
+// and the tile prints the reason instead of a number. Three states have to stay
+// telling apart at a glance: still gathering (FindingData, animated), a real
+// zero, and not-computable-for-this-period (muted, with a reason).
 
 type Rowify<T> = T & Record<string, unknown>;
 
+/** What a figure is an answer to — mirrors FigureMeta in /api/my/stats. */
+interface FigureMeta {
+  basis: "period" | "as-at-today";
+  label: string;
+  /** Short reason, shown where the number would be. */
+  unavailable?: string;
+  /** The rest of it, for the panel that opens underneath. */
+  detail?: string;
+}
+
 interface StatsResponse {
   month: string;
+  /** What the response actually covers, after the API drops future months. */
+  period: {
+    months: string[];
+    requested: string[];
+    future: string[];
+    liveMonth: string;
+    isLiveMonth: boolean;
+    label: string;
+    maxMonths: number;
+  };
   agentKey: string | null;
   funnel: FunnelStats;
+  funnelBasis: Record<string, FigureMeta | undefined>;
+  /** Per-month values across period.months — the flow figures' sparklines. */
+  funnelSeries: { marketAppraisals: (number | null)[]; moveIns: (number | null)[] };
   /** Rows behind the funnel counts — a field is null until it has a source. */
   funnelRows?: FunnelRows;
   conversions: ConversionStats;
+  conversionBasis: Record<string, FigureMeta | undefined>;
   portfolio: { managed: StatValue; rentRoll: StatValue };
   portfolioDetail: PortfolioRow | null;
+  /** Live stocks, read now — the only things the mix box is allowed to use. */
+  asAtToday: { asOf: string; onMarket: StatValue | null; pipeline: StatValue | null };
   moveIns: MoveInRow[];
   pipeline: PipelineRow[];
   compliance: ComplianceAgentRow | null;
   netIncomeYtd: PartnerNetIncomeRow | null;
+}
+
+interface EarningsResponse {
+  connected: boolean;
+  byMonth?: Array<{ month: string; earnings: { earned: number; matched: boolean } | null }>;
+  period?: {
+    months: string[];
+    earned: number | null;
+    matched: boolean;
+    complete: boolean;
+    missing: string[];
+    byCategory: Array<{ category: string; amount: number }>;
+    unavailable?: string;
+  };
+  refreshing?: boolean;
 }
 
 // Standard management fee assumption for the estimated-income figure. TLE bills
@@ -68,20 +123,100 @@ interface ForecastResponse {
 /* --------------------------------- helpers -------------------------------- */
 
 const YEAR = "2026";
-const ANCHOR = "2026-07"; // current month for the funnel snapshot
+// The latest month the portal has anything for, and the month every current-
+// state figure answers for. FOUR copies of this value must agree:
+// components/PeriodPicker.tsx and app/dashboard/forecast/page.tsx (their own
+// ANCHORs), SNAPSHOT_MONTH in lib/seed-data.ts, and this. /api/my/stats and
+// /api/my/earnings now derive their live month from SNAPSHOT_MONTH rather than
+// the clock — if this one drifts from that one, the page asks for a month the
+// API calls the future and every tile empties out.
+// One exported constant is the fix; it needs a client-safe home (lib/roster.ts,
+// since lib/seed-data.ts is server-only) and that file is another workstream's.
+const ANCHOR = "2026-07";
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_KEYS = MONTH_LABELS.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
 const SNAP = "2026-07-11";
 const monthIdx = (m: string) => Number(m.slice(5, 7)) - 1;
 
+/**
+ * "June 2026" / "May–Jul 2026" — how a heading names the window it covers.
+ * A gap in the middle is listed out rather than spanned: "May, Jul" is not
+ * "May–Jul", and the difference is a month of somebody's figures.
+ */
+function phraseOf(months: string[]): string {
+  if (months.length === 0) return "—";
+  if (months.length === 1) return monthLabel(months[0]);
+  const idx = months.map(monthIdx);
+  const last = months[months.length - 1];
+  const contiguous = idx.every((n, i) => i === 0 || n === idx[i - 1] + 1);
+  if (!contiguous) return `${idx.map((n) => MONTH_LABELS[n]).join(", ")} ${last.slice(0, 4)}`;
+  return `${MONTH_LABELS[idx[0]]}–${MONTH_LABELS[monthIdx(last)]} ${last.slice(0, 4)}`;
+}
+
 function snapStat(value: number | null, note: string, display?: string): StatValue {
   return { value, display, source: "snapshot", asOf: SNAP, note };
+}
+
+/**
+ * How a figure should read. The three states are deliberately distinct:
+ * "value" is the answer (including a real zero), "pending" means a source is
+ * still gathering and we ask again, "unavailable" means it cannot be computed
+ * for this period at all and the reason is shown in place of the number.
+ */
+type FigureState = { kind: "value" } | { kind: "pending" } | { kind: "unavailable"; reason: string };
+
+function figureState(
+  stat: StatValue | undefined,
+  meta?: FigureMeta,
+  /** True once the bounded retry below is spent — see GAVE_UP. */
+  gaveUp = false
+): FigureState {
+  if (meta?.unavailable) return { kind: "unavailable", reason: meta.unavailable };
+  if (!stat || (stat.value == null && stat.display == null))
+    return gaveUp ? { kind: "unavailable", reason: GAVE_UP } : { kind: "pending" };
+  return { kind: "value" };
 }
 
 // The four "this month" figures an agent can open out to see the records
 // behind them — REX for appraisals and listings, Propoly for the pipeline,
 // PayProp for move-ins.
 type DrillKey = "marketAppraisals" | "listings" | "moveIns" | "pipeline";
+
+// PayProp and REX gather in the background, so a figure with no value and no
+// reason is worth asking for again — bounded, because a partner whose REX
+// profile is unlinked would otherwise poll for their whole session.
+const STATS_RETRY_MS = 8000;
+const STATS_RETRIES = 6;
+/**
+ * What a still-empty figure says once those retries are spent. "Finding data…"
+ * animating away is a claim that something is still working on the question;
+ * after the last retry nothing is, and a promise the page can't keep is worse
+ * than an admission. Stated as confidently as it is true: we don't know, and
+ * we've stopped asking.
+ */
+const GAVE_UP = "Couldn't reach this source. Reload to try again.";
+
+/** How the "can't be computed" reason reads in place of a number. */
+function ReasonLine({ reason }: { reason: string }) {
+  return <p className="mt-1 max-w-[24ch] text-[11px] leading-snug text-muted">{reason}</p>;
+}
+
+/**
+ * The drill-down for a figure that has no answer for this period. Deliberately
+ * the same dashed, empty-handed frame as DrilldownPending — but where that says
+ * "the records aren't wired up yet", this says why the question can't be
+ * answered at all, in full.
+ */
+function DrilldownUnavailable({ meta }: { meta: FigureMeta }) {
+  return (
+    <div className="rounded-xl border border-dashed border-line px-4 py-5">
+      <p className="text-[13px] text-ink">{meta.unavailable}</p>
+      {meta.detail && meta.detail !== meta.unavailable ? (
+        <p className="mt-1.5 text-[12px] text-muted">{meta.detail}</p>
+      ) : null}
+    </div>
+  );
+}
 
 // Entrance choreography — each piece lands on its own beat so the dashboard
 // builds itself as you arrive. Delays are relative to this content mounting
@@ -93,65 +228,154 @@ const enterAt = (ms: number) =>
 
 export default function MyDashboardPage() {
   const [period, setPeriod] = useState<ResolvedPeriod>(() => resolvePreset("this-month"));
-  // Live commission from PayProp for the current month — the snapshot's
+  // Live commission from PayProp for the selected months — the snapshot's
   // stand-in until it lands, since the walk runs in the background.
-  const [liveEarnings, setLiveEarnings] = useState<{
-    earned: number;
-    matched: boolean;
-    byCategory: Array<{ category: string; amount: number }>;
-  } | null>(null);
+  const [liveEarnings, setLiveEarnings] = useState<EarningsResponse | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [actuals, setActuals] = useState<Record<string, number | null>>({});
   const [forecastHistory, setForecastHistory] = useState<Record<string, SavedForecast>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  // Which of "this month"'s figures is opened out to show its records. One at a
+  // The bounded retry has run out with figures still empty. A tile that has no
+  // number, no reason and nothing left fetching for it must stop saying it's
+  // still looking — see GAVE_UP.
+  const [gaveUp, setGaveUp] = useState(false);
+  // The same admission for the earnings hero, which polls on its own timer. It
+  // is terminal on the FIRST response for the two answers that will never
+  // change — PayProp unconfigured, and a partner PayProp holds no beneficiary
+  // for — because neither is a question anything is still working on.
+  const [earningsGaveUp, setEarningsGaveUp] = useState(false);
+  // Which of the period's figures is opened out to show its records. One at a
   // time — the panels share the space under the row. Declared up here with the
   // other hooks, never below a conditional return.
   const [drill, setDrill] = useState<DrillKey | null>(null);
 
+  // The selection, as the API wants it. Future months go over as asked and the
+  // API drops them, so the response can say which ones haven't happened rather
+  // than the page quietly counting them as nothing.
+  const monthsParam = period.months.join(",");
+
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let tries = 0;
     setLoading(true);
     setError(null);
+    setGaveUp(false);
 
-    // Funnel/basics are the current-month snapshot; the forecast GET returns the
-    // agent's whole forecast history + monthly actuals (both month-agnostic).
-    const statsReq = fetch(`/api/my/stats?month=${ANCHOR}`, { cache: "no-store" }).then(
-      async (res) => {
-        if (!res.ok) throw new Error("Couldn't load your stats.");
-        return (await res.json()) as StatsResponse;
-      }
-    );
-
-    const forecastReq = fetch(`/api/my/forecast?month=${ANCHOR}`, { cache: "no-store" })
-      .then(async (res) => (res.ok ? ((await res.json()) as ForecastResponse) : null))
-      .catch(() => null);
-
-    Promise.all([statsReq, forecastReq])
-      .then(([s, f]) => {
-        if (cancelled) return;
-        setStats(s);
-        setActuals(f?.actuals ?? {});
-        const hist: Record<string, SavedForecast> = {};
-        for (const row of f?.history ?? []) {
-          hist[row.month] = { gciTarget: row.gciTarget ?? null, portfolioTarget: row.portfolioTarget ?? null };
+    const ask = (first: boolean) => {
+      // The funnel and basics are period figures; the forecast GET returns the
+      // agent's whole forecast history + monthly actuals (both month-agnostic),
+      // so it's only worth fetching on the first pass of a period.
+      const statsReq = fetch(`/api/my/stats?months=${monthsParam}`, { cache: "no-store" }).then(
+        async (res) => {
+          if (!res.ok) throw new Error("Couldn't load your stats.");
+          return (await res.json()) as StatsResponse;
         }
-        setForecastHistory(hist);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : "Something went wrong.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      );
+
+      const forecastReq = first
+        ? fetch(`/api/my/forecast?month=${ANCHOR}`, { cache: "no-store" })
+            .then(async (res) => (res.ok ? ((await res.json()) as ForecastResponse) : null))
+            .catch(() => null)
+        : Promise.resolve(null);
+
+      Promise.all([statsReq, forecastReq])
+        .then(([s, f]) => {
+          if (cancelled) return;
+          setStats(s);
+          if (f) {
+            setActuals(f.actuals ?? {});
+            const hist: Record<string, SavedForecast> = {};
+            for (const row of f.history ?? []) {
+              hist[row.month] = {
+                gciTarget: row.gciTarget ?? null,
+                portfolioTarget: row.portfolioTarget ?? null,
+              };
+            }
+            setForecastHistory(hist);
+          }
+          // Anything still gathering gets one more ask, a few times over — a
+          // partner who loads while PayProp is cold used to keep the snapshot
+          // figures for the rest of their session.
+          const stillGathering =
+            (["marketAppraisals", "listings", "moveIns", "pipeline"] as const).some(
+              (f2) => figureState(s.funnel[f2], s.funnelBasis?.[f2]).kind === "pending"
+            ) ||
+            // The portfolio mix has its own empty figures (rent roll, est.
+            // fees), and both come off these two. They were outside this test,
+            // so nothing retried them AND gaveUp was never reached for an
+            // unlinked partner — whose funnel comes back unavailable, not
+            // pending. Two spinners animated for the rest of the session.
+            (["managed", "rentRoll"] as const).some(
+              (p) => figureState(s.portfolio?.[p]).kind === "pending"
+            );
+          if (stillGathering && tries++ < STATS_RETRIES) {
+            timer = setTimeout(() => ask(false), STATS_RETRY_MS);
+          } else if (stillGathering) {
+            // Out of retries and still empty. Nothing is coming, so whatever is
+            // left pending says it couldn't be reached rather than going on
+            // animating at a question no longer being asked.
+            setGaveUp(true);
+          }
+        })
+        .catch((e) => {
+          if (cancelled || !first) return; // a failed retry keeps what we have
+          setError(e instanceof Error ? e.message : "Something went wrong.");
+        })
+        .finally(() => {
+          if (!cancelled && first) setLoading(false);
+        });
+    };
+
+    ask(true);
 
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
-  }, [reloadKey]);
+  }, [monthsParam, reloadKey]);
+
+  // PayProp gathers in the background, so ask again shortly after the first
+  // miss rather than leaving the card on the snapshot for the whole session.
+  // Re-runs on every period change: getAgentEarnings is month-parameterised, so
+  // past months are a real answer rather than this month's figure relabelled.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let tries = 0;
+    setLiveEarnings(null);
+    setEarningsGaveUp(false);
+    const ask = () => {
+      fetch(`/api/my/earnings?months=${monthsParam}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: EarningsResponse) => {
+          if (cancelled) return;
+          setLiveEarnings(d);
+          // Only "a month hasn't come back yet" is worth waiting on. A partner
+          // PayProp holds no beneficiary for has ANSWERED — unmatched, but
+          // answered — and polling that for three minutes helps nobody.
+          const worthAsking = (d.period?.missing?.length ?? 0) > 0 && !d.period?.unavailable;
+          if (worthAsking && tries++ < 40) {
+            timer = setTimeout(ask, 5000);
+          } else {
+            // Nothing further is coming for this figure — either it answered,
+            // or it answered that it can't. Whichever, the hero stops claiming
+            // a walk is still running.
+            setEarningsGaveUp(true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setEarningsGaveUp(true);
+        });
+    };
+    ask();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [monthsParam]);
 
   /* ------------------------------ derived data ------------------------------ */
 
@@ -162,39 +386,69 @@ export default function MyDashboardPage() {
   const rentRoll = stats?.portfolio.rentRoll.value ?? 0;
   const avgFeePerProperty = managed > 0 ? (rentRoll * MGMT_FEE_RATE) / managed : 0;
 
-  // PayProp gathers in the background, so ask again shortly after the first
-  // miss rather than leaving the card on the snapshot for the whole session.
-  useEffect(() => {
-    let cancelled = false;
-    let tries = 0;
-    const ask = () => {
-      fetch(`/api/my/earnings?month=${ANCHOR}`, { cache: "no-store" })
-        .then((r) => r.json())
-        .then((d: { earnings?: { earned: number; matched: boolean; byCategory: Array<{ category: string; amount: number }> } | null; refreshing?: boolean }) => {
-          if (cancelled) return;
-          if (d.earnings) setLiveEarnings(d.earnings);
-          else if (tries++ < 40) setTimeout(ask, 5000);
-        })
-        .catch(() => {});
-    };
-    ask();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // What the page is actually reporting on. The API is the authority once it
+  // has answered (it drops months that haven't happened); before that we clamp
+  // the same way so the heading never claims a month it can't have.
+  const periodMonths = stats?.period.months ?? period.months.filter((m) => m <= ANCHOR);
+  const futureMonths = stats?.period.future ?? period.months.filter((m) => m > ANCHOR);
+  // Everything asked for is still ahead of us. Not "no data" — hasn't happened.
+  const nothingYet = periodMonths.length === 0;
+  const phrase = nothingYet ? phraseOf(period.months) : phraseOf(periodMonths);
+  // "Last 3 months · May–Jul 2026" — the preset's name plus the months it came
+  // out as, so nobody has to work out which three.
+  const periodHeading = period.label === phrase ? phrase : `${period.label} · ${phrase}`;
+  const isSnapshotPeriod = periodMonths.length === 1 && periodMonths[0] === ANCHOR;
+  const asAtLabel = formatDateShort(stats?.asAtToday.asOf) || "today";
 
-  // Earnings aggregated over the selected period's months.
-  const periodIdx = period.months.map(monthIdx);
-  const periodValues = periodIdx.map((i) => actualsArr[i]);
-  const periodActuals = periodValues.filter((v): v is number => v != null);
-  const snapshotEarnings = periodActuals.length ? periodActuals.reduce((a, b) => a + b, 0) : null;
-  // This month comes straight from PayProp once it's there; other periods
-  // still read the snapshot's monthly actuals.
-  const useLive = period.key === "this-month" && liveEarnings?.matched === true;
-  const periodEarnings = useLive ? liveEarnings!.earned : snapshotEarnings;
-  const avgPerMonth = periodActuals.length ? Math.round(periodEarnings! / periodActuals.length) : null;
-  const bestVal = periodActuals.length ? Math.max(...periodActuals) : null;
-  const bestLabel = bestVal != null ? MONTH_LABELS[actualsArr.findIndex((v) => v === bestVal)] : null;
+  /* -------------------------------- earnings -------------------------------- */
+  // Two sources can answer this: PayProp (what was actually paid to them, per
+  // month, for any month) and the snapshot's monthly actuals. Never both in one
+  // figure — the total, the sparkline, the average and the best month all come
+  // off ONE array, so a live total can't sit over a snapshot trend.
+  const liveByMonth = new Map(
+    (liveEarnings?.byMonth ?? []).map((r) => [
+      r.month,
+      r.earnings?.matched ? r.earnings.earned : null,
+    ])
+  );
+  const useLive = liveEarnings?.period?.complete === true;
+  const earningsSeries = periodMonths.map((m) =>
+    useLive ? (liveByMonth.get(m) ?? null) : (actuals[m] ?? null)
+  );
+  const coveredIdx = earningsSeries
+    .map((v, i) => (v == null ? -1 : i))
+    .filter((i) => i >= 0);
+  const periodEarnings = coveredIdx.length
+    ? coveredIdx.reduce((t, i) => t + (earningsSeries[i] as number), 0)
+    : null;
+  // Divides the SAME array it summed — it used to divide a live total by a
+  // count of snapshot months, which only stayed harmless because July has no
+  // snapshot actual.
+  const avgPerMonth = coveredIdx.length
+    ? Math.round((periodEarnings as number) / coveredIdx.length)
+    : null;
+  // Searched WITHIN the selected period. Searching the whole year could label
+  // the best month of May–Jul as February, if February happened to match.
+  const bestIdx = coveredIdx.reduce(
+    (best, i) =>
+      best < 0 || (earningsSeries[i] as number) > (earningsSeries[best] as number) ? i : best,
+    -1
+  );
+  const bestVal = bestIdx >= 0 ? (earningsSeries[bestIdx] as number) : null;
+  const bestLabel = bestIdx >= 0 ? MONTH_LABELS[monthIdx(periodMonths[bestIdx])] : null;
+  const missingMonths = periodMonths.filter((_, i) => earningsSeries[i] == null);
+  const liveMonthPending = missingMonths.length === 1 && missingMonths[0] === ANCHOR;
+  // Why there's no number, for when the poll has stopped and there still isn't
+  // one. "Unmatched" is only said when PayProp answered for every month it was
+  // asked — otherwise the months simply didn't come back, which is a different
+  // thing and mustn't be reported as a broken PayProp record.
+  const earningsReason =
+    liveEarnings?.connected === false
+      ? "PayProp isn't connected here, and there's no snapshot figure for this period."
+      : (liveEarnings?.period?.unavailable ??
+        (liveEarnings?.period && liveEarnings.period.missing.length === 0 && !liveEarnings.period.matched
+          ? "PayProp has no beneficiary matching your details, so your commission can't be looked up — ask head office to check your PayProp record."
+          : GAVE_UP));
 
   /* --------------------------------- tables --------------------------------- */
 
@@ -206,13 +460,18 @@ export default function MyDashboardPage() {
   const listingDrillRows = stats?.funnelRows?.listings ?? null;
   const pipelineDrillRows = stats?.funnelRows?.pipeline ?? null;
   const appraisalDrillRows = stats?.funnelRows?.marketAppraisals ?? null;
-  const moveInsStat: StatValue = moveInDrillRows
-    ? stats!.funnel.moveIns
-    : snapStat(
-        stats?.moveIns.length ?? 0,
-        "From your move-in list",
-        formatNum(stats?.moveIns.length ?? 0)
-      );
+  // PayProp's rows when we have them; otherwise the seed list, but ONLY for the
+  // month the seed actually describes. Off that month there is no fallback —
+  // July's tenancies under June's heading is the exact mistake this page is
+  // being fixed for.
+  const moveInsStat: StatValue =
+    moveInDrillRows || !isSnapshotPeriod
+      ? (stats?.funnel.moveIns ?? { value: null, source: "live-payprop" })
+      : snapStat(
+          stats?.moveIns.length ?? 0,
+          "From your move-in list",
+          formatNum(stats?.moveIns.length ?? 0)
+        );
 
   const moveInDrillColumns: DataTableColumn<Rowify<MoveInsDrillRow>>[] = [
     { key: "property", label: "Property" },
@@ -285,20 +544,39 @@ export default function MyDashboardPage() {
   /* --------------------------------- render --------------------------------- */
 
   const c = stats?.conversions;
+  const cb = stats?.conversionBasis;
+  const fb = stats?.funnelBasis;
+  // Your earnings ÷ your move-ins, both over the selected months. The two live
+  // in different routes, so this is the one place they meet — and it only shows
+  // when PayProp answered for EVERY month, so the top and bottom cover the same
+  // window. Kept distinct from GCI per move-in, which is a different figure
+  // (the business's commission, from the July KPI capture) under its own name.
+  const earningsPerMoveIn =
+    useLive && periodEarnings != null && (stats?.funnel.moveIns.value ?? 0) > 0
+      ? periodEarnings / (stats!.funnel.moveIns.value as number)
+      : null;
 
   return (
     // outline-cards: the dashboard experiment — boxes as outlines on the grey
     // rather than filled white (globals.css).
     <div className="outline-cards space-y-5">
-      {/* Period selector — drives the earnings view below.
+      {/* Period selector — drives everything in the period zone below.
           Slides in from behind the nav rail. */}
       <div
         className="enter enter-left flex flex-wrap items-center gap-3"
         style={enterAt(800)}
       >
-        <h1 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
-          Your month · {monthLabel(ANCHOR)}
-        </h1>
+        <div>
+          <h1 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
+            Your {periodMonths.length === 1 ? "month" : "period"} · {phrase}
+          </h1>
+          {futureMonths.length ? (
+            <p className="mt-1 text-[12px] text-muted">
+              {phraseOf(futureMonths)} hasn&apos;t happened yet
+              {nothingYet ? "." : ` — showing ${phrase}.`}
+            </p>
+          ) : null}
+        </div>
         <div className="ml-auto">
           <PeriodPicker value={period} onChange={setPeriod} />
         </div>
@@ -333,19 +611,20 @@ export default function MyDashboardPage() {
 
       {!loading && stats ? (
         <>
-          {/* ---- HERO: earnings + portfolio mix share ONE outlined box, split
-               by a centre line that stops short of the edges ---- */}
+          {/* ---- HERO: earnings (period zone) + portfolio mix (as at today)
+               share ONE outlined box, split by a centre line that stops short
+               of the edges ---- */}
           <section className="enter enter-up card grid lg:grid-cols-[1fr_1.3fr]" style={enterAt(900)}>
             <div className="flex h-full flex-col p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
                   <DoodleIcon name="wallet" size={16} className="text-accent" />
-                  Earnings · {period.label}
+                  Earnings · {phrase}
                 </div>
                 {useLive ? (
                   <SourceBadge
                     source="live-payprop"
-                    note="Your commission this month, live from PayProp — management and set-up fees paid to you."
+                    note={`Your commission for ${phrase}, live from PayProp — management and set-up fees paid to you.`}
                   />
                 ) : (
                   <SourceBadge source="snapshot" asOf={SNAP} note="Partner net income (exc VAT) from the TLE Business Dashboard snapshot." />
@@ -361,40 +640,65 @@ export default function MyDashboardPage() {
                 />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
-                    <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
+                    <div
+                      className={`stat-value text-[17px] ${nothingYet ? "text-muted" : ""}`}
+                      style={{ fontWeight: 300 }}
+                    >
                       {periodEarnings != null ? (
                         formatGBP(periodEarnings)
+                      ) : nothingYet || earningsGaveUp ? (
+                        "—"
                       ) : (
                         <FindingData className="text-[13px]" />
                       )}
                     </div>
                     <div className="pb-1">
-                      <Sparkline values={periodValues} />
+                      <Sparkline values={earningsSeries} />
                     </div>
                   </div>
-                  {periodEarnings == null && period.key === "this-month" ? (
+                  {nothingYet ? (
+                    <p className="mt-1.5 text-[12px] text-muted">
+                      {phrase} hasn&apos;t happened yet.
+                    </p>
+                  ) : periodEarnings == null && liveMonthPending ? (
                     <p className="mt-1.5 text-[12px] text-muted">
                       {monthLabel(ANCHOR).split(" ")[0]} is still in progress — your earned figure lands at
                       month-end.
+                    </p>
+                  ) : periodEarnings == null && earningsGaveUp ? (
+                    // The dash above says there's no number; this says why, so
+                    // it can't be read as a zero.
+                    <ReasonLine reason={earningsReason} />
+                  ) : periodEarnings != null && missingMonths.length ? (
+                    // Say what the total is a total OF. A three-month heading
+                    // over a two-month sum is the failure this page guards
+                    // against, so the shortfall is named rather than hidden.
+                    <p className="mt-1.5 text-[12px] text-muted">
+                      Covers {phraseOf(periodMonths.filter((m) => !missingMonths.includes(m)))} —
+                      nothing recorded yet for {phraseOf(missingMonths)}.
                     </p>
                   ) : null}
                 </div>
               </div>
               <div className="mt-auto flex flex-wrap gap-2 pt-3 text-[12px]">
-                {avgPerMonth != null ? (
+                {periodMonths.length > 1 && avgPerMonth != null ? (
                   <span className="rounded-full bg-page px-2.5 py-1 text-muted">
                     Avg <span className="font-semibold text-ink tnum">{formatGBP(avgPerMonth)}</span>/mo
                   </span>
                 ) : null}
-                {bestVal != null ? (
+                {periodMonths.length > 1 && bestVal != null ? (
                   <span className="rounded-full bg-page px-2.5 py-1 text-muted">
                     Best <span className="font-semibold text-ink tnum">{formatGBP(bestVal)}</span>
                     {bestLabel ? ` · ${bestLabel}` : ""}
                   </span>
                 ) : null}
-                <span className="rounded-full bg-page px-2.5 py-1 text-muted">
-                  {periodActuals.length} month{periodActuals.length === 1 ? "" : "s"} of data
-                </span>
+                {nothingYet ? null : (
+                  <span className="rounded-full bg-page px-2.5 py-1 text-muted">
+                    {coveredIdx.length}
+                    {coveredIdx.length === periodMonths.length ? "" : ` of ${periodMonths.length}`} month
+                    {periodMonths.length === 1 && coveredIdx.length === 1 ? "" : "s"} of data
+                  </span>
+                )}
               </div>
             </div>
 
@@ -405,8 +709,11 @@ export default function MyDashboardPage() {
               const detail = stats.portfolioDetail;
               const fullyManaged = detail?.managed ?? stats.portfolio.managed.value ?? 0;
               const letOnly = detail?.letOnly ?? 0;
-              const onMarket = stats.funnel.listings?.value ?? 0;
-              const letAgreed = stats.funnel.pipeline?.value ?? 0;
+              // Straight from the as-at-today block, never from the funnel
+              // tiles below: those follow the picker, and the mix is a picture
+              // of right now whatever the picker says.
+              const onMarket = stats.asAtToday.onMarket?.value ?? 0;
+              const letAgreed = stats.asAtToday.pipeline?.value ?? 0;
               const totalProps = (detail?.total ?? fullyManaged + letOnly) + onMarket + letAgreed;
               const rentRoll = stats.portfolio.rentRoll.value;
               const estFees = rentRoll != null ? rentRoll * MGMT_FEE_RATE : null;
@@ -423,9 +730,15 @@ export default function MyDashboardPage() {
                   {/* the split — deliberately stops short of top and bottom */}
                   <div className="absolute bottom-6 left-0 top-6 hidden w-px bg-black/[0.08] lg:block" />
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                      <DoodleIcon name="pie" size={16} className="text-accent" />
-                      Your portfolio mix
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                        <DoodleIcon name="pie" size={16} className="text-accent" />
+                        Your portfolio mix
+                      </div>
+                      {/* Never takes the period label: REX and PayProp both
+                          export current state, so "your portfolio as it stood
+                          in April" isn't something either can answer. */}
+                      <p className="mt-1 text-[11px] text-muted">As at {asAtLabel}</p>
                     </div>
                     <SourceBadge
                       source={stats.portfolio.managed.source}
@@ -473,13 +786,20 @@ export default function MyDashboardPage() {
                   <div className="mt-auto grid grid-cols-2 gap-x-6 gap-y-3 border-t border-line pt-4">
                     <div>
                       <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
-                        {stats.portfolio.rentRoll.display ?? <FindingData className="text-[13px]" />}
+                        {stats.portfolio.rentRoll.display ??
+                          (gaveUp ? "—" : <FindingData className="text-[13px]" />)}
                       </div>
                       <div className="mt-0.5 text-[11px] text-muted">Rent roll / month</div>
                     </div>
                     <div>
                       <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
-                        {estFees != null ? formatGBP(estFees) : <FindingData className="text-[13px]" />}
+                        {estFees != null ? (
+                          formatGBP(estFees)
+                        ) : gaveUp ? (
+                          "—"
+                        ) : (
+                          <FindingData className="text-[13px]" />
+                        )}
                       </div>
                       <div
                         className="mt-0.5 text-[11px] text-muted"
@@ -490,7 +810,12 @@ export default function MyDashboardPage() {
                     </div>
                     <div>
                       <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
-                        {detail?.avgRent != null ? formatGBP(detail.avgRent) : <FindingData className="text-[13px]" />}
+                        {/* Terminal on the first response, like RLP cover
+                            below: avgRent only ever comes off portfolioDetail,
+                            a synchronous seed lookup that either arrived with
+                            these stats or is never coming. Nothing is gathering
+                            it, so it never animates. */}
+                        {detail?.avgRent != null ? formatGBP(detail.avgRent) : "—"}
                       </div>
                       <div className="mt-0.5 text-[11px] text-muted">Avg rent</div>
                     </div>
@@ -513,7 +838,7 @@ export default function MyDashboardPage() {
             <div className="card card-lift p-5">
               <h2 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
                 <DoodleIcon name="calendar" size={16} className="text-accent" />
-                This month · {monthLabel(ANCHOR)}
+                {periodHeading}
               </h2>
               <div className="relative mt-4 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -525,22 +850,50 @@ export default function MyDashboardPage() {
                 />
                 {(
                   [
-                    ["marketAppraisals", "Market appraisals", stats.funnel.marketAppraisals],
-                    ["listings", "Listings", stats.funnel.listings],
+                    [
+                      "marketAppraisals",
+                      "Market appraisals",
+                      stats.funnel.marketAppraisals,
+                      stats.funnelSeries?.marketAppraisals ?? [],
+                    ],
+                    ["listings", "Listings", stats.funnel.listings, []],
                     // Prefer the live PayProp count when we also hold its rows,
                     // so the tile and the list it opens never disagree.
-                    ["moveIns", "Move-ins", moveInsStat],
-                    // Pipeline: prefer the live REX count (let-agreed) over the snapshot rows.
+                    ["moveIns", "Move-ins", moveInsStat, stats.funnelSeries?.moveIns ?? []],
+                    // Pipeline is a live view. The seed row count is only a
+                    // stand-in for the month the seed describes — for any other
+                    // period the API says it can't be answered, and it isn't.
                     [
                       "pipeline",
                       "Pipeline",
                       stats.funnel.pipeline?.value != null
                         ? stats.funnel.pipeline
-                        : snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length)),
+                        : isSnapshotPeriod
+                          ? snapStat(
+                              stats.pipeline.length,
+                              "Forward pipeline properties",
+                              formatNum(stats.pipeline.length)
+                            )
+                          : stats.funnel.pipeline,
+                      [],
                     ],
                   ] as const
-                ).map(([key, label, stat]) => {
+                ).map(([key, label, stat, series]) => {
                   const open = drill === key;
+                  const meta = fb?.[key];
+                  const state = figureState(stat, meta, gaveUp);
+                  // Only the definition-switching and as-at-today tiles need to
+                  // spell out what they're counting on a single month; over a
+                  // range every tile says which months it added up.
+                  const caption =
+                    state.kind === "unavailable"
+                      ? null
+                      : meta?.basis === "as-at-today"
+                        ? `${meta.label} · as at ${asAtLabel}`
+                        : meta && (periodMonths.length > 1 || key === "listings")
+                          ? meta.label
+                          : null;
+                  const trend = series.filter((v) => v != null).length > 1 ? series : null;
                   return (
                     // The whole figure is the handle — clicking it opens the
                     // records underneath. Negative margin keeps the hover
@@ -556,12 +909,31 @@ export default function MyDashboardPage() {
                     >
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] font-medium uppercase tracking-wide text-muted">{label}</span>
-                        <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} compact />
+                        {/* No badge on a figure with no answer — a LIVE dot
+                            over a dash reads as "live zero". */}
+                        {state.kind === "unavailable" ? null : (
+                          <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} compact />
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="stat-value mt-1 text-[24px]">
-                          {stat.display ?? (stat.value == null ? "—" : formatNum(stat.value))}
+                        <span
+                          className={`stat-value mt-1 text-[24px] ${
+                            state.kind === "unavailable" ? "text-muted" : ""
+                          }`}
+                        >
+                          {state.kind === "value" ? (
+                            (stat.display ?? formatNum(stat.value))
+                          ) : state.kind === "pending" ? (
+                            <FindingData className="text-[13px]" />
+                          ) : (
+                            "—"
+                          )}
                         </span>
+                        {trend ? (
+                          <span className="mt-1">
+                            <Sparkline values={[...trend]} width={64} height={20} fill={false} strokeWidth={1.5} />
+                          </span>
+                        ) : null}
                         <svg
                           className="mt-1 shrink-0 text-muted transition-transform duration-500"
                           style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
@@ -580,6 +952,11 @@ export default function MyDashboardPage() {
                           />
                         </svg>
                       </div>
+                      {state.kind === "unavailable" ? (
+                        <ReasonLine reason={state.reason} />
+                      ) : caption ? (
+                        <p className="mt-1 text-[11px] text-muted">{caption}</p>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -594,23 +971,31 @@ export default function MyDashboardPage() {
                 delay={drill === "marketAppraisals" ? PANEL_STAGGER : 0}
               >
                 <FunnelDrilldown
-                  title={`Market appraisals · ${monthLabel(ANCHOR)}`}
+                  title={`Market appraisals · ${phrase}`}
                   icon="home"
                   subtitle={
+                    // The API writes the definition it ACTUALLY used — a window
+                    // where REX only answered the appraisals side counts
+                    // something narrower, and a mixed window names the months
+                    // that fell back. Repeat that rather than re-assert the
+                    // combined claim from here, where it was stated flat and
+                    // was sometimes untrue.
                     appraisalDrillRows
-                      ? "Live from REX — appraisals you recorded, plus this month's instructions with no appraisal logged against them. The definition the business reports on."
+                      ? (stats.funnel.marketAppraisals.note ?? undefined)
                       : undefined
                   }
                   onClose={() => setDrill(null)}
                 >
-                  {appraisalDrillRows == null ? (
+                  {fb?.marketAppraisals?.unavailable ? (
+                    <DrilldownUnavailable meta={fb.marketAppraisals} />
+                  ) : appraisalDrillRows == null ? (
                     <DrilldownPending
                       count={stats.funnel.marketAppraisals.value}
                       needs="REX — we couldn't reach the Appraisals search this time"
                     />
                   ) : appraisalDrillRows.length === 0 ? (
                     <p className="text-[13px] text-muted">
-                      No market appraisals against your name this month.
+                      No market appraisals against your name in {phrase}.
                     </p>
                   ) : (
                     <DataTable
@@ -627,19 +1012,29 @@ export default function MyDashboardPage() {
                 delay={drill === "listings" ? PANEL_STAGGER : 0}
               >
                 <FunnelDrilldown
-                  title="Listings"
+                  title={
+                    stats.period.isLiveMonth
+                      ? `Listings · as at ${asAtLabel}`
+                      : `Listings instructed · ${phrase}`
+                  }
                   icon="megaphone"
                   subtitle={
                     listingDrillRows
-                      ? "Your live book in REX. The figure above counts what's on the market now; the let-agreed ones are listed here too."
+                      ? "Your live book in REX, as it stands today. The figure above counts what's on the market now; the let-agreed ones are listed here too."
                       : undefined
                   }
                   onClose={() => setDrill(null)}
                 >
-                  {listingDrillRows == null ? (
+                  {fb?.listings?.unavailable ? (
+                    <DrilldownUnavailable meta={fb.listings} />
+                  ) : listingDrillRows == null ? (
                     <DrilldownPending
                       count={stats.funnel.listings.value}
-                      needs="REX Listings — we couldn't reach the search this time"
+                      needs={
+                        stats.period.isLiveMonth
+                          ? "REX Listings — we couldn't reach the search this time"
+                          : `REX — it can count the listings you instructed in ${phrase}, but the per-property records for a past window aren't wired through yet`
+                      }
                     />
                   ) : listingDrillRows.length === 0 ? (
                     <p className="text-[13px] text-muted">
@@ -660,23 +1055,25 @@ export default function MyDashboardPage() {
                 delay={drill === "moveIns" ? PANEL_STAGGER : 0}
               >
                 <FunnelDrilldown
-                  title={`Move-ins · ${monthLabel(ANCHOR)}`}
+                  title={`Move-ins · ${phrase}`}
                   icon="key"
                   subtitle={
                     moveInDrillRows
-                      ? "Tenancies starting this month on your properties, live from PayProp."
+                      ? `Tenancies starting in ${phrase} on your properties, live from PayProp. Attributed using today's property book.`
                       : undefined
                   }
                   onClose={() => setDrill(null)}
                 >
-                  {moveInDrillRows == null ? (
+                  {fb?.moveIns?.unavailable ? (
+                    <DrilldownUnavailable meta={fb.moveIns} />
+                  ) : moveInDrillRows == null ? (
                     <DrilldownPending
                       count={moveInsStat.value}
                       needs="PayProp — we couldn't match your property book this time"
                     />
                   ) : moveInDrillRows.length === 0 ? (
                     <p className="text-[13px] text-muted">
-                      No tenancies start on your properties this month.
+                      No tenancies start on your properties in {phrase}.
                     </p>
                   ) : (
                     <DataTable
@@ -693,7 +1090,7 @@ export default function MyDashboardPage() {
                 delay={drill === "pipeline" ? PANEL_STAGGER : 0}
               >
                 <FunnelDrilldown
-                  title="Pipeline"
+                  title={`Pipeline · as at ${asAtLabel}`}
                   icon="list"
                   subtitle={
                     pipelineDrillRows
@@ -702,9 +1099,11 @@ export default function MyDashboardPage() {
                   }
                   onClose={() => setDrill(null)}
                 >
-                  {pipelineDrillRows == null ? (
+                  {fb?.pipeline?.unavailable ? (
+                    <DrilldownUnavailable meta={fb.pipeline} />
+                  ) : pipelineDrillRows == null ? (
                     <DrilldownPending
-                      count={stats.funnel.pipeline?.value ?? stats.pipeline.length}
+                      count={stats.funnel.pipeline?.value ?? null}
                       needs="Propoly — we couldn't reach your deals this time"
                     />
                   ) : pipelineDrillRows.length === 0 ? (
@@ -735,6 +1134,13 @@ export default function MyDashboardPage() {
                   monthKeys={MONTH_KEYS}
                   monthLabels={MONTH_LABELS}
                   actualsNetIncome={actualsArr}
+                  // ANCHOR, deliberately — NOT period.forecastMonth. The
+                  // builder reads this as editableFrom: the first draggable
+                  // dot, the start of the forecast total, and the month under
+                  // the "This month" caption. Following the picker backwards
+                  // ("By month → March") made March draggable, and dragging it
+                  // PUTs a forecast over a closed month that already has an
+                  // actual. The forward plan starts where the data ends.
                   currentMonthIndex={monthIdx(ANCHOR)}
                   savedForecasts={forecastHistory}
                   currentManaged={managed}
@@ -748,11 +1154,17 @@ export default function MyDashboardPage() {
 
             {c ? (
               <div className="card card-lift flex flex-col p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-                    <DoodleIcon name="target" size={16} />
-                    Conversion rates
-                  </h2>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                      <DoodleIcon name="target" size={16} />
+                      Conversion rates
+                    </h2>
+                    {/* Both rates now divide by listings INSTRUCTED in the same
+                        window as their numerator, so the label can name one
+                        period for the whole block. */}
+                    <p className="mt-1 text-[11px] text-muted">{phrase}</p>
+                  </div>
                   {/* The block was hardcoded to snapshot, so a rate derived
                       from live REX counts still showed as stale. Report what
                       the figures are actually built from. */}
@@ -766,17 +1178,46 @@ export default function MyDashboardPage() {
                   />
                 </div>
                 <div className="my-auto grid grid-cols-3 gap-2 py-4">
-                  <Gauge label="Lead → MA" pct={c.leadToMa.value} />
-                  <Gauge label="MA → Listing" pct={c.maToListing.value} />
-                  <Gauge label="Listing → Move-in" pct={c.listingToMoveIn.value} />
+                  {/* The em-dash ring already reads as "no answer"; the reason
+                      underneath is what stops it reading as zero. */}
+                  {/* Even when it answers, its denominator is a rolling 30 days
+                      against a calendar-month numerator — so it keeps a caption
+                      whichever way it lands. */}
+                  <Gauge
+                    label="Lead → MA"
+                    pct={c.leadToMa.value}
+                    sub={cb?.leadToMa?.unavailable ?? cb?.leadToMa?.label}
+                  />
+                  <Gauge
+                    label="MA → Listing"
+                    pct={c.maToListing.value}
+                    sub={cb?.maToListing?.unavailable}
+                  />
+                  <Gauge
+                    label="Listing → Move-in"
+                    pct={c.listingToMoveIn.value}
+                    sub={cb?.listingToMoveIn?.unavailable}
+                  />
                 </div>
               </div>
             ) : null}
-            <Collapsible title={`My move-ins · ${monthLabel(ANCHOR)}`} badge={stats.moveIns.length} icon="key">
+            <Collapsible
+              title={`My move-ins · ${monthLabel(ANCHOR)}`}
+              badge={stats.moveIns.length}
+              icon="key"
+            >
               {stats.moveIns.length ? (
                 <DataTable columns={moveInColumns} rows={stats.moveIns as Rowify<MoveInRow>[]} compact />
-              ) : (
+              ) : isSnapshotPeriod ? (
                 <p className="text-[13px] text-muted">No move-ins recorded for you this month yet.</p>
+              ) : (
+                // The seed list only ever described July. Point at the figure
+                // that does answer for the selected period instead of showing
+                // July's rows under its heading.
+                <p className="text-[13px] text-muted">
+                  This list comes from the {monthLabel(ANCHOR)} snapshot and only covers that month —
+                  your move-ins for {phrase} are behind the Move-ins figure above.
+                </p>
               )}
             </Collapsible>
 
@@ -794,11 +1235,38 @@ export default function MyDashboardPage() {
               badge={stats.compliance ? `${stats.compliance.overdue} overdue` : undefined}
             >
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <StatCard label="Viewings" stat={stats.funnel.viewings} />
-                <StatCard label="Applications" stat={stats.funnel.applications} />
+                <StatCard
+                  label="Viewings"
+                  stat={stats.funnel.viewings}
+                  sub={fb?.viewings?.unavailable}
+                />
+                <StatCard
+                  label="Applications"
+                  stat={stats.funnel.applications}
+                  sub={fb?.applications?.unavailable}
+                />
                 {stats.funnel.liveListings ? <StatCard label="Live listings" stat={stats.funnel.liveListings} /> : null}
-                {stats.conversions?.gciPerMoveIn ? (
-                  <StatCard label="GCI per move-in" stat={stats.conversions.gciPerMoveIn} />
+                {stats.conversions?.gciPerMoveIn?.value != null ? (
+                  <StatCard
+                    label="GCI per move-in"
+                    stat={stats.conversions.gciPerMoveIn}
+                    sub={phrase}
+                  />
+                ) : earningsPerMoveIn != null ? (
+                  // A different figure from GCI per move-in — what PayProp
+                  // actually paid the partner, over the move-ins they had in
+                  // the same window — so it carries its own name.
+                  <StatCard
+                    label="Your earnings per move-in"
+                    stat={{
+                      value: earningsPerMoveIn,
+                      display: formatGBP(earningsPerMoveIn),
+                      source: "derived",
+                      note: `${formatGBP(periodEarnings)} paid to you ÷ ${stats.funnel.moveIns.value} move-ins, ${phrase}`,
+                      asOf: stats.asAtToday.asOf,
+                    }}
+                    sub={phrase}
+                  />
                 ) : null}
               </div>
               {stats.compliance ? (
@@ -825,8 +1293,10 @@ export default function MyDashboardPage() {
                     <div className="stat-value text-[22px]">{formatNum(stats.compliance.total)}</div>
                     <div className="mt-0.5 text-xs text-muted">Total tracked</div>
                   </div>
-                  <div className="ml-auto self-start">
+                  <div className="ml-auto self-start text-right">
+                    {/* Compliance is a state, not a flow — it has no period. */}
                     <SourceBadge source="snapshot" asOf={SNAP} note="Compliance counts from REX PM via the snapshot." />
+                    <div className="mt-1 text-[11px] text-muted">Where things stand today</div>
                   </div>
                 </div>
               ) : null}

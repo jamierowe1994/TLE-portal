@@ -91,20 +91,26 @@ async function buildAgentContext(user: StoredUser) {
       }
     : null;
 
+  // Properties REX couldn't finish answering for are carried too, and flagged.
+  // Filtering on outstanding>0 alone dropped them silently, and the assistant
+  // then told partners "nothing outstanding" for a property it had never seen
+  // the certificates of. Clear and unknown have to look different in here.
   const complianceLive = liveCompliance
     ? {
-        note: "LIVE from REX PM — the agent's properties with compliance outstanding (expired, expiring within 60 days, or missing).",
+        note: "LIVE from REX PM — the agent's properties with compliance outstanding (expired, expiring within 60 days, or missing), plus any REX couldn't fully answer for. fullyRead:false means REX's answer was cut short: that property's status is UNKNOWN and its item list is partial. Never describe such a property as clear or up to date — say we couldn't read it and it needs checking in REX.",
         properties: liveCompliance
-          .filter((p) => p.outstanding > 0)
+          .filter((p) => p.outstanding > 0 || !p.checked)
           .slice(0, 25)
           .map((p) => ({
             property: p.name,
             locality: p.locality,
+            fullyRead: p.checked,
             outstanding: p.outstanding,
             items: p.items
               .filter((i) => i.state === "expired" || i.state === "expiring" || i.state === "missing")
               .map((i) => ({ certificate: i.label, state: i.state, expiry: i.expiry })),
           })),
+        propertiesCouldNotRead: liveCompliance.filter((p) => !p.checked).length,
       }
     : null;
 
