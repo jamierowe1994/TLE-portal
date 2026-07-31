@@ -412,14 +412,11 @@ export default function MyDashboardPage() {
                       src="/illustrations/buildings-street.png"
                       alt=""
                       aria-hidden
-                      // The artwork carries a cream background blob rather than
-                      // transparency, and its edge shows against the card
-                      // wherever the two creams don't quite agree — which is
-                      // why the "outline" came and went with the window width.
-                      // Multiply drops the light background into the card and
-                      // leaves the ink; bleeding it off the right edge means
-                      // any residual boundary is clipped rather than drawn.
-                      className="pointer-events-none absolute -bottom-[7px] right-[5%] max-w-[76%] mix-blend-multiply"
+                      // No blend mode here: the artwork has a soft backdrop
+                      // shape drawn behind the houses, and multiplying it
+                      // against the card only made that shape darker and more
+                      // obvious. Left alone it sits closest to the paper.
+                      className="pointer-events-none absolute -bottom-[7px] right-[5%] max-w-[76%]"
                     />
                   </div>
 
