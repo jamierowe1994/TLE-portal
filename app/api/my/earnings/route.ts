@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     connected: true,
     month,
-    earnings: getAgentEarnings(user.email, month),
+    earnings: getAgentEarnings(user.email, month, user.name ?? ""),
     refreshing: payPropRefreshing(),
   });
 }

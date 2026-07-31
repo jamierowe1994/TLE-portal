@@ -1,6 +1,7 @@
 import "server-only";
 import { payPropAccounts, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
 import { readCache, writeCache } from "@/lib/integration-cache";
+import { normaliseAgentName } from "@/lib/payprop-portfolio";
 
 // Live money out of PayProp, replacing the figures the admin centre has been
 // reading off the 11 Jul 2026 dashboard snapshot.
@@ -357,8 +358,10 @@ export interface AgentEarnings {
   passedThrough: number;
   byCategory: Array<{ category: string; amount: number }>;
   paymentCount: number;
-  /** False when no PayProp beneficiary carries this address. */
+  /** False when no PayProp beneficiary matches this partner at all. */
   matched: boolean;
+  /** Which key found them — worth showing, since name is the looser one. */
+  matchedBy?: "email" | "name";
 }
 
 interface BeneficiaryRow {
@@ -367,6 +370,41 @@ interface BeneficiaryRow {
   last_name?: string;
   business_name?: string;
   email_address?: string;
+}
+
+/**
+ * Beneficiary ids indexed by email AND by name. Email is the better key — it's
+ * unique and deliberate — but a partner whose PayProp address differs from the
+ * one they sign in with would silently earn nothing, which is worse than a
+ * slightly fuzzier match. Name is the fallback, never the first choice.
+ */
+async function beneficiaryIndex(): Promise<{
+  byEmail: Map<string, Set<string>>;
+  byName: Map<string, Set<string>>;
+}> {
+  const accounts = payPropAccounts();
+  const rows = (
+    await Promise.all(
+      accounts.map((a) => payPropGetAll<BeneficiaryRow>(a, "export/beneficiaries"))
+    )
+  ).flat();
+
+  const byEmail = new Map<string, Set<string>>();
+  const byName = new Map<string, Set<string>>();
+  const add = (map: Map<string, Set<string>>, key: string, id: string) => {
+    const set = map.get(key) ?? new Set<string>();
+    set.add(id);
+    map.set(key, set);
+  };
+  for (const b of rows) {
+    if (!b.id) continue;
+    const email = b.email_address?.trim().toLowerCase();
+    if (email) add(byEmail, email, b.id);
+    const full = [b.first_name, b.last_name].filter(Boolean).join(" ").trim();
+    const name = normaliseAgentName(full || b.business_name || "");
+    if (name) add(byName, name, b.id);
+  }
+  return { byEmail, byName };
 }
 
 /** email (lowercased) → PayProp beneficiary id, for every connected account. */
@@ -392,26 +430,36 @@ async function beneficiaryIdsByEmail(): Promise<Map<string, Set<string>>> {
   return map;
 }
 
-export function getAgentEarnings(email: string, month: string): AgentEarnings | null {
+export function getAgentEarnings(
+  email: string,
+  month: string,
+  displayName = ""
+): AgentEarnings | null {
   const key = `agent:${email.toLowerCase()}:${month}`;
-  return cachedAsync(key, () => computeAgentEarnings(email, month));
+  return cachedAsync(key, () => computeAgentEarnings(email, month, displayName));
 }
 
 async function computeAgentEarnings(
   email: string,
-  month: string
+  month: string,
+  displayName: string
 ): Promise<AgentEarnings | null> {
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const byEmail = await beneficiaryIdsByEmail();
+  const { byEmail, byName } = await beneficiaryIndex();
   // An empty directory means the fetch failed, not that nobody matched.
   // Returning a "no match" here would cache £0 as though it were the answer,
   // and the card would sit on zero for the whole TTL. Null means "unknown",
   // so the caller falls back and we try again.
   if (byEmail.size === 0) return null;
 
-  const ids = byEmail.get(email.trim().toLowerCase());
+  let ids = byEmail.get(email.trim().toLowerCase());
+  let matchedBy: "email" | "name" = "email";
+  if (!ids?.size && displayName) {
+    ids = byName.get(normaliseAgentName(displayName));
+    if (ids?.size) matchedBy = "name";
+  }
   if (!ids?.size) {
     return {
       month,
@@ -466,6 +514,7 @@ async function computeAgentEarnings(
       .sort((a, b) => b.amount - a.amount),
     paymentCount,
     matched: true,
+    matchedBy,
   };
 }
 
