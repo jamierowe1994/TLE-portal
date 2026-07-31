@@ -412,13 +412,9 @@ export default function MyDashboardPage() {
                       src="/illustrations/buildings-street.png"
                       alt=""
                       aria-hidden
-                      // Dropped below the divider and sized so the buildings
-                      // straddle it: the artwork's backdrop is opaque, so it
-                      // masks the rule behind it and the street reads as if
-                      // it's coming through the box. Sitting higher put the
-                      // line across the windows, which are transparent, and
-                      // the rule showed straight through them.
-                      className="pointer-events-none absolute -bottom-[22px] right-[5%] max-w-[84%]"
+                      // the street stands on the divider — its drawn ground line
+                      // lands on the border below (the crop leaves ~7px under it)
+                      className="pointer-events-none absolute -bottom-[7px] right-0 max-w-[62%]"
                     />
                   </div>
 
