@@ -418,7 +418,7 @@ export default function MyDashboardPage() {
                       // it's coming through the box. Sitting higher put the
                       // line across the windows, which are transparent, and
                       // the rule showed straight through them.
-                      className="pointer-events-none absolute -bottom-[22px] right-[5%] max-w-[70%]"
+                      className="pointer-events-none absolute -bottom-[22px] right-[5%] max-w-[84%]"
                     />
                   </div>
 
