@@ -64,7 +64,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 
 function cachedAsync<T>(rawKey: string, run: () => Promise<T>): T | null {
   const key = `${CACHE_VERSION}:${rawKey}`;
