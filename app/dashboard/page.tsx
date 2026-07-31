@@ -6,6 +6,8 @@ import SourceBadge from "@/components/SourceBadge";
 import FindingData from "@/components/FindingData";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import Collapsible from "@/components/Collapsible";
+import CollapsePanel, { PANEL_STAGGER } from "@/components/CollapsePanel";
+import FunnelDrilldown, { DrilldownPending } from "@/components/FunnelDrilldown";
 import Sparkline from "@/components/charts/Sparkline";
 import Gauge from "@/components/charts/Gauge";
 import DoodleIcon from "@/components/DoodleIcon";
@@ -15,7 +17,9 @@ import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/P
 import { formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
   ConversionStats,
+  FunnelRows,
   FunnelStats,
+  MoveInsDrillRow,
   StatValue,
 } from "@/lib/types";
 import type {
@@ -36,6 +40,8 @@ interface StatsResponse {
   month: string;
   agentKey: string | null;
   funnel: FunnelStats;
+  /** Rows behind the funnel counts — a field is null until it has a source. */
+  funnelRows?: FunnelRows;
   conversions: ConversionStats;
   portfolio: { managed: StatValue; rentRoll: StatValue };
   portfolioDetail: PortfolioRow | null;
@@ -69,6 +75,10 @@ function snapStat(value: number | null, note: string, display?: string): StatVal
   return { value, display, source: "snapshot", asOf: SNAP, note };
 }
 
+// The four "this month" figures an agent can open out to see the records
+// behind them. Only move-ins is joined to a real source so far.
+type DrillKey = "marketAppraisals" | "listings" | "moveIns" | "pipeline";
+
 // Entrance choreography — each piece lands on its own beat so the dashboard
 // builds itself as you arrive. Delays are relative to this content mounting
 // (which is after the greeting has already had its moment).
@@ -92,6 +102,10 @@ export default function MyDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Which of "this month"'s figures is opened out to show its records. One at a
+  // time — the panels share the space under the row. Declared up here with the
+  // other hooks, never below a conditional return.
+  const [drill, setDrill] = useState<DrillKey | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,6 +193,25 @@ export default function MyDashboardPage() {
   const bestLabel = bestVal != null ? MONTH_LABELS[actualsArr.findIndex((v) => v === bestVal)] : null;
 
   /* --------------------------------- tables --------------------------------- */
+
+  // Move-ins drill-down — the only funnel figure whose records the API can
+  // hand over today. null means PayProp/the property book didn't join, which
+  // is a different thing from "you had none".
+  const moveInDrillRows = stats?.funnelRows?.moveIns ?? null;
+  const moveInsStat: StatValue = moveInDrillRows
+    ? stats!.funnel.moveIns
+    : snapStat(
+        stats?.moveIns.length ?? 0,
+        "From your move-in list",
+        formatNum(stats?.moveIns.length ?? 0)
+      );
+
+  const moveInDrillColumns: DataTableColumn<Rowify<MoveInsDrillRow>>[] = [
+    { key: "property", label: "Property" },
+    { key: "tenant", label: "Tenant" },
+    { key: "from", label: "Starts" },
+    { key: "rent", label: "Rent pcm", align: "right", render: (r) => formatGBP(r.rent) },
+  ];
 
   const moveInColumns: DataTableColumn<Rowify<MoveInRow>>[] = [
     { key: "property", label: "Property" },
@@ -439,29 +472,153 @@ export default function MyDashboardPage() {
                 />
                 {(
                   [
-                    ["Market appraisals", stats.funnel.marketAppraisals],
-                    ["Listings", stats.funnel.listings],
-                    ["Move-ins", snapStat(stats.moveIns.length, "From your move-in list", formatNum(stats.moveIns.length))],
+                    ["marketAppraisals", "Market appraisals", stats.funnel.marketAppraisals],
+                    ["listings", "Listings", stats.funnel.listings],
+                    // Prefer the live PayProp count when we also hold its rows,
+                    // so the tile and the list it opens never disagree.
+                    ["moveIns", "Move-ins", moveInsStat],
                     // Pipeline: prefer the live REX count (let-agreed) over the snapshot rows.
                     [
+                      "pipeline",
                       "Pipeline",
                       stats.funnel.pipeline?.value != null
                         ? stats.funnel.pipeline
                         : snapStat(stats.pipeline.length, "Forward pipeline properties", formatNum(stats.pipeline.length)),
                     ],
                   ] as const
-                ).map(([label, stat]) => (
-                  <div key={label}>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted">{label}</span>
-                      <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} compact />
-                    </div>
-                    <div className="stat-value mt-1 text-[24px]">
-                      {stat.display ?? (stat.value == null ? "—" : formatNum(stat.value))}
-                    </div>
-                  </div>
-                ))}
+                ).map(([key, label, stat]) => {
+                  const open = drill === key;
+                  return (
+                    // The whole figure is the handle — clicking it opens the
+                    // records underneath. Negative margin keeps the hover
+                    // padding from pushing the row's spacing about.
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setDrill(open ? null : key)}
+                      aria-expanded={open}
+                      className={`-m-2 rounded-xl p-2 text-left transition hover:bg-black/[0.02] ${
+                        open ? "bg-black/[0.025]" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-muted">{label}</span>
+                        <SourceBadge source={stat.source} note={stat.note} asOf={stat.asOf} compact />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="stat-value mt-1 text-[24px]">
+                          {stat.display ?? (stat.value == null ? "—" : formatNum(stat.value))}
+                        </span>
+                        <svg
+                          className="mt-1 shrink-0 text-muted transition-transform duration-500"
+                          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+                          width="14"
+                          height="14"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M4 6l4 4 4-4"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* ---- the records behind whichever figure is open ----
+                   One panel each so the outgoing list is still on screen while
+                   it shrinks; the incoming one waits out that movement
+                   (PANEL_STAGGER) before opening into the space. */}
+              <CollapsePanel
+                open={drill === "marketAppraisals"}
+                delay={drill === "marketAppraisals" ? PANEL_STAGGER : 0}
+              >
+                <FunnelDrilldown
+                  title={`Market appraisals · ${monthLabel(ANCHOR)}`}
+                  icon="home"
+                  subtitle="The appraisals you booked this month."
+                  onClose={() => setDrill(null)}
+                >
+                  <DrilldownPending
+                    count={stats.funnel.marketAppraisals.value}
+                    needs="REX — the market appraisal appointments behind this count"
+                  />
+                </FunnelDrilldown>
+              </CollapsePanel>
+
+              <CollapsePanel
+                open={drill === "listings"}
+                delay={drill === "listings" ? PANEL_STAGGER : 0}
+              >
+                <FunnelDrilldown
+                  title="Listings"
+                  icon="megaphone"
+                  subtitle="Properties you brought to market."
+                  onClose={() => setDrill(null)}
+                >
+                  <DrilldownPending
+                    count={stats.funnel.listings.value}
+                    needs="REX Listings — the same search the count is built from"
+                  />
+                </FunnelDrilldown>
+              </CollapsePanel>
+
+              <CollapsePanel
+                open={drill === "moveIns"}
+                delay={drill === "moveIns" ? PANEL_STAGGER : 0}
+              >
+                <FunnelDrilldown
+                  title={`Move-ins · ${monthLabel(ANCHOR)}`}
+                  icon="key"
+                  subtitle={
+                    moveInDrillRows
+                      ? "Tenancies starting this month on your properties, live from PayProp."
+                      : undefined
+                  }
+                  onClose={() => setDrill(null)}
+                >
+                  {moveInDrillRows == null ? (
+                    <DrilldownPending
+                      count={moveInsStat.value}
+                      needs="PayProp — we couldn't match your property book this time"
+                    />
+                  ) : moveInDrillRows.length === 0 ? (
+                    <p className="text-[13px] text-muted">
+                      No tenancies start on your properties this month.
+                    </p>
+                  ) : (
+                    <DataTable
+                      columns={moveInDrillColumns}
+                      rows={moveInDrillRows as Rowify<MoveInsDrillRow>[]}
+                      compact
+                    />
+                  )}
+                </FunnelDrilldown>
+              </CollapsePanel>
+
+              <CollapsePanel
+                open={drill === "pipeline"}
+                delay={drill === "pipeline" ? PANEL_STAGGER : 0}
+              >
+                <FunnelDrilldown
+                  title="Pipeline"
+                  icon="list"
+                  subtitle="Deals in progression, from offer through to keys."
+                  onClose={() => setDrill(null)}
+                >
+                  <DrilldownPending
+                    count={stats.funnel.pipeline?.value ?? stats.pipeline.length}
+                    needs="Propoly — the deals already counted for this figure"
+                  />
+                </FunnelDrilldown>
+              </CollapsePanel>
             </div>
           </section>
 

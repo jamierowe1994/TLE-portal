@@ -865,3 +865,14 @@ body.presenting .source-badge[class*="border"] {
     opacity: 0.55;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   CollapsePanel — the slow grid-template-rows open/close. Its timing is set
+   inline (the delay is per-panel), so the reduced-motion rule has to be
+   !important to win: panels then snap open and shut with no travel.
+--------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .collapse-panel {
+    transition: none !important;
+  }
+}

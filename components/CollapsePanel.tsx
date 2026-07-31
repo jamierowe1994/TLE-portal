@@ -30,7 +30,10 @@ export default function CollapsePanel({
 }) {
   return (
     <div
-      className={`grid ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"} ${
+      // collapse-panel: the hook globals.css uses to cut the transition dead
+      // for anyone on prefers-reduced-motion (it has to out-rank the inline
+      // style below, so the rule is !important).
+      className={`collapse-panel grid ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"} ${
         open && grow ? "min-h-0 flex-1" : ""
       }`}
       style={{

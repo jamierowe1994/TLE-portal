@@ -634,7 +634,14 @@ export interface MoveIns {
   count: number;
   /** Their combined monthly rent — the rent roll being added. */
   rentAdded: number;
-  properties: Array<{ property: string; tenant: string; rent: number; from: string }>;
+  properties: Array<{
+    /** PayProp's id — the only reliable join key across reports. */
+    propertyId: string;
+    property: string;
+    tenant: string;
+    rent: number;
+    from: string;
+  }>;
 }
 
 /**

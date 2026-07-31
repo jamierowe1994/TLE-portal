@@ -22,6 +22,21 @@ export interface FunnelStats {     // one agent OR whole business, one period
   gci?: StatValue;                 // £ exc VAT
 }
 
+// The rows BEHIND the funnel counts — what opens up when an agent clicks a
+// figure on their dashboard. A field is only present once that stage is wired
+// to a real source; null means "we know the count but not (yet) the records",
+// and the UI says exactly that rather than showing an empty list.
+export interface MoveInsDrillRow {
+  property: string;
+  tenant: string;
+  rent: number;                    // £ pcm
+  from: string;                    // ISO date the tenancy starts
+}
+
+export interface FunnelRows {
+  moveIns: MoveInsDrillRow[] | null;
+}
+
 export interface ConversionStats {
   leadToMa: StatValue;             // % — from Meta/paid leads vs MAs booked
   maToListing: StatValue;          // %
