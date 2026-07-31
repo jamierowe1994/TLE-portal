@@ -14,13 +14,13 @@ import { readCache, writeCache } from "@/lib/integration-cache";
 
 export interface PropertyRow {
   id?: string;
-  property_name?: string;
-  responsible_agent?: string;
+  property_name?: unknown;
+  responsible_agent?: unknown;
   responsible_agent_id?: string;
   monthly_payment_required?: number;
   contract_amount?: number;
   commission?: number;
-  service_level?: string;
+  service_level?: unknown;
   active_tenancies?: number;
   account_balance?: number;
   address?: { first_line?: string; city?: string; postal_code?: string };
@@ -92,6 +92,23 @@ export interface PortfolioBook {
   unattributed: number;
   accounts: PayPropAccountId[];
 }
+
+/**
+ * Free-text PayProp fields, coerced safely. They're documented as strings but
+ * arrive as objects ({name}/{description}) or numbers on some properties, and
+ * assuming otherwise took the whole portfolio walk down.
+ */
+const text = (v: unknown): string => {
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number") return String(v);
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    for (const k of ["name", "description", "label", "value"]) {
+      if (typeof o[k] === "string") return (o[k] as string).trim();
+    }
+  }
+  return "";
+};
 
 const money = (v: unknown) => {
   const n = Number(v);
@@ -195,13 +212,13 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
 
       // PayProp's own service level — how "managed" vs "let only" is decided,
       // rather than us inferring it.
-      const level = (r.service_level ?? "").trim() || "Not set";
+      const level = text(r.service_level) || "Not set";
       const lv = levels.get(level) ?? { properties: 0, rentRoll: 0 };
       lv.properties++;
       lv.rentRoll += rent;
       levels.set(level, lv);
 
-      const raw = (r.responsible_agent ?? "").trim();
+      const raw = text(r.responsible_agent);
       const key = normaliseAgentName(raw);
       if (!key || NON_AGENT.has(key)) {
         unattributed++;
@@ -220,7 +237,8 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
       book.properties++;
       book.rentRoll += rent;
       book.activeTenancies += money(r.active_tenancies);
-      if (r.property_name) book.propertyNames.push(r.property_name);
+      const pname = text(r.property_name);
+      if (pname) book.propertyNames.push(pname);
       if (!book.accounts.includes(account)) book.accounts.push(account);
     }
     slices.push({
