@@ -14,12 +14,15 @@ import DoodleIcon from "@/components/DoodleIcon";
 import Loader from "@/components/Loader";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
-import { formatGBP, formatNum, monthLabel } from "@/lib/format";
+import { formatDate, formatGBP, formatNum, monthLabel } from "@/lib/format";
 import type {
+  AppraisalsDrillRow,
   ConversionStats,
   FunnelRows,
   FunnelStats,
+  ListingsDrillRow,
   MoveInsDrillRow,
+  PipelineDrillRow,
   StatValue,
 } from "@/lib/types";
 import type {
@@ -76,7 +79,8 @@ function snapStat(value: number | null, note: string, display?: string): StatVal
 }
 
 // The four "this month" figures an agent can open out to see the records
-// behind them. Only move-ins is joined to a real source so far.
+// behind them — REX for appraisals and listings, Propoly for the pipeline,
+// PayProp for move-ins.
 type DrillKey = "marketAppraisals" | "listings" | "moveIns" | "pipeline";
 
 // Entrance choreography — each piece lands on its own beat so the dashboard
@@ -194,10 +198,14 @@ export default function MyDashboardPage() {
 
   /* --------------------------------- tables --------------------------------- */
 
-  // Move-ins drill-down — the only funnel figure whose records the API can
-  // hand over today. null means PayProp/the property book didn't join, which
-  // is a different thing from "you had none".
+  // Drill-down rows. Every one of these is counted by the API from the very
+  // array it hands over, so the figure on a tile and the list underneath it
+  // can't drift apart. null means the source didn't answer — a different thing
+  // from "you had none", and the panels say so.
   const moveInDrillRows = stats?.funnelRows?.moveIns ?? null;
+  const listingDrillRows = stats?.funnelRows?.listings ?? null;
+  const pipelineDrillRows = stats?.funnelRows?.pipeline ?? null;
+  const appraisalDrillRows = stats?.funnelRows?.marketAppraisals ?? null;
   const moveInsStat: StatValue = moveInDrillRows
     ? stats!.funnel.moveIns
     : snapStat(
@@ -211,6 +219,49 @@ export default function MyDashboardPage() {
     { key: "tenant", label: "Tenant" },
     { key: "from", label: "Starts" },
     { key: "rent", label: "Rent pcm", align: "right", render: (r) => formatGBP(r.rent) },
+  ];
+
+  const listingDrillColumns: DataTableColumn<Rowify<ListingsDrillRow>>[] = [
+    { key: "address", label: "Property" },
+    { key: "status", label: "Status" },
+    { key: "availableFrom", label: "Available", render: (r) => formatDate(r.availableFrom) },
+    {
+      key: "rent",
+      label: "Rent pcm",
+      align: "right",
+      render: (r) => (r.rent == null ? "—" : formatGBP(r.rent)),
+    },
+  ];
+
+  const pipelineDrillColumns: DataTableColumn<Rowify<PipelineDrillRow>>[] = [
+    { key: "property", label: "Property" },
+    { key: "tenant", label: "Tenant" },
+    { key: "stage", label: "Stage" },
+    { key: "moveIn", label: "Expected move-in", render: (r) => formatDate(r.moveIn) },
+    {
+      key: "rent",
+      label: "Rent pcm",
+      align: "right",
+      render: (r) => (r.rent == null ? "—" : formatGBP(r.rent)),
+    },
+  ];
+
+  const appraisalDrillColumns: DataTableColumn<Rowify<AppraisalsDrillRow>>[] = [
+    { key: "property", label: "Property" },
+    { key: "date", label: "Date", render: (r) => formatDate(r.date) },
+    {
+      // Half these rows are instructions with no appraisal recorded against
+      // them — say which is which rather than let a partner wonder why a
+      // property they never appraised is on their list.
+      key: "kind",
+      label: "Recorded as",
+      render: (r) =>
+        r.kind === "appraisal" ? (
+          "Appraisal in REX"
+        ) : (
+          <span className="text-muted">Instruction, no appraisal logged</span>
+        ),
+    },
   ];
 
   const moveInColumns: DataTableColumn<Rowify<MoveInRow>>[] = [
@@ -545,13 +596,29 @@ export default function MyDashboardPage() {
                 <FunnelDrilldown
                   title={`Market appraisals · ${monthLabel(ANCHOR)}`}
                   icon="home"
-                  subtitle="The appraisals you booked this month."
+                  subtitle={
+                    appraisalDrillRows
+                      ? "Live from REX — appraisals you recorded, plus this month's instructions with no appraisal logged against them. The definition the business reports on."
+                      : undefined
+                  }
                   onClose={() => setDrill(null)}
                 >
-                  <DrilldownPending
-                    count={stats.funnel.marketAppraisals.value}
-                    needs="REX — the market appraisal appointments behind this count"
-                  />
+                  {appraisalDrillRows == null ? (
+                    <DrilldownPending
+                      count={stats.funnel.marketAppraisals.value}
+                      needs="REX — we couldn't reach the Appraisals search this time"
+                    />
+                  ) : appraisalDrillRows.length === 0 ? (
+                    <p className="text-[13px] text-muted">
+                      No market appraisals against your name this month.
+                    </p>
+                  ) : (
+                    <DataTable
+                      columns={appraisalDrillColumns}
+                      rows={appraisalDrillRows as Rowify<AppraisalsDrillRow>[]}
+                      compact
+                    />
+                  )}
                 </FunnelDrilldown>
               </CollapsePanel>
 
@@ -562,13 +629,29 @@ export default function MyDashboardPage() {
                 <FunnelDrilldown
                   title="Listings"
                   icon="megaphone"
-                  subtitle="Properties you brought to market."
+                  subtitle={
+                    listingDrillRows
+                      ? "Your live book in REX. The figure above counts what's on the market now; the let-agreed ones are listed here too."
+                      : undefined
+                  }
                   onClose={() => setDrill(null)}
                 >
-                  <DrilldownPending
-                    count={stats.funnel.listings.value}
-                    needs="REX Listings — the same search the count is built from"
-                  />
+                  {listingDrillRows == null ? (
+                    <DrilldownPending
+                      count={stats.funnel.listings.value}
+                      needs="REX Listings — we couldn't reach the search this time"
+                    />
+                  ) : listingDrillRows.length === 0 ? (
+                    <p className="text-[13px] text-muted">
+                      Nothing on the market against your name right now.
+                    </p>
+                  ) : (
+                    <DataTable
+                      columns={listingDrillColumns}
+                      rows={listingDrillRows as Rowify<ListingsDrillRow>[]}
+                      compact
+                    />
+                  )}
                 </FunnelDrilldown>
               </CollapsePanel>
 
@@ -612,13 +695,29 @@ export default function MyDashboardPage() {
                 <FunnelDrilldown
                   title="Pipeline"
                   icon="list"
-                  subtitle="Deals in progression, from offer through to keys."
+                  subtitle={
+                    pipelineDrillRows
+                      ? "Live from Propoly — your deals in progression, closest to keys first."
+                      : "Deals in progression, from offer through to keys."
+                  }
                   onClose={() => setDrill(null)}
                 >
-                  <DrilldownPending
-                    count={stats.funnel.pipeline?.value ?? stats.pipeline.length}
-                    needs="Propoly — the deals already counted for this figure"
-                  />
+                  {pipelineDrillRows == null ? (
+                    <DrilldownPending
+                      count={stats.funnel.pipeline?.value ?? stats.pipeline.length}
+                      needs="Propoly — we couldn't reach your deals this time"
+                    />
+                  ) : pipelineDrillRows.length === 0 ? (
+                    <p className="text-[13px] text-muted">
+                      Nothing in progression on Propoly right now.
+                    </p>
+                  ) : (
+                    <DataTable
+                      columns={pipelineDrillColumns}
+                      rows={pipelineDrillRows as Rowify<PipelineDrillRow>[]}
+                      compact
+                    />
+                  )}
                 </FunnelDrilldown>
               </CollapsePanel>
             </div>

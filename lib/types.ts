@@ -33,8 +33,35 @@ export interface MoveInsDrillRow {
   from: string;                    // ISO date the tenancy starts
 }
 
+export interface ListingsDrillRow {
+  address: string;
+  rent: number | null;             // £ pcm
+  letAgreed: boolean;
+  status: string;                  // REX publication state, e.g. "Published"
+  availableFrom: string | null;    // ISO date
+}
+
+export interface PipelineDrillRow {
+  property: string;
+  tenant: string;
+  stage: string;                   // Propoly's own label, e.g. "Awaiting references"
+  moveIn: string | null;           // ISO date the deal is expected to complete
+  rent: number | null;             // £ pcm
+}
+
+export interface AppraisalsDrillRow {
+  property: string;
+  date: string | null;             // ISO — appraisal date, or the instruction date
+  // Susan counts an instruction with no appraisal recorded against it as a
+  // market appraisal, so the list has to say which half a row came from.
+  kind: "appraisal" | "listing-only";
+}
+
 export interface FunnelRows {
+  marketAppraisals: AppraisalsDrillRow[] | null;
+  listings: ListingsDrillRow[] | null;
   moveIns: MoveInsDrillRow[] | null;
+  pipeline: PipelineDrillRow[] | null;
 }
 
 export interface ConversionStats {

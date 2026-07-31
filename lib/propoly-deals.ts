@@ -376,14 +376,9 @@ export async function getPropolyAgentDeals(
   }
 }
 
-/** Count of the agent's deals actively progressing (excludes cancelled). */
-export async function getPropolyPipelineCount(
-  user: PropolyUserRef
-): Promise<number | null> {
-  const apps = await getPropolyAgentDeals(user);
-  if (apps == null) return null;
-  return apps.filter((a) => a.stage !== "unsuccessful").length;
-}
+// (A getPropolyPipelineCount helper lived here. Callers now take the deals
+// themselves and count `stage !== "unsuccessful"` off the array they render,
+// so the pipeline figure and the list behind it can't disagree.)
 
 /* ------------------------------------------------------------------------ */
 /* Business-wide stats (admin dashboard)                                     */

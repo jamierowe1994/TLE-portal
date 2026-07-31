@@ -44,7 +44,10 @@ export default function DataTable<
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`sticky top-0 z-10 border-b border-line bg-card ${cellPad} text-[11px] font-semibold uppercase tracking-wide text-muted ${
+                // Header sits on the eggshell page colour with a heavier rule
+                // under it — on outline cards a white header melted into the
+                // first row and the table had no visible start.
+                className={`sticky top-0 z-10 border-b-2 border-line bg-page ${cellPad} text-[11px] font-semibold uppercase tracking-wide text-muted ${
                   col.align === "right" ? "text-right" : "text-left"
                 }`}
               >
