@@ -1447,7 +1447,7 @@ export interface BusinessCompliance {
 }
 
 const businessComplianceCache = { at: 0, data: null as BusinessCompliance | null };
-const BUSINESS_COMPLIANCE_TTL_MS = 10 * 60_000;
+const BUSINESS_COMPLIANCE_TTL_MS = 60 * 60_000;
 
 /**
  * Every compliance entry in REX, classified. Queried across the account in one
@@ -1466,6 +1466,18 @@ export async function getBusinessCompliance(): Promise<BusinessCompliance | null
     return businessComplianceCache.data;
   }
   if (!rexConfigured()) return null;
+
+  // 64 pages of ComplianceEntries is the slowest walk we do, so a fresh
+  // process serves the last stored result rather than re-sweeping REX.
+  const { readCache, writeCache } = await import("@/lib/integration-cache");
+  if (!businessComplianceCache.data) {
+    const stored = await readCache<BusinessCompliance>("rex:compliance").catch(() => null);
+    if (stored) {
+      businessComplianceCache.at = stored.at;
+      businessComplianceCache.data = stored.data;
+      if (Date.now() - stored.at < BUSINESS_COMPLIANCE_TTL_MS) return stored.data;
+    }
+  }
 
   // 60 pages returned exactly 6,000 rows on the first run — i.e. the cap, not
   // the end of the data. Raised well clear of the real total, and a run that
@@ -1536,5 +1548,6 @@ export async function getBusinessCompliance(): Promise<BusinessCompliance | null
   };
   businessComplianceCache.at = Date.now();
   businessComplianceCache.data = data;
+  await writeCache("rex:compliance", data);
   return data;
 }

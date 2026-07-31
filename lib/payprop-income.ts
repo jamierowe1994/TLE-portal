@@ -1,5 +1,6 @@
 import "server-only";
 import { payPropAccounts, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
+import { readCache, writeCache } from "@/lib/integration-cache";
 
 // Live money out of PayProp, replacing the figures the admin centre has been
 // reading off the 11 Jul 2026 dashboard snapshot.
@@ -45,9 +46,10 @@ export interface AgencyIncome {
   accounts: PayPropAccountId[];
 }
 
-// Walking a month of payments is ~40 sequential requests, so hold the result
-// briefly — the admin centre re-renders far more often than the money moves.
-const TTL_MS = 10 * 60_000;
+// Walking a month of payments is ~40 sequential requests, so hold the result —
+// the admin centre re-renders far more often than the money moves. An hour is
+// comfortably fresh for figures that change when payments run.
+const TTL_MS = 60 * 60_000;
 const cache = new Map<string, { at: number; data: unknown }>();
 
 const running = new Set<string>();
@@ -64,8 +66,21 @@ function cachedAsync<T>(key: string, run: () => Promise<T>): T | null {
 
   if (!running.has(key)) {
     running.add(key);
-    void run()
-      .then((data) => cache.set(key, { at: Date.now(), data }))
+    void (async () => {
+      // On a cold process, the database usually already holds the answer from
+      // before the last deploy — serve that immediately rather than making
+      // everyone wait out a fresh walk.
+      if (!hit) {
+        const stored = await readCache<T>(key).catch(() => null);
+        if (stored) {
+          cache.set(key, { at: stored.at, data: stored.data });
+          if (Date.now() - stored.at < TTL_MS) return; // still fresh — done
+        }
+      }
+      const data = await run();
+      cache.set(key, { at: Date.now(), data });
+      await writeCache(key, data);
+    })()
       .catch(() => {})
       .finally(() => running.delete(key));
   }

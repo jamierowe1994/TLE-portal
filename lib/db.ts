@@ -136,6 +136,15 @@ CREATE TABLE IF NOT EXISTS payprop_tokens (
   scopes           TEXT
 );
 
+-- Results of the slow PayProp/REX walks. Held in memory too, but that dies
+-- with the process: without this every deploy costs another few minutes of
+-- amber "fetching…" banners before any figure appears.
+CREATE TABLE IF NOT EXISTS integration_cache (
+  key              TEXT PRIMARY KEY,
+  payload          JSONB NOT NULL,
+  computed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Follow-ups Kirstie sets herself against a deal ("Tasks" tab + Tasks today).
 CREATE TABLE IF NOT EXISTS deal_tasks (
   id               TEXT PRIMARY KEY,

@@ -1,5 +1,6 @@
 import "server-only";
 import { payPropAccounts, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
+import { readCache, writeCache } from "@/lib/integration-cache";
 
 // The managed book out of PayProp, attributable to the partner who runs each
 // property. PayProp names them in `responsible_agent` — a free-text name, not
@@ -99,7 +100,7 @@ const money = (v: unknown) => {
 
 let cache: { at: number; data: PortfolioBook } | null = null;
 let running = false;
-const TTL_MS = 10 * 60_000;
+const TTL_MS = 60 * 60_000;
 
 /**
  * The managed book, grouped by responsible agent. Non-blocking in the same way
@@ -109,10 +110,21 @@ export function getPortfolioBook(): PortfolioBook | null {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.data;
   if (!running) {
     running = true;
-    void computePortfolioBook()
-      .then((data) => {
-        if (data) cache = { at: Date.now(), data };
-      })
+    void (async () => {
+      // Survive a deploy: the last good book is in the database.
+      if (!cache) {
+        const stored = await readCache<PortfolioBook>("payprop:portfolio").catch(() => null);
+        if (stored) {
+          cache = { at: stored.at, data: stored.data };
+          if (Date.now() - stored.at < TTL_MS) return;
+        }
+      }
+      const data = await computePortfolioBook();
+      if (data) {
+        cache = { at: Date.now(), data };
+        await writeCache("payprop:portfolio", data);
+      }
+    })()
       .catch(() => {})
       .finally(() => {
         running = false;

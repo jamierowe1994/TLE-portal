@@ -120,8 +120,22 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Page size is the single biggest lever on how long a walk takes. The code
+  // has long assumed PayProp clamps `rows` to 25, but the spec sets no
+  // maximum — so ask for more and count what actually comes back.
+  const pageSize: Record<string, number> = {};
+  for (const size of [25, 50, 100, 200]) {
+    const r = await payPropGet(payPropAccounts()[0], "export/properties", {
+      is_archived: "false",
+      rows: size,
+      page: 1,
+    }).catch(() => null);
+    pageSize[`asked_${size}`] = r?.items.length ?? 0;
+  }
+
   return NextResponse.json({
     configured: true,
+    pageSize,
     auth,
     connected,
     seededFromEnv,
