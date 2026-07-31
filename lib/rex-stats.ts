@@ -188,7 +188,12 @@ export async function getAgentFunnel(
     const out: Partial<FunnelStats> = {};
     const asOf = new Date().toISOString().slice(0, 10);
 
-    // Market appraisals — appraisals dated within the month.
+    // Market appraisals, on Susan's combined definition: appraisals recorded
+    // in REX plus this month's listings whose property has no same-month
+    // appraisal. Partners used to see recorded appraisals only, which counted
+    // 7 where the business counted 41 — and since MA -> Listing divides by it,
+    // it flattered every partner's conversion rate. Same logic as
+    // getBusinessMonthCounts above; that one is validated against June.
     if (caps.capabilities.appraisals) {
       const maCount = await countSearch("Appraisals", [
         { name: "agent_1_id", type: "=", value: rexUserId },
@@ -196,10 +201,55 @@ export async function getAgentFunnel(
         { name: "appraisal_date", type: "<=", value: range.end },
       ]);
       if (maCount != null) {
+        let combined: number | null = null;
+        if (caps.capabilities.listings) {
+          const monthListings = await pagedSearch("Listings", [
+            { name: "listing_agent_1_id", type: "=", value: rexUserId },
+            { name: "system_ctime", type: ">=", value: epoch(range.start) },
+            { name: "system_ctime", type: "<", value: String(Number(epoch(range.end)) + 86_400) },
+          ]);
+          const kept = monthListings
+            ? monthListings.filter((r) => {
+                const cat = r.listing_category as { id?: string; text?: string } | string | null;
+                const catText = typeof cat === "object" && cat ? (cat.text ?? cat.id) : cat;
+                const pub = r.system_publication_status as { id?: string } | string | null;
+                const pubId = typeof pub === "object" && pub ? pub.id : pub;
+                return String(catText ?? "").toLowerCase().includes("rental") && pubId !== "draft";
+              })
+            : null;
+          if (kept) {
+            // Duplicates kept — two listings on one property are two
+            // instructions — but the overlap query only needs each id once.
+            const perListing = kept
+              .map((r) => String(((r.property as { id?: unknown }) ?? {}).id ?? ""))
+              .filter(Boolean);
+            const unique = [...new Set(perListing)];
+            if (!unique.length) {
+              combined = maCount;
+            } else {
+              const overlap = await pagedSearch("Appraisals", [
+                { name: "property_id", type: "in", value: unique },
+                { name: "appraisal_date", type: ">=", value: range.start },
+                { name: "appraisal_date", type: "<=", value: range.end },
+              ]);
+              if (overlap) {
+                const withMa = new Set(
+                  overlap.map((r) => String(((r.property as { id?: unknown }) ?? {}).id ?? ""))
+                );
+                combined = maCount + perListing.filter((p) => !withMa.has(p)).length;
+              }
+            }
+          }
+        }
+        // Fall back to the recorded count rather than nothing if the listing
+        // half fails — an undercount beats an empty tile.
         out.marketAppraisals = {
-          value: maCount,
+          value: combined ?? maCount,
           source: "live-rex",
-          note: `Live count from REX Appraisals (agent_1_id, appraisal_date in ${month}).`,
+          note:
+            combined != null
+              ? `Live from REX — ${maCount} recorded appraisal${maCount === 1 ? "" : "s"} plus this month's instructions with no appraisal against them. Same definition the business reports on.`
+              : `Live count from REX Appraisals (agent_1_id, appraisal_date in ${month}).`,
           asOf,
         };
       }
