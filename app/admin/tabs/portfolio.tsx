@@ -61,6 +61,28 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
   // background, so poll until it lands rather than blocking the tab.
   const [live, setLive] = useState<LiveBook | null>(null);
   const [arrearsCount, setArrearsCount] = useState<number | null>(null);
+  const [renewals, setRenewals] = useState<number | null>(null);
+
+  // "Renewals due" is certificates coming up for renewal — a REX figure, not
+  // a PayProp one, so it comes from the compliance sweep.
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+    const ask = () => {
+      fetch("/api/admin/compliance-live", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { compliance?: { upcoming: number } | null }) => {
+          if (cancelled) return;
+          if (d.compliance) setRenewals(d.compliance.upcoming);
+          else if (tries++ < 40) setTimeout(ask, 5000);
+        })
+        .catch(() => {});
+    };
+    ask();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     let cancelled = false;
     let tries = 0;
@@ -97,6 +119,25 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
       source: "live-payprop" as const,
       note: hits.map((l) => `${l.level}: ${l.properties}`).join(" · "),
     };
+  }
+
+  /** Protection is encoded in the service level, not a field of its own. */
+  function protection(b: LiveBook) {
+    const managed = b.byServiceLevel.filter((l) => /managed|efm/i.test(l.level));
+    const base = managed.length ? managed : b.byServiceLevel;
+    const total = base.reduce((n, l) => n + l.properties, 0);
+    const withRlp = base
+      .filter((l) => /with\s*rlp|\brlp\b/i.test(l.level) && !/no\s*rlp/i.test(l.level))
+      .reduce((n, l) => n + l.properties, 0);
+    const withLec = base
+      .filter((l) => /lec/i.test(l.level))
+      .reduce((n, l) => n + l.properties, 0);
+    const none = base
+      .filter((l) => /no\s*rlp|without/i.test(l.level))
+      .reduce((n, l) => n + l.properties, 0);
+    // Only trust it when the wording actually carries protection info.
+    const recognised = withRlp + withLec + none > 0;
+    return recognised ? { total, withRlp, withLec, none } : null;
   }
 
   function accountAvg(b: LiveBook, label: string) {
@@ -262,14 +303,84 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
         </div>
       </section>
 
+      {live ? (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold">Service levels — live</h2>
+          <div className="card p-5">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-muted">
+                  <th className="pb-2 font-semibold">Service level (as PayProp records it)</th>
+                  <th className="pb-2 text-right font-semibold">Properties</th>
+                  <th className="pb-2 text-right font-semibold">Rent / month</th>
+                </tr>
+              </thead>
+              <tbody>
+                {live.byServiceLevel.map((l) => (
+                  <tr key={l.level} className="border-t border-line">
+                    <td className="py-2">{l.level}</td>
+                    <td className="py-2 text-right tnum">{l.properties}</td>
+                    <td className="py-2 text-right tnum">{gbp(l.rentRoll)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {protection(live) ? null : (
+              <p className="mt-3 text-[11px] text-muted">
+                None of these mention RLP or LEC, so the protection figures
+                below stay on the snapshot rather than being guessed at.
+              </p>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       {/* Rent protection */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Managed — rent protection</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="No protection" stat={o.noProtection} />
-          <StatCard label="With RLP" stat={o.withRlp} />
-          <StatCard label="With LEC" stat={o.withLec} />
-          <StatCard label="Protected %" stat={o.protectedPct} sub="of managed portfolio" />
+          <StatCard
+            label="No protection"
+            stat={
+              (live ? protection(live) : null)
+                ? { value: protection(live!)!.none, source: "live-payprop", note: "Managed properties on a service level without rent protection." }
+                : o.noProtection
+            }
+          />
+          <StatCard
+            label="With RLP"
+            stat={
+              (live ? protection(live) : null)
+                ? { value: protection(live!)!.withRlp, source: "live-payprop", note: "From PayProp's service level on each property." }
+                : o.withRlp
+            }
+          />
+          <StatCard
+            label="With LEC"
+            stat={
+              (live ? protection(live) : null)
+                ? { value: protection(live!)!.withLec, source: "live-payprop", note: "From PayProp's service level on each property." }
+                : o.withLec
+            }
+          />
+          <StatCard
+            label="Protected %"
+            stat={
+              (live ? protection(live) : null)
+                ? (() => {
+                    const p = protection(live!)!;
+                    const pctVal = p.total ? ((p.withRlp + p.withLec) / p.total) * 100 : 0;
+                    return {
+                      value: Math.round(pctVal * 10) / 10,
+                      display: `${pctVal.toFixed(1)}%`,
+                      source: "live-payprop" as const,
+                      note: `${p.withRlp + p.withLec} of ${p.total} managed properties carry protection.`,
+                    };
+                  })()
+                : o.protectedPct
+            }
+            sub="of managed portfolio"
+          />
         </div>
       </section>
 
@@ -293,7 +404,15 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
                 : o.vacant
             }
           />
-          <StatCard label="Renewals due" stat={o.renewals} />
+          <StatCard
+            label="Renewals due"
+            stat={
+              renewals != null
+                ? { value: renewals, source: "live-rex", note: "Compliance certificates expiring within 60 days, across the account." }
+                : o.renewals
+            }
+            sub={renewals != null ? "Next 60 days" : undefined}
+          />
           <StatCard
             label="In arrears"
             stat={
