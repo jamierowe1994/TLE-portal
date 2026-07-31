@@ -64,7 +64,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 
 function cachedAsync<T>(rawKey: string, run: () => Promise<T>): T | null {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -428,6 +428,41 @@ async function beneficiaryIdsByEmail(): Promise<Map<string, Set<string>>> {
     map.set(email, set);
   }
   return map;
+}
+
+/**
+ * Why a partner did or didn't match a PayProp beneficiary. Matching is fuzzy at
+ * the edges — the same person appears as "Chris Wilson-Slight" and "Chris
+ * Wilson Slight" — so when it misses, the near-misses are worth more than a
+ * bare false.
+ */
+export async function describeAgentMatch(
+  email: string,
+  displayName: string
+): Promise<{
+  email: string;
+  displayName: string;
+  directorySize: number;
+  emailHit: boolean;
+  nameHit: boolean;
+  /** Beneficiary names sharing a word with theirs — the likely spellings. */
+  candidates: string[];
+}> {
+  const { byEmail, byName } = await beneficiaryIndex();
+  const wanted = normaliseAgentName(displayName);
+  const words = new Set(wanted.split(" ").filter((w) => w.length > 2));
+  const candidates: string[] = [];
+  for (const name of byName.keys()) {
+    if (name.split(" ").some((w) => words.has(w))) candidates.push(name);
+  }
+  return {
+    email: email.toLowerCase(),
+    displayName: wanted,
+    directorySize: byEmail.size + byName.size,
+    emailHit: (byEmail.get(email.trim().toLowerCase())?.size ?? 0) > 0,
+    nameHit: (byName.get(wanted)?.size ?? 0) > 0,
+    candidates: candidates.slice(0, 8),
+  };
 }
 
 export function getAgentEarnings(

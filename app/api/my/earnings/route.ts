@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { payPropConfigured } from "@/lib/payprop";
-import { getAgentEarnings, payPropRefreshing } from "@/lib/payprop-income";
+import { getAgentEarnings, describeAgentMatch, payPropRefreshing } from "@/lib/payprop-income";
 import { currentMonth } from "@/lib/format";
 
 // The signed-in partner's own commission for a month, live from PayProp.
@@ -24,10 +24,21 @@ export async function GET(req: NextRequest) {
   }
 
   const month = req.nextUrl.searchParams.get("month") ?? currentMonth();
+  const earnings = getAgentEarnings(user.email, month, user.name ?? "");
+
+  // ?debug=1 explains the match instead of leaving an unmatched partner as an
+  // unexplained snapshot. Scoped to the signed-in user's own lookup.
+  const debug = req.nextUrl.searchParams.get("debug")
+    ? await describeAgentMatch(user.email, user.name ?? "").catch((e: unknown) => ({
+        error: e instanceof Error ? e.message : String(e),
+      }))
+    : undefined;
+
   return NextResponse.json({
     connected: true,
     month,
-    earnings: getAgentEarnings(user.email, month, user.name ?? ""),
+    earnings,
+    ...(debug ? { debug } : {}),
     refreshing: payPropRefreshing(),
   });
 }
