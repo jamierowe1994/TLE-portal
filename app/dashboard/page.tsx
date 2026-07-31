@@ -412,11 +412,13 @@ export default function MyDashboardPage() {
                       src="/illustrations/buildings-street.png"
                       alt=""
                       aria-hidden
-                      // No blend mode here: the artwork has a soft backdrop
-                      // shape drawn behind the houses, and multiplying it
-                      // against the card only made that shape darker and more
-                      // obvious. Left alone it sits closest to the paper.
-                      className="pointer-events-none absolute -bottom-[7px] right-[5%] max-w-[76%]"
+                      // Dropped below the divider and sized so the buildings
+                      // straddle it: the artwork's backdrop is opaque, so it
+                      // masks the rule behind it and the street reads as if
+                      // it's coming through the box. Sitting higher put the
+                      // line across the windows, which are transparent, and
+                      // the rule showed straight through them.
+                      className="pointer-events-none absolute -bottom-[22px] right-[5%] max-w-[70%]"
                     />
                   </div>
 
