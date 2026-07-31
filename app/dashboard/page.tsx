@@ -276,7 +276,9 @@ export default function MyDashboardPage() {
                 />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
-                    <div className="stat-value text-[30px]">{periodEarnings != null ? formatGBP(periodEarnings) : "—"}</div>
+                    <div className="stat-value text-[17px]" style={{ fontWeight: 300 }}>
+                      {periodEarnings != null ? formatGBP(periodEarnings) : "—"}
+                    </div>
                     <div className="pb-1">
                       <Sparkline values={periodValues} />
                     </div>
