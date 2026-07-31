@@ -495,7 +495,17 @@ export default function MyDashboardPage() {
                     <DoodleIcon name="target" size={16} />
                     Conversion rates
                   </h2>
-                  <SourceBadge source="snapshot" asOf={SNAP} note="Derived from your sales funnel in the TLE Business Dashboard snapshot." />
+                  {/* The block was hardcoded to snapshot, so a rate derived
+                      from live REX counts still showed as stale. Report what
+                      the figures are actually built from. */}
+                  <SourceBadge
+                    source={c.maToListing.source}
+                    asOf={c.maToListing.asOf ?? SNAP}
+                    note={
+                      c.maToListing.note ??
+                      "Derived from your sales funnel in the TLE Business Dashboard snapshot."
+                    }
+                  />
                 </div>
                 <div className="my-auto grid grid-cols-3 gap-2 py-4">
                   <Gauge label="Lead → MA" pct={c.leadToMa.value} />
