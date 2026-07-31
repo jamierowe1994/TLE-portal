@@ -653,6 +653,30 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
         ) : null}
       </section>
 
+      {/* Both tables below are the 11 Jul capture, not a live feed — say so
+          plainly, and loudly when the month selector points elsewhere. */}
+      <div
+        className={`rounded-2xl border px-4 py-3 text-[13px] ${
+          month === "2026-07"
+            ? "border-line bg-card text-muted"
+            : "border-amber-200 bg-amber-50 text-amber-800"
+        }`}
+      >
+        {month === "2026-07" ? (
+          <>
+            The two tables below are the <span className="font-semibold">11 Jul 2026 capture</span>{" "}
+            of Propoly, listing individual properties. They are not live, and they
+            stay on July whatever month is selected above.
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">Showing July 2026, not {monthLabel(month)}.</span>{" "}
+            These tables are a fixed capture of individual properties from 11 Jul
+            2026 and don&rsquo;t follow the month selector.
+          </>
+        )}
+      </div>
+
       {/* July move-ins table (snapshot + admin-added rows) */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
@@ -679,9 +703,17 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
 
       {/* July pipeline */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold">
-          July pipeline — {seed.julyPipeline.length} properties expected this month
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">
+            July pipeline — {seed.julyPipeline.length} properties expected this month
+          </h2>
+          {/* Was unlabelled, so there was no way to tell it from a live table. */}
+          <SourceBadge
+            source="snapshot"
+            asOf="2026-07-11"
+            note="Captured from the Propoly pipeline on 11 Jul 2026. Not a live feed, and it does not follow the month selector."
+          />
+        </div>
         <DataTable columns={PIPELINE_COLUMNS} rows={seed.julyPipeline} compact />
       </section>
 

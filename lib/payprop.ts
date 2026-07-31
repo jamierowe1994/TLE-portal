@@ -384,12 +384,24 @@ export async function payPropGetAll<T = Record<string, unknown>>(
     }
   }
 
-  // A partial walk is worse than no walk: it renders as a smaller but entirely
-  // plausible number that nobody can tell is wrong. Throw so the caller's
-  // cache stays empty and it retries, rather than caching a lie.
-  if (short || (expected != null && all.length < expected)) {
+  // A page we genuinely failed to fetch means the result is incomplete, and a
+  // partial walk is worse than none: it renders as a smaller but entirely
+  // plausible number nobody can tell is wrong. Throw so the caller caches
+  // nothing and retries.
+  if (short) {
     throw new Error(
-      `[payprop] ${path}: got ${all.length}/${expected ?? "?"} rows — refusing to report a partial figure.`
+      `[payprop] ${path}: a page could not be fetched after retries — refusing to report a partial figure.`
+    );
+  }
+
+  // A count below total_rows is NOT proof of loss: on a filtered query
+  // (is_archived=false) PayProp reports the unfiltered total, so a correct
+  // 481-row walk looks short against 630 and would throw forever — which is
+  // exactly what left the Portfolio tab stuck on "fetching". Worth noting,
+  // not worth discarding the data for.
+  if (expected != null && all.length < expected) {
+    console.warn(
+      `[payprop] ${path}: ${all.length} rows against total_rows ${expected} — expected when filtering.`
     );
   }
   return all;
