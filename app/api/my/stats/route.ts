@@ -3,6 +3,8 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { getAgentFunnel, getAgentPortfolio } from "@/lib/rex-stats";
 import { getPropolyPipelineCount } from "@/lib/propoly-deals";
+import { getMoveIns } from "@/lib/payprop-income";
+import { getAgentBook } from "@/lib/payprop-portfolio";
 import { resolveRexUserId } from "@/lib/agent-link";
 import { getAgentMetaStats } from "@/lib/meta";
 import { getOverrides } from "@/lib/actuals-store";
@@ -169,6 +171,25 @@ export async function GET(req: NextRequest) {
       value: propolyPipeline,
       source: "live-propoly",
       note: "Live count of your deals in progression on Propoly — deal started through signing & move-in monies.",
+      asOf: new Date().toISOString().slice(0, 10),
+    };
+  }
+
+  // Move-ins: PayProp knows which tenancies started this month and the
+  // portfolio book knows whose properties they are, so the two join on
+  // property name. Without this the tile sat on the snapshot — and it also
+  // feeds Listing -> Move-in, which was therefore derived from stale numbers.
+  const allMoveIns = getMoveIns(month);
+  const book = getAgentBook(user.name ?? "");
+  if (allMoveIns && book && book.propertyNames.length) {
+    const mine = new Set(book.propertyNames);
+    const rows = allMoveIns.properties.filter((p) => mine.has(p.property));
+    funnel.moveIns = {
+      value: rows.length,
+      source: "live-payprop",
+      note: `Live from PayProp — tenancies starting this month on your properties${
+        rows.length ? `, adding ${formatGBP(rows.reduce((t, r) => t + (r.rent ?? 0), 0))} of rent` : ""
+      }.`,
       asOf: new Date().toISOString().slice(0, 10),
     };
   }
