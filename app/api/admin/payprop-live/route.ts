@@ -37,11 +37,15 @@ export async function GET(req: NextRequest) {
   // year-to-date. Both are the same walk over a different date range.
   const [y, m] = month.split("-").map(Number);
   const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
-  const prevIncome = getAgencyIncome(prev);
-  const ytd = getYtdIncome(month);
-  const arrears = getArrears();
-  const moveIns = getMoveIns(month);
-  const portfolio = getPortfolioBook();
+  // All five read their durable cache first, so they settle together in a few
+  // milliseconds on a warm database rather than one after another.
+  const [prevIncome, ytd, arrears, moveIns, portfolio] = await Promise.all([
+    getAgencyIncome(prev),
+    getYtdIncome(month),
+    getArrears(),
+    getMoveIns(month),
+    getPortfolioBook(),
+  ]);
 
   return NextResponse.json({
     connected: true,

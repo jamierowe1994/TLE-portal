@@ -259,8 +259,10 @@ export async function GET(req: NextRequest) {
   // portfolio book knows whose properties they are, so the two join on
   // property name. Without this the tile sat on the snapshot — and it also
   // feeds Listing -> Move-in, which was therefore derived from stale numbers.
-  const allMoveIns = getMoveIns(month);
-  const book = getAgentBook(user.name ?? "");
+  const [allMoveIns, book] = await Promise.all([
+    getMoveIns(month),
+    getAgentBook(user.name ?? ""),
+  ]);
   // Kept outside the `if` so the drill-down can list the same rows the count
   // was built from — the tile and the list are never two different answers.
   let moveInRows: MoveInsDrillRow[] | null = null;

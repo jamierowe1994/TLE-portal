@@ -634,8 +634,15 @@ export async function getAgentRampCounts(
 
 // The agent's managed portfolio (count + monthly rent roll) from their leased
 // listings. Live, current-state. null on any failure → caller keeps snapshot.
+const rentRollCache = new Map<string, { at: number; data: AgentPortfolio }>();
+
 export async function getAgentPortfolio(rexUserId: string): Promise<AgentPortfolio | null> {
   if (!rexConfigured() || !rexUserId) return null;
+
+  // Cached like its neighbours. Without this every dashboard load re-ran the
+  // leased-listings search — the one call on this route with no cache at all.
+  const cached = rentRollCache.get(rexUserId);
+  if (cached && Date.now() - cached.at < LISTINGS_TTL_MS) return cached.data;
 
   const work = (async (): Promise<AgentPortfolio | null> => {
     const caps = await getCapabilities();
@@ -652,7 +659,9 @@ export async function getAgentPortfolio(rexUserId: string): Promise<AgentPortfol
       const rent = Number(r.price_rent);
       if (Number.isFinite(rent) && rent > 0) rentRoll += rent;
     }
-    return { managed: rows.length, rentRoll };
+    const data = { managed: rows.length, rentRoll };
+    rentRollCache.set(rexUserId, { at: Date.now(), data });
+    return data;
   })();
 
   const deadline = new Promise<null>((resolve) =>

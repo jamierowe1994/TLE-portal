@@ -19,13 +19,11 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   if (!payPropConfigured()) return NextResponse.json({ connected: false, book: null });
 
-  const book = getAgentBook(user.name);
-  // Touch the book so the background refresh starts on first call.
-  getPortfolioBook();
+  const book = await getAgentBook(user.name);
 
   // Their arrears: tenant balances on properties they're responsible for.
   let arrears: { count: number; owed: number } | null = null;
-  const balances = getArrears();
+  const balances = await getArrears();
   if (balances && book) {
     // Tenant balances name the property, not the agent, so match on the
     // property names that belong to this partner's book.

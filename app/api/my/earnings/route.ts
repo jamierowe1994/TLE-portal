@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   }
 
   const month = req.nextUrl.searchParams.get("month") ?? currentMonth();
-  const earnings = getAgentEarnings(user.email, month, user.name ?? "");
+  const earnings = await getAgentEarnings(user.email, month, user.name ?? "");
 
   // ?debug=1 explains the match instead of leaving an unmatched partner as an
   // unexplained snapshot. Scoped to the signed-in user's own lookup.

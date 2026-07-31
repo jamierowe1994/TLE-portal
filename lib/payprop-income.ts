@@ -66,28 +66,32 @@ const running = new Set<string>();
 /** Bump when a cached shape gains or loses a field. */
 const CACHE_VERSION = "v4";
 
-function cachedAsync<T>(rawKey: string, run: () => Promise<T>): T | null {
+async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
   return cachedAsyncInner(key, run);
 }
 
-function cachedAsyncInner<T>(key: string, run: () => Promise<T>): T | null {
-  const hit = cache.get(key);
+async function cachedAsyncInner<T>(key: string, run: () => Promise<T>): Promise<T | null> {
+  let hit = cache.get(key);
+
+  // On a cold process the database usually already holds the answer from before
+  // the last deploy. Read it HERE, on the request path — it costs a few
+  // milliseconds, against a walk that costs a minute or more. This used to sit
+  // inside the background job below, which meant the very request that needed
+  // the durable cache was the one request guaranteed not to see it.
+  if (!hit) {
+    const stored = await readCache<T>(key).catch(() => null);
+    if (stored) {
+      hit = { at: stored.at, data: stored.data };
+      cache.set(key, hit);
+    }
+  }
+
   if (hit && Date.now() - hit.at < TTL_MS) return hit.data as T;
 
   if (!running.has(key)) {
     running.add(key);
     void (async () => {
-      // On a cold process, the database usually already holds the answer from
-      // before the last deploy — serve that immediately rather than making
-      // everyone wait out a fresh walk.
-      if (!hit) {
-        const stored = await readCache<T>(key).catch(() => null);
-        if (stored) {
-          cache.set(key, { at: stored.at, data: stored.data });
-          if (Date.now() - stored.at < TTL_MS) return; // still fresh — done
-        }
-      }
       const data = await run();
       cache.set(key, { at: Date.now(), data });
       await writeCache(key, data);
@@ -196,7 +200,7 @@ function monthRange(month: string): { from: string; to: string } {
  * PayProp account (the business runs Scotland and the rest of the UK as
  * separate agencies).
  */
-export function getAgencyIncome(month: string): AgencyIncome | null {
+export function getAgencyIncome(month: string): Promise<AgencyIncome | null> {
   const { from, to } = monthRange(month);
   return cachedAsync(`income:${month}`, () => computeIncomeRange(month, from, to));
 }
@@ -205,7 +209,7 @@ export function getAgencyIncome(month: string): AgencyIncome | null {
  * Everything earned from 1 January up to the end of `month` — the year-to-date
  * figures on the admin home. One range query, not one per month.
  */
-export function getYtdIncome(month: string): AgencyIncome | null {
+export function getYtdIncome(month: string): Promise<AgencyIncome | null> {
   const { to } = monthRange(month);
   const year = month.slice(0, 4);
   return cachedAsync(`ytd:${month}`, () =>
@@ -336,7 +340,7 @@ export interface ArrearsSummary {
  * Who's behind on rent. PayProp signs balances from the tenant's side, so a
  * negative balance is money owed — flipped here so the admin reads positives.
  */
-export function getArrears(): ArrearsSummary | null {
+export function getArrears(): Promise<ArrearsSummary | null> {
   return cachedAsync("arrears", computeArrears);
 }
 
@@ -540,7 +544,7 @@ export function getAgentEarnings(
   email: string,
   month: string,
   displayName = ""
-): AgentEarnings | null {
+): Promise<AgentEarnings | null> {
   const key = `agent:${email.toLowerCase()}:${month}`;
   return cachedAsync(key, () => computeAgentEarnings(email, month, displayName));
 }
@@ -655,7 +659,7 @@ export interface MoveIns {
  * Business-wide only: PayProp holds no agent against a property, so this
  * can't be split by partner. The agent dashboard keeps its REX figure.
  */
-export function getMoveIns(month: string): MoveIns | null {
+export function getMoveIns(month: string): Promise<MoveIns | null> {
   return cachedAsync(`movein:${month}`, () => computeMoveIns(month));
 }
 

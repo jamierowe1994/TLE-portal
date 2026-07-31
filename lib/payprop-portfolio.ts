@@ -161,19 +161,19 @@ export function portfolioError(): string | null {
  * The managed book, grouped by responsible agent. Non-blocking in the same way
  * as the income figures: serves what's cached and refreshes behind.
  */
-export function getPortfolioBook(): PortfolioBook | null {
+export async function getPortfolioBook(): Promise<PortfolioBook | null> {
+  // Survive a deploy: the last good book is in the database, and reading it
+  // costs milliseconds against a ~26-page walk. This read used to live inside
+  // the background job below, so a cold process served nothing until the whole
+  // walk finished — the deploy-day slowness.
+  if (!cache) {
+    const stored = await readCache<PortfolioBook>("payprop:portfolio:v3").catch(() => null);
+    if (stored) cache = { at: stored.at, data: stored.data };
+  }
   if (cache && Date.now() - cache.at < TTL_MS) return cache.data;
   if (!running) {
     running = true;
     void (async () => {
-      // Survive a deploy: the last good book is in the database.
-      if (!cache) {
-        const stored = await readCache<PortfolioBook>("payprop:portfolio:v3").catch(() => null);
-        if (stored) {
-          cache = { at: stored.at, data: stored.data };
-          if (Date.now() - stored.at < TTL_MS) return;
-        }
-      }
       const data = await computePortfolioBook();
       if (data) {
         cache = { at: Date.now(), data };
@@ -308,8 +308,8 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
  * Returns null when the book isn't loaded yet, so the caller can fall back
  * rather than show a confident zero.
  */
-export function getAgentBook(displayName: string): AgentBook | null {
-  const book = getPortfolioBook();
+export async function getAgentBook(displayName: string): Promise<AgentBook | null> {
+  const book = await getPortfolioBook();
   if (!book) return null;
   const key = normaliseAgentName(displayName);
   return (

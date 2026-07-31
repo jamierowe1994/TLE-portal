@@ -22,9 +22,11 @@ export async function GET(req: NextRequest) {
   const month = req.nextUrl.searchParams.get("month") ?? currentMonth();
   try {
   const name = user.name ?? "";
-  const book = getAgentBook(name);
-  const all = getMoveIns(month);
-  const portfolio = getPortfolioBook();
+  const [book, all, portfolio] = await Promise.all([
+    getAgentBook(name),
+    getMoveIns(month),
+    getPortfolioBook(),
+  ]);
 
   const mineIds = new Set(book?.propertyIds ?? []);
   const mineKeys = new Set(book?.propertyKeys ?? []);
