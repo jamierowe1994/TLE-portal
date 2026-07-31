@@ -19,7 +19,14 @@ import {
   SNAPSHOT_DATE,
 } from "@/lib/seed-data";
 import { formatGBP, formatPct, currentMonth } from "@/lib/format";
-import type { ActualOverride, ConversionStats, FunnelStats, StatValue } from "@/lib/types";
+import type {
+  ActualOverride,
+  ConversionStats,
+  FunnelRows,
+  FunnelStats,
+  MoveInsDrillRow,
+  StatValue,
+} from "@/lib/types";
 
 // GET /api/my/stats?month=YYYY-MM — the signed-in agent's funnel + conversion
 // stats for one month, assembled with the live → manual → snapshot precedence:
@@ -181,9 +188,22 @@ export async function GET(req: NextRequest) {
   // feeds Listing -> Move-in, which was therefore derived from stale numbers.
   const allMoveIns = getMoveIns(month);
   const book = getAgentBook(user.name ?? "");
+  // Kept outside the `if` so the drill-down can list the same rows the count
+  // was built from — the tile and the list are never two different answers.
+  let moveInRows: MoveInsDrillRow[] | null = null;
   if (allMoveIns && book && book.propertyNames.length) {
-    const mine = new Set(book.propertyNames);
-    const rows = allMoveIns.properties.filter((p) => mine.has(p.property));
+    // Join on PayProp's id, not the name: the move-ins report falls back to a
+    // formatted address ("11 Albion Street, Motherwell") where the properties
+    // export gives a name ("Albion Street, 11"), so matching on names found
+    // nothing and every partner's tile stayed amber.
+    const mine = new Set(book.propertyIds);
+    const rows = allMoveIns.properties.filter((p) => p.propertyId && mine.has(p.propertyId));
+    moveInRows = rows.map((r) => ({
+      property: r.property,
+      tenant: r.tenant,
+      rent: r.rent,
+      from: r.from,
+    }));
     funnel.moveIns = {
       value: rows.length,
       source: "live-payprop",
@@ -292,6 +312,9 @@ export async function GET(req: NextRequest) {
     month,
     agentKey,
     funnel,
+    // Drill-down rows. Only the stages joined to a real source appear here;
+    // the rest stay null so the dashboard can label them honestly.
+    funnelRows: { moveIns: moveInRows } satisfies FunnelRows,
     conversions,
     portfolio,
     // Full snapshot mix (managed / let-only / RLP / avg rent) for the donut.

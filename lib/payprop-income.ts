@@ -624,7 +624,7 @@ interface InvoiceRow {
   invoice_type?: string;
   from_date?: string;
   gross_amount?: number;
-  property?: { property_name?: string; address?: { first_line?: string; city?: string } };
+  property?: { id?: string; property_name?: string; address?: { first_line?: string; city?: string } };
   tenant?: { display_name?: string };
 }
 
@@ -671,6 +671,10 @@ async function computeMoveIns(month: string): Promise<MoveIns | null> {
     count: starting.length,
     rentAdded: starting.reduce((t, r) => t + (Number(r.gross_amount) || 0), 0),
     properties: starting.map((r) => ({
+      // PayProp's id, so callers can join without relying on the name — the
+      // fallback below produces "11 Albion Street, Motherwell" where the
+      // properties export says "Albion Street, 11", and the two never match.
+      propertyId: r.property?.id ?? "",
       property:
         r.property?.property_name ??
         [r.property?.address?.first_line, r.property?.address?.city]

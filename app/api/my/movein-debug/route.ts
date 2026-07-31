@@ -25,8 +25,8 @@ export async function GET(req: NextRequest) {
   const all = getMoveIns(month);
   const portfolio = getPortfolioBook();
 
-  const mine = new Set(book?.propertyNames ?? []);
-  const matched = (all?.properties ?? []).filter((p) => mine.has(p.property));
+  const mine = new Set(book?.propertyIds ?? []);
+  const matched = (all?.properties ?? []).filter((p) => p.propertyId && mine.has(p.propertyId));
 
   return NextResponse.json({
     month,
@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
           matchedNames: book.names,
           properties: book.properties,
           samplePropertyNames: book.propertyNames.slice(0, 5),
+          samplePropertyIds: book.propertyIds.slice(0, 5),
         }
       : null,
 
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
     moveIns: {
       businessWide: all?.count ?? null,
       samplePropertyNames: (all?.properties ?? []).slice(0, 5).map((p) => p.property),
+      samplePropertyIds: (all?.properties ?? []).slice(0, 5).map((p) => p.propertyId),
       matchedToYou: matched.length,
       matchedRows: matched,
     },
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
       : !book?.properties
         ? "PayProp has no properties under your name — check `knownAgentNames` for how it spells you."
         : matched.length === 0 && (all?.count ?? 0) > 0
-          ? "You have properties, but none of this month's move-ins are on them. Either genuinely none, or the property names differ between the two reports."
+          ? "You have properties, but none of this month's move-ins are on them — most likely genuinely none this month, since the join is now on PayProp ids rather than names."
           : "Joined fine — the tile should be live.",
   });
 }

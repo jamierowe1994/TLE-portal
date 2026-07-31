@@ -60,6 +60,9 @@ export interface AgentBook {
   /** Property names on this book — how arrears rows get attributed, since
    *  tenant balances name the property rather than the agent. */
   propertyNames: string[];
+  /** PayProp ids for the same properties. Names are formatted differently
+   *  between reports, so anything joining across reports uses these. */
+  propertyIds: string[];
   accounts: PayPropAccountId[];
 }
 
@@ -231,6 +234,7 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
         rentRoll: 0,
         activeTenancies: 0,
         propertyNames: [],
+        propertyIds: [],
         accounts: [],
       });
       if (raw && !book.names.includes(raw)) book.names.push(raw);
@@ -239,6 +243,8 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
       book.activeTenancies += money(r.active_tenancies);
       const pname = text(r.property_name);
       if (pname) book.propertyNames.push(pname);
+      const pid = text(r.id);
+      if (pid) book.propertyIds.push(pid);
       if (!book.accounts.includes(account)) book.accounts.push(account);
     }
     slices.push({
@@ -282,6 +288,7 @@ export function getAgentBook(displayName: string): AgentBook | null {
       rentRoll: 0,
       activeTenancies: 0,
       propertyNames: [],
+      propertyIds: [],
       accounts: [],
     }
   );
