@@ -9,6 +9,7 @@ import {
   getArrears,
   getMoveIns,
   payPropRefreshing,
+  exVat,
 } from "@/lib/payprop-income";
 import { getPortfolioBook, portfolioError } from "@/lib/payprop-portfolio";
 import { currentMonth } from "@/lib/format";
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
   // ownerPayments and unclassified are deliberately left alone: rent passed to
   // a landlord is not a VAT-able fee, and unclassified mixes contractor costs
   // with deposit movements.
-  const ex = (n: number) => Math.round((n / 1.2) * 100) / 100;
+  const ex = exVat;
   const netted = <T extends typeof income>(i: T): T =>
     i == null
       ? i

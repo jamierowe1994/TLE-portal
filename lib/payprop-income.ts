@@ -182,7 +182,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v11"; // v11: batch-transfer basis, net of VAT on every fee figure
+const CACHE_VERSION = "v12"; // v12: VAT rounded the sheet's way (subtract, not divide)
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -274,6 +274,24 @@ const FEE_CATEGORIES = new Set([
 // Money that only passes through a recipient — never commission. Still used
 // to separate an agent's pass-through from their earnings.
 const NOT_EARNINGS = new Set(["Contractor", "Deposit (Custodial)", "Property account"]);
+
+/**
+ * A VAT-inclusive fee, net of VAT — exactly as the accounts spreadsheet does it.
+ *
+ * NOT `gross / 1.2`. The sheet rounds the VAT and subtracts it, which differs by
+ * a penny whenever the third decimal lands on a 5. Checked across all 96
+ * populated cells of the Agent Earnings Table: 95 follow this, and every case
+ * where the two methods disagree follows this one — Tony Poon's April is
+ * 1,033.53 gross, 861.27 on the sheet, and 861.28 by division.
+ *
+ * A penny is nothing until someone is checking a figure against their own
+ * spreadsheet, at which point it is the difference between "correct" and
+ * "close".
+ */
+export const exVat = (gross: number): number => {
+  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+  return round2(gross - round2(gross / 6));
+};
 
 const money = (v: unknown) => {
   const n = parseFloat(String(v ?? ""));
@@ -563,7 +581,7 @@ async function computeIncomeRange(
     paymentCount: rows.length,
     accounts,
     net: (() => {
-      const ex = (n: number) => Math.round((n / 1.2) * 100) / 100;
+      const ex = exVat;
       const combined = ex(agencyIncome + paidToBeneficiaries);
       return {
         agencyIncome: ex(agencyIncome),
@@ -1028,7 +1046,7 @@ async function computeAgentEarnings(
   return {
     month,
     earned,
-    earnedNet: Math.round((earned / 1.2) * 100) / 100,
+    earnedNet: exVat(earned),
     passedThrough,
     byCategory: [...cats.entries()]
       .map(([category, amount]) => ({ category, amount }))
@@ -1221,7 +1239,7 @@ export async function getAgentEarningsForMonths(
       earnings: {
         month,
         earned: Math.round(earned * 100) / 100,
-        earnedNet: Math.round((earned / 1.2) * 100) / 100,
+        earnedNet: exVat(earned),
         passedThrough: Math.round(passedThrough * 100) / 100,
         byCategory: [...cats.entries()]
           .map(([category, amount]) => ({ category, amount }))

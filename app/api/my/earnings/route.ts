@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { payPropConfigured } from "@/lib/payprop";
-import { getAgentEarningsForMonths, describeAgentMatch, payPropRefreshing } from "@/lib/payprop-income";
+import { getAgentEarningsForMonths, describeAgentMatch, payPropRefreshing, exVat } from "@/lib/payprop-income";
 import { SNAPSHOT_MONTH } from "@/lib/seed-data";
 import type { AgentEarnings } from "@/lib/payprop-income";
 
@@ -88,10 +88,9 @@ export async function GET(req: NextRequest) {
       for (const c of r.earnings.byCategory) {
         // Net, to match the headline it sits under — a breakdown that does not
         // add up to the total above it is worse than no breakdown.
-        categories.set(
-          c.category,
-          (categories.get(c.category) ?? 0) + c.amount / 1.2
-        );
+        // Accumulate GROSS and take VAT off the total at the end — rounding
+        // each line first and then summing drifts from the sheet by pennies.
+        categories.set(c.category, (categories.get(c.category) ?? 0) + c.amount);
       }
     }
   }
@@ -131,10 +130,7 @@ export async function GET(req: NextRequest) {
       /** Months we asked for and haven't got an answer for yet. */
       missing: months.filter((m) => !answered.some((r) => r.month === m)),
       byCategory: [...categories.entries()]
-        .map(([category, amount]) => ({
-          category,
-          amount: Math.round(amount * 100) / 100,
-        }))
+        .map(([category, amount]) => ({ category, amount: exVat(amount) }))
         .sort((a, b) => b.amount - a.amount),
       ...(tooLong
         ? {

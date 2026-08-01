@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { payPropConfigured } from "@/lib/payprop";
-import { auditRowsForRange, agentBeneficiaryIds } from "@/lib/payprop-income";
+import { auditRowsForRange, agentBeneficiaryIds, exVat } from "@/lib/payprop-income";
 import { getPortfolioBook } from "@/lib/payprop-portfolio";
 
 // EVERY partner, EVERY month, in one response.
@@ -163,7 +163,7 @@ export async function GET(req: NextRequest) {
         const recon = mine.filter((r) => inM(r.rd));
         const propSettled = onTheirProperties.filter((r) => inM(r.td));
         const total = (rs: typeof mine) => round(rs.reduce((t, r) => t + r.a, 0));
-        const net = (n: number) => round(n / 1.2);
+        const net = exVat;
         perMonth[month] = {
           // What the dashboard shows, and what the sheet's net column should say.
           earnedNet: net(total(settled)),
