@@ -9,7 +9,9 @@ import {
   getPropolyDeals,
   getPropolyDeal,
   getPropolyProperties,
-  propolyGet,
+  getPropolyTenancyAgreementOptions,
+  getPropolyDepositSchemes,
+  getPropolyDocumentTypes,
   type PropolyResult,
 } from "@/lib/propoly";
 
@@ -125,30 +127,20 @@ export async function GET(req: NextRequest) {
     }
 
     const DOC_WORDS = /doc|agree|contract|sign|template|tenancy|file|attach/i;
-    const paths = sampleId
-      ? [
-          `/api/v1/deals/${sampleId}/documents`,
-          `/api/v1/deals/${sampleId}/files`,
-          `/api/v1/deals/${sampleId}/agreements`,
-          "/api/v1/documents",
-          "/api/v1/agreements",
-          "/api/v1/templates",
-          // CONTROL. Every document route came back 403, not 404 — which reads
-          // as "exists, you lack permission" and would mean asking Propoly to
-          // widen the key's scope. But plenty of APIs answer 403 for ANY path
-          // outside the granted scope, including ones that do not exist. This
-          // path certainly does not exist. If it 403s too, then 403 is just
-          // Propoly's word for "no" and the other six prove nothing.
-          "/api/v1/this-endpoint-does-not-exist-control-test",
-        ]
-      : [];
-    const documentRoutes: Record<string, unknown> = {};
-    for (const path of paths) {
-      const r = await propolyGet(path).catch(() => null);
-      documentRoutes[path] = r
-        ? { status: r.status, ...(r.status < 400 ? summarise(r) : {}) }
-        : { status: "call threw" };
-    }
+
+    // The production OpenAPI spec (docs/propoly-openapi.yaml) ended the
+    // guessing: there are 24 endpoints and /api/v1/documents is POST ONLY.
+    // Documents can be pushed IN and cannot be read back, so no amount of
+    // probing was ever going to surface a tenancy agreement. The speculative
+    // route list that used to live here has been deleted rather than left to
+    // rot — every one of its 403s was meaningless, as the control proved.
+    //
+    // These three are real, documented, and previously uncalled.
+    const [agreementOptions, depositSchemes, documentTypes] = await Promise.all([
+      getPropolyTenancyAgreementOptions().catch(() => null),
+      getPropolyDepositSchemes().catch(() => null),
+      getPropolyDocumentTypes().catch(() => null),
+    ]);
 
     return NextResponse.json({
       configured: true,
@@ -198,6 +190,19 @@ export async function GET(req: NextRequest) {
         }
         return out;
       })(),
+      configuration: {
+        tenancyAgreementTemplates: agreementOptions
+          ? { status: agreementOptions.status, body: agreementOptions.body }
+          : null,
+        depositSchemes: depositSchemes
+          ? { status: depositSchemes.status, body: depositSchemes.body }
+          : null,
+        // The authoritative compliance vocabulary, and the jurisdiction rules
+        // that come with it.
+        documentTypes: documentTypes
+          ? { status: documentTypes.status, body: documentTypes.body }
+          : null,
+      },
       contracts: {
         sampleDealFound: Boolean(sampleId),
         listRowKeys: listKeys,
@@ -210,7 +215,11 @@ export async function GET(req: NextRequest) {
         documentShapedKeys: fullDeal
           ? Object.keys(fullDeal).filter((k) => DOC_WORDS.test(k))
           : [],
-        documentRoutes,
+        verdict:
+          "/api/v1/documents is POST-only in the production spec — documents go " +
+          "IN, nothing comes back out. Propoly cannot be a source of truth for " +
+          "the tenancy agreement or for compliance certificates. It can be a " +
+          "destination for them.",
       },
     });
   } catch (e) {

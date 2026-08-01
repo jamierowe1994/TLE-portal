@@ -1,0 +1,3873 @@
+---
+openapi: 3.0.1
+info:
+  title: API V1 (Production)
+  version: v1
+paths:
+  "/api/v1/agents":
+    get:
+      summary: Retrieve all Agents
+      tags:
+      - Agents
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: created_at_from
+        in: query
+        required: false
+        description: 'Filter records created from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: created_at_to
+        in: query
+        required: false
+        description: 'Filter records created up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_from
+        in: query
+        required: false
+        description: 'Filter records updated from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_to
+        in: query
+        required: false
+        description: 'Filter records updated up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        description: Number of records per page
+        example: 10
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: agents found with custom pagination
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    agents:
+                    - uuid: 123e4567-e89b-12d3-a456-426614174000
+                      first_name: John
+                      last_name: Doe
+                      email: john.doe@email.com
+                      mobileno: "+447777777777"
+                      title: Mr.
+                      created_at: '2024-07-12T10:00:00Z'
+                      updated_at: '2024-07-12T10:00:00Z'
+                    total_entries: 1
+                    per_page: 10
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uuid:
+                          type: string
+                          format: uuid
+                        first_name:
+                          type: string
+                        last_name:
+                          type: string
+                        email:
+                          type: string
+                          format: email
+                        mobileno:
+                          type: string
+                        title:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+                  total_entries:
+                    type: integer
+                  per_page:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: agents not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/agents/{id}":
+    get:
+      summary: Retrieve a Agent
+      tags:
+      - Agents
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: Unique number Identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: agent found
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174000
+                    first_name: John
+                    last_name: Doe
+                    email: john.doe@email.com
+                    mobileno: "+447777777777"
+                    title: Mr.
+                    created_at: '2024-07-12T10:00:00Z'
+                    updated_at: '2024-07-12T10:00:00Z'
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  mobileno:
+                    type: string
+                  title:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: agent not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/token":
+    get:
+      summary: Generates JWT Token
+      tags:
+      - Authentication
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Token generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT authentication token
+                  client_name:
+                    type: string
+                    description: Authenticated client name
+                required:
+                - token
+                - client_name
+        '403':
+          description: Invalid credentials
+  "/api/v1/branches":
+    get:
+      summary: Retrieve all Branches
+      tags:
+      - Branches
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: created_at_from
+        in: query
+        required: false
+        description: 'Filter records created from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: created_at_to
+        in: query
+        required: false
+        description: 'Filter records created up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_from
+        in: query
+        required: false
+        description: 'Filter records updated from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_to
+        in: query
+        required: false
+        description: 'Filter records updated up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        description: Number of records per page
+        example: 10
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: branches found with custom pagination
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    branches:
+                    - uuid: 123e4567-e89b-12d3-a456-426614174001
+                      name: London Central
+                      created_at: '2024-07-12T10:00:00Z'
+                      updated_at: '2024-07-12T10:00:00Z'
+                    total_entries: 1
+                    per_page: 10
+              schema:
+                type: object
+                properties:
+                  branches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uuid:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+                  total_entries:
+                    type: integer
+                  per_page:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: branches not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/branches/{id}":
+    get:
+      summary: Retrieve a Branch
+      tags:
+      - Branches
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: Unique number Identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: branch found
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174001
+                    name: London Central
+                    created_at: '2024-07-12T10:00:00Z'
+                    updated_at: '2024-07-12T10:00:00Z'
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: branch not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/configuration/tenancy_agreements":
+    get:
+      summary: Retrieve tenancy agreement options
+      tags:
+      - Configuration
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '200':
+          description: tenancy agreement options retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenancy_agreement_options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        value:
+                          type: string
+                          description: Tenancy agreement template name
+                          example: Standard Propoly APT
+  "/api/v1/configuration/deposit_schemes":
+    get:
+      summary: Retrieve deposit scheme options
+      tags:
+      - Configuration
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '200':
+          description: deposit scheme options retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deposit_schemes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        value:
+                          type: string
+                          description: Deposit scheme name
+                          example: dps_custodial
+  "/api/v1/configuration/document_types":
+    get:
+      summary: Retrieve document type options
+      tags:
+      - Configuration
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '200':
+          description: document type options retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_types:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          description: Document type key
+                          example: DealGasSafetyAttachment
+                        name:
+                          type: string
+                          description: Document type name
+                          example: Gas Safety Certificate
+  "/api/v1/deals":
+    get:
+      summary: Retrieve all Deals
+      tags:
+      - Deals
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: created_at_from
+        in: query
+        required: false
+        description: 'Filter records created from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: created_at_to
+        in: query
+        required: false
+        description: 'Filter records created up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_from
+        in: query
+        required: false
+        description: 'Filter records updated from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_to
+        in: query
+        required: false
+        description: 'Filter records updated up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        description: Number of records per page
+        example: 10
+        schema:
+          type: integer
+      - name: tenancy_status
+        in: query
+        required: false
+        description: Filter deals by tenancy status - start_deal, holding_fee etc.
+        example: ''
+        schema:
+          type: string
+      responses:
+        '200':
+          description: deals found with custom pagination
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    deals:
+                    - uuid: 123e4567-e89b-12d3-a456-426614174002
+                      slug: deal-001
+                      price_pcm_pence: 150000
+                      deposit_pence: 150000
+                      holding_fee_pence: 50000
+                      break_clause: 
+                      move_in_date: '2024-07-12T10:00:00Z'
+                      move_out_date: 
+                      credit_payment_pence: 
+                      payment_schedule: 
+                      standing_order_reference: 
+                      pets: 
+                      furnished: 
+                      parking_details: 
+                      renewal_details: 
+                      tenancy_service_level: 
+                      property_type: 
+                      tenant_details: []
+                      landlord_details: []
+                      extra_clauses_details: []
+                      guarantors_details: []
+                      permitted_occupier_details: []
+                      tenancy_status: complete
+                      property_uuid: 123e4567-e89b-12d3-a456-426614174003
+                      created_at: '2024-07-12T10:00:00Z'
+                      updated_at: '2024-07-12T10:00:00Z'
+                    total_entries: 1
+                    per_page: 10
+              schema:
+                type: object
+                properties:
+                  deals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uuid:
+                          type: string
+                          format: uuid
+                        slug:
+                          type: string
+                        price_pcm_pence:
+                          type: integer
+                        deposit_pence:
+                          type: integer
+                        holding_fee_pence:
+                          type: integer
+                        break_clause:
+                          type: string
+                          nullable: true
+                        move_in_date:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        move_out_date:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        credit_payment_pence:
+                          type: integer
+                          nullable: true
+                        payment_schedule:
+                          type: string
+                          nullable: true
+                        standing_order_reference:
+                          type: string
+                          nullable: true
+                        pets:
+                          type: string
+                          nullable: true
+                        furnished:
+                          type: string
+                          nullable: true
+                        parking_details:
+                          type: string
+                          nullable: true
+                        renewal_details:
+                          type: string
+                          nullable: true
+                        tenancy_service_level:
+                          type: string
+                          nullable: true
+                        property_type:
+                          type: string
+                          nullable: true
+                        tenant_details:
+                          type: array
+                          items:
+                            type: object
+                          nullable: true
+                        landlord_details:
+                          type: array
+                          items:
+                            type: object
+                          nullable: true
+                        extra_clauses_details:
+                          type: array
+                          items:
+                            type: string
+                          nullable: true
+                        guarantors_details:
+                          type: array
+                          items:
+                            type: object
+                          nullable: true
+                        permitted_occupier_details:
+                          type: array
+                          items:
+                            type: object
+                          nullable: true
+                        tenancy_status:
+                          type: string
+                          enum:
+                          - start_deal
+                          - holding_fee
+                          - references
+                          - tenancy_generation
+                          - signing_and_move_in_monies
+                          - complete
+                          - cancelled
+                        property_uuid:
+                          type: string
+                          format: uuid
+                          nullable: true
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+                  total_entries:
+                    type: integer
+                  per_page:
+                    type: integer
+        '400':
+          description: Bad Request - Invalid tenancy_status parameter
+          content:
+            application/json:
+              examples:
+                invalid_tenancy_status:
+                  value:
+                    status: error
+                    message: 'Invalid tenancy_status value: ''invalid_status''.'
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: deals not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/deals/{id}":
+    get:
+      summary: Retrieve a Deal
+      tags:
+      - Deals
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: Unique number Identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: deal found
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174002
+                    slug: deal-001
+                    price_pcm_pence: 150000
+                    deposit_pence: 150000
+                    holding_fee_pence: 50000
+                    break_clause: 
+                    move_in_date: '2024-07-12T10:00:00Z'
+                    move_out_date: 
+                    credit_payment_pence: 
+                    payment_schedule: 
+                    standing_order_reference: 
+                    pets: 
+                    furnished: 
+                    parking_details: 
+                    renewal_details: 
+                    tenancy_service_level: 
+                    property_type: 
+                    tenant_details: []
+                    landlord_details: []
+                    extra_clauses_details: []
+                    guarantors_details: []
+                    permitted_occupier_details: []
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  slug:
+                    type: string
+                  price_pcm_pence:
+                    type: integer
+                  deposit_pence:
+                    type: integer
+                  holding_fee_pence:
+                    type: integer
+                  break_clause:
+                    type: string
+                    nullable: true
+                  move_in_date:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  move_out_date:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  credit_payment_pence:
+                    type: integer
+                    nullable: true
+                  payment_schedule:
+                    type: string
+                    nullable: true
+                  standing_order_reference:
+                    type: string
+                    nullable: true
+                  pets:
+                    type: string
+                    nullable: true
+                  furnished:
+                    type: string
+                    nullable: true
+                  parking_details:
+                    type: string
+                    nullable: true
+                  renewal_details:
+                    type: string
+                    nullable: true
+                  tenancy_service_level:
+                    type: string
+                    nullable: true
+                  property_type:
+                    type: string
+                    nullable: true
+                  tenant_details:
+                    type: array
+                    items:
+                      type: object
+                    nullable: true
+                  landlord_details:
+                    type: array
+                    items:
+                      type: object
+                    nullable: true
+                  extra_clauses_details:
+                    type: array
+                    items:
+                      type: string
+                    nullable: true
+                  guarantors_details:
+                    type: array
+                    items:
+                      type: object
+                    nullable: true
+                  permitted_occupier_details:
+                    type: array
+                    items:
+                      type: object
+                    nullable: true
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: deal not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/documents":
+    post:
+      summary: Create a new Document
+      tags:
+      - Documents
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '201':
+          description: document created
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    status: success
+                    message: Document uploaded successfully
+                    document:
+                      uuid: 123e4567-e89b-12d3-a456-426614174007
+                      type: DealGasSafetyAttachment
+                      name: gas_safety_certificate.pdf
+                      expiration: '2025-12-31'
+                      created_at: '2024-07-12T10:00:00Z'
+                      updated_at: '2024-07-12T10:00:00Z'
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Document uploaded successfully
+                  document:
+                    type: object
+                    properties:
+                      uuid:
+                        type: string
+                        format: uuid
+                      type:
+                        type: string
+                      name:
+                        type: string
+                      expiration:
+                        type: string
+                        format: date
+                        nullable: true
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              examples:
+                bad_request_example:
+                  value:
+                    status: error
+                    message: Gas Safety Certificate cannot be uploaded - this property
+                      does not have gas enabled
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    description: Bad request - various validation errors
+                    examples:
+                    - Expiration date is required for Compliance Documents
+                    - Gas Safety Certificate cannot be uploaded - this property does
+                      not have gas enabled
+                    - Portable appliance test can only be uploaded for Scottish properties
+                    - Legionella risk assessment can only be uploaded for Scottish
+                      properties
+                    - File size exceeds the maximum allowed size of 8.5MB
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Failed to upload document
+                    errors:
+                    - Attached file can't be blank
+                    - Type is invalid
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    description: Various validation error messages
+                    examples:
+                    - Failed to upload document
+                    - A document of this type already exists for this deal
+                    - File size exceeds the maximum allowed size of 8.5MB
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    nullable: true
+                    description: Array of validation error messages
+        '404':
+          description: Deal not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Deal not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Deal not found
+        '409':
+          description: Conflict - Duplicate document
+          content:
+            application/json:
+              examples:
+                conflict_example:
+                  value:
+                    status: error
+                    message: A Gas Safety Attachment already exists for this deal
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    description: Document already exists
+                    example: A Gas Safety Certificate already exists for this deal
+        '413':
+          description: Payload too large
+          content:
+            application/json:
+              examples:
+                payload_too_large_example:
+                  value:
+                    status: error
+                    message: File size 10.2MB exceeds the maximum allowed size of
+                      8.5MB
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    description: File size exceeds limit
+                    example: File size 10.2MB exceeds the maximum allowed size of
+                      8.5MB
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              examples:
+                internal_server_error_example:
+                  value:
+                    status: error
+                    message: An error occurred while creating the document
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: An error occurred while creating the document
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              description: Document upload payload. Compliance documents (Gas Safety,
+                EPC, Electrical Installation, Portable Appliance Test, Legionella)
+              properties:
+                deal_id:
+                  type: string
+                  format: uuid
+                  description: UUID of the deal
+                  example: 239cfa6-42d0-4a13-bf6d-17acf0491c83
+                attached:
+                  type: string
+                  format: binary
+                  description: File to upload (PDF, JPG, PNG, etc.)
+                type:
+                  type: string
+                  description: 'Document type (e.g., DealGasSafetyAttachment, DealInventoryAttachment,
+                    etc.). Note: DealGasSafetyAttachment can only be uploaded if the
+                    property has gas enabled.'
+                  example: DealGasSafetyAttachment
+                name:
+                  type: string
+                  description: Optional document name
+                  example: gas_safety_certificate.pdf
+                expiration:
+                  type: string
+                  format: date
+                  description: Expiration date (required for compliance documents
+                    only)
+                  example: '2025-12-31'
+              required:
+              - deal_id
+              - attached
+              - type
+        required: true
+  "/api/v1/landlords":
+    get:
+      summary: Retrieve all Landlords
+      tags:
+      - Landlords
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: created_at_from
+        in: query
+        required: false
+        description: 'Filter records created from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: created_at_to
+        in: query
+        required: false
+        description: 'Filter records created up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_from
+        in: query
+        required: false
+        description: 'Filter records updated from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_to
+        in: query
+        required: false
+        description: 'Filter records updated up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        description: Number of records per page
+        example: 10
+        schema:
+          type: integer
+      - name: email
+        in: query
+        required: false
+        description: Filter by email address
+        example: ''
+        schema:
+          type: string
+      responses:
+        '200':
+          description: landlords found with custom pagination
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    landlords:
+                    - uuid: 123e4567-e89b-12d3-a456-426614174003
+                      title: Ms.
+                      first_name: Jane
+                      middle_name: 
+                      last_name: Smith
+                      email: jane.smith@email.com
+                      mobileno: "+447888888888"
+                      created_at: '2024-07-12T10:00:00Z'
+                      updated_at: '2024-07-12T10:00:00Z'
+                    total_entries: 1
+                    per_page: 10
+              schema:
+                type: object
+                properties:
+                  landlords:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uuid:
+                          type: string
+                          format: uuid
+                        title:
+                          type: string
+                        first_name:
+                          type: string
+                        middle_name:
+                          type: string
+                          nullable: true
+                        last_name:
+                          type: string
+                        email:
+                          type: string
+                          format: email
+                        mobileno:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+                  total_entries:
+                    type: integer
+                  per_page:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: landlords not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+    post:
+      summary: Create a new Landlord
+      tags:
+      - Landlords
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '201':
+          description: landlord created
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    status: success
+                    landlord:
+                      uuid: 3b52cc33-0f06-4689-a353-6c8668c0786d
+                    message: Landlord created successfully
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  landlord:
+                    type: object
+                    properties:
+                      uuid:
+                        type: string
+                        example: 3b52cc33-0f06-4689-a353-6c8668c0786d
+                  message:
+                    type: string
+                    example: Landlord created successfully
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Email can't be blank
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    description: Various validation error messages
+                    examples:
+                    - Title can't be blank
+                    - First name can't be blank
+                    - Last name can't be blank
+                    - Mobile number can't be blank
+                    - Email can't be blank
+                    - Email is invalid
+                    - Company name can't be blank
+                    - Company position can't be blank
+                    - First name too long (maximum is 20 characters)
+                    - Last name too long (maximum is 20 characters)
+                    - Middle name too long (maximum is 20 characters)
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              examples:
+                internal_server_error_example:
+                  value:
+                    status: error
+                    message: An error occurred while creating the landlord
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: An error occurred while creating the landlord
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                landlord:
+                  type: object
+                  properties:
+                    title:
+                      type: string
+                      description: Salutation
+                      example: Mr
+                      enum:
+                      - Mr
+                      - Mrs
+                      - Ms
+                      - Miss
+                      - Doc
+                      - Rev
+                      - Prof
+                      - C/O
+                      - Dr
+                      - Mx
+                      - Lady
+                      - Lord
+                    first_name:
+                      type: string
+                      description: First name
+                      example: John
+                    middle_name:
+                      type: string
+                      description: Middle name
+                      example: Doe
+                    last_name:
+                      type: string
+                      description: Last name
+                      example: Doe
+                    mobileno:
+                      type: string
+                      description: Mobile number
+                      example: "+449898787676"
+                    email:
+                      type: string
+                      description: Email address
+                      example: john.doe@example.com
+                    is_company:
+                      type: boolean
+                      description: Is the landlord a company?
+                      example: false
+                    company_name:
+                      type: string
+                      description: Company name (required if is_company is true)
+                      example: Acme Inc.
+                    company_position:
+                      type: string
+                      description: Company position (required if is_company is true)
+                      example: Director
+                    name_on_contracts:
+                      type: string
+                      description: Name on contracts
+                      example: Acme Inc.
+                    agent_signs_on_behalf:
+                      type: boolean
+                      description: Agent signs on behalf of the landlord
+                      example: false
+                    email_updates:
+                      type: boolean
+                      description: Email updates
+                      example: true
+                    address_line1:
+                      type: string
+                      description: Address line 1
+                      example: 123 Main Street
+                    address_line2:
+                      type: string
+                      description: Address line 2
+                      example: Apt 1
+                    town:
+                      type: string
+                      description: Town/City
+                      example: London
+                    county:
+                      type: string
+                      description: County
+                      example: London
+                    postcode:
+                      type: string
+                      description: Postal code
+                      example: SW1A 1AA
+                  required:
+                  - title
+                  - first_name
+                  - last_name
+                  - mobileno
+                  - email
+        required: true
+  "/api/v1/landlords/{id}":
+    get:
+      summary: Retrieve a Landlord
+      tags:
+      - Landlords
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: Unique number Identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: landlord found
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174003
+                    title: Ms.
+                    first_name: Jane
+                    last_name: Smith
+                    email: jane.smith@email.com
+                    mobileno: "+447888888888"
+                    created_at: '2024-07-12T10:00:00Z'
+                    updated_at: '2024-07-12T10:00:00Z'
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  title:
+                    type: string
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  mobileno:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: landlord not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/landlords/{id}/relationships":
+    patch:
+      summary: Create a relationship between a Landlord and a Property
+      tags:
+      - Landlords
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: UUID of the landlord
+        schema:
+          type: string
+      responses:
+        '200':
+          description: relationship created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  property:
+                    type: object
+                  message:
+                    type: string
+                    example: Landlord associated with property successfully
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: associated_type can't be blank
+        '404':
+          description: Property not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Property not found
+        '409':
+          description: Conflict - already associated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Landlord already associated with this property
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: An error occurred while updating the relationship
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                associated_type:
+                  type: string
+                  description: Type of associated resource
+                  example: Property
+                associated_uuid:
+                  type: string
+                  description: UUID of the associated resource
+                  example: 123e4567-e89b-12d3-a456-426614174000
+  "/api/v1/properties":
+    get:
+      summary: Retrieve all Properties
+      tags:
+      - Properties
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: created_at_from
+        in: query
+        required: false
+        description: 'Filter records created from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: created_at_to
+        in: query
+        required: false
+        description: 'Filter records created up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_from
+        in: query
+        required: false
+        description: 'Filter records updated from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_to
+        in: query
+        required: false
+        description: 'Filter records updated up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        description: Number of records per page
+        example: 10
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: properties found with custom pagination
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    properties:
+                    - uuid: 123e4567-e89b-12d3-a456-426614174004
+                      slug: property-001
+                      managed_by_user_data:
+                        uuid: 123e4567-e89b-12d3-a456-426614174005
+                        first_name: Agent
+                        last_name: Manager
+                        title: Mr.
+                        mobileno: "+447999999999"
+                        email: agent.manager@email.com
+                      created_at: '2024-07-12T10:00:00Z'
+                      town: London
+                      postcode: E1 6AN
+                      address_line1: 123 Main St
+                      address_line2: Apt 4
+                    total_entries: 1
+                    per_page: 10
+              schema:
+                type: object
+                properties:
+                  properties:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uuid:
+                          type: string
+                          format: uuid
+                        slug:
+                          type: string
+                        managed_by_user_data:
+                          type: object
+                          nullable: true
+                          properties:
+                            uuid:
+                              type: string
+                              format: uuid
+                              nullable: true
+                            first_name:
+                              type: string
+                              nullable: true
+                            last_name:
+                              type: string
+                              nullable: true
+                            title:
+                              type: string
+                              nullable: true
+                            mobileno:
+                              type: string
+                              nullable: true
+                            email:
+                              type: string
+                              format: email
+                              nullable: true
+                        created_at:
+                          type: string
+                          format: date-time
+                        town:
+                          type: string
+                        postcode:
+                          type: string
+                        address_line1:
+                          type: string
+                        address_line2:
+                          type: string
+                  total_entries:
+                    type: integer
+                  per_page:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: properties not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+    post:
+      summary: Create a new Property
+      tags:
+      - Properties
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '201':
+          description: property created
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    status: success
+                    property:
+                      uuid: 3b52cc33-0f06-4689-a353-6c8668c0786d
+                    message: Property created successfully
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  property:
+                    type: object
+                    properties:
+                      uuid:
+                        type: string
+                        example: 3b52cc33-0f06-4689-a353-6c8668c0786d
+                  message:
+                    type: string
+                    example: Property created successfully
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              examples:
+                bad_request_example:
+                  value:
+                    status: error
+                    message: Bad request
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: Bad request
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: managed_by_user can't be blank
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    description: Various validation error messages
+                    examples:
+                    - managed_by_user can't be blank
+                    - invalid managed_by_user id
+                    - please provide number_of_bedrooms
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              examples:
+                internal_server_error_example:
+                  value:
+                    status: error
+                    message: An error occurred while creating the property
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: An error occurred while creating the property
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                property:
+                  type: object
+                  properties:
+                    managed_by_user_id:
+                      type: string
+                      description: User UUID who manages this property
+                      example: 239cfa6-42d0-4a13-bf6d-17acf0491c83
+                    address_line1:
+                      type: string
+                      description: Property address line 1
+                      example: 123 Main Street
+                    address_line2:
+                      type: string
+                      description: Property address line 2
+                      example: Apt 1
+                    town:
+                      type: string
+                      description: Town/City
+                      example: London
+                    county:
+                      type: string
+                      description: County
+                      example: London
+                    district:
+                      type: string
+                      description: District
+                      example: London
+                    postcode:
+                      type: string
+                      description: Postal code
+                      example: SW1A 1AA
+                    rent_type:
+                      type: string
+                      description: Type of rent
+                      enum:
+                      - entire_property
+                      - rented_per_room
+                      example: entire_property
+                    number_of_bedrooms:
+                      type: integer
+                      description: Number of bedrooms (required for rented_per_room)
+                      example: 3
+                    gas:
+                      type: boolean
+                      description: Required only if gas safety certificate needs to
+                        be uploaded
+                      example: true
+                  required:
+                  - managed_by_user_id
+                  - address_line1
+                  - town
+                  - postcode
+                  - rent_type
+              required:
+              - property
+        required: true
+  "/api/v1/properties/{id}":
+    get:
+      summary: Retrieve a Property
+      tags:
+      - Properties
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: Unique number Identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: property found
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174004
+                    slug: property-001
+                    managed_by_user_data:
+                      uuid: 123e4567-e89b-12d3-a456-426614174005
+                      first_name: Agent
+                      last_name: Manager
+                      title: Mr.
+                      mobileno: "+447999999999"
+                      email: agent.manager@email.com
+                    created_at: '2024-07-12T10:00:00Z'
+                    town: London
+                    postcode: E1 6AN
+                    address_line1: 123 Main St
+                    address_line2: Apt 4
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  slug:
+                    type: string
+                  managed_by_user_data:
+                    type: object
+                    nullable: true
+                    properties:
+                      uuid:
+                        type: string
+                        format: uuid
+                        nullable: true
+                      first_name:
+                        type: string
+                        nullable: true
+                      last_name:
+                        type: string
+                        nullable: true
+                      title:
+                        type: string
+                        nullable: true
+                      mobileno:
+                        type: string
+                        nullable: true
+                      email:
+                        type: string
+                        format: email
+                        nullable: true
+                  created_at:
+                    type: string
+                    format: date-time
+                  town:
+                    type: string
+                  postcode:
+                    type: string
+                  address_line1:
+                    type: string
+                  address_line2:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: property not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/tenants":
+    get:
+      summary: Retrieve all Tenants
+      tags:
+      - Tenants
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: created_at_from
+        in: query
+        required: false
+        description: 'Filter records created from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: created_at_to
+        in: query
+        required: false
+        description: 'Filter records created up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_from
+        in: query
+        required: false
+        description: 'Filter records updated from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_to
+        in: query
+        required: false
+        description: 'Filter records updated up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        description: Number of records per page
+        example: 10
+        schema:
+          type: integer
+      - name: email
+        in: query
+        required: false
+        description: Filter by email address
+        example: ''
+        schema:
+          type: string
+      responses:
+        '200':
+          description: tenants found with custom pagination
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    tenants:
+                    - uuid: 123e4567-e89b-12d3-a456-426614174006
+                      user_email: tenant@email.com
+                      user_details:
+                        first_name: Tom
+                        last_name: Tenant
+                        title: Mr.
+                        mobileno: "+447777777778"
+                        company_name: Tenant Ltd.
+                      created_at: '2024-07-12T10:00:00Z'
+                      updated_at: '2024-07-12T10:00:00Z'
+                    total_entries: 1
+                    per_page: 10
+              schema:
+                type: object
+                properties:
+                  tenants:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uuid:
+                          type: string
+                          format: uuid
+                        user_email:
+                          type: string
+                          format: email
+                        user_details:
+                          type: object
+                          nullable: true
+                          properties:
+                            first_name:
+                              type: string
+                              nullable: true
+                            last_name:
+                              type: string
+                              nullable: true
+                            title:
+                              type: string
+                              nullable: true
+                            mobileno:
+                              type: string
+                              nullable: true
+                            company_name:
+                              type: string
+                              nullable: true
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+                  total_entries:
+                    type: integer
+                  per_page:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: tenants not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+    post:
+      summary: Create a new Tenant
+      tags:
+      - Tenants
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '201':
+          description: tenant created
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174006
+                    user_email: new.tenant@email.com
+                    user_details:
+                      first_name: John
+                      last_name: Doe
+                      title: Mr.
+                      mobileno: "+447777777779"
+                      company_name: New Tenant Ltd.
+                    created_at: '2024-07-12T10:00:00Z'
+                    updated_at: '2024-07-12T10:00:00Z'
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  user_email:
+                    type: string
+                    format: email
+                  user_details:
+                    type: object
+                    nullable: true
+                    properties:
+                      first_name:
+                        type: string
+                        nullable: true
+                      last_name:
+                        type: string
+                        nullable: true
+                      title:
+                        type: string
+                        nullable: true
+                      mobileno:
+                        type: string
+                        nullable: true
+                      company_name:
+                        type: string
+                        nullable: true
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              examples:
+                bad_request_example:
+                  value:
+                    status: error
+                    message: Bad Request
+                    errors:
+                      user_email:
+                      - can't be blank
+                      - is invalid
+                      user_details:
+                      - must be present
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  errors:
+                    type: object
+                    properties:
+                      user_email:
+                        type: array
+                        items:
+                          type: string
+                      user_details:
+                        type: array
+                        items:
+                          type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+                    errors:
+                      user_email:
+                      - has already been taken
+                      user_details:
+                      - must be valid
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  errors:
+                    type: object
+                    properties:
+                      user_email:
+                        type: array
+                        items:
+                          type: string
+                      user_details:
+                        type: array
+                        items:
+                          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deal_id:
+                  type: string
+                  format: uuid
+                tenant:
+                  type: object
+                  properties:
+                    user_attributes:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                          format: email
+                        first_name:
+                          type: string
+                        last_name:
+                          type: string
+                        title:
+                          type: string
+                          enum:
+                          - Mr
+                          - Mrs
+                          - Ms
+                          - Miss
+                          - Doc
+                          - Rev
+                          - Prof
+                          - C/O
+                          - Dr
+                          - Mx
+                          - Lady
+                          - Lord
+                        mobileno:
+                          type: string
+                        dob:
+                          type: string
+                          format: date
+                        user_address_attributes:
+                          type: object
+                          properties:
+                            address_line1:
+                              type: string
+                            address_line2:
+                              type: string
+                            town:
+                              type: string
+                            county:
+                              type: string
+                            postcode:
+                              type: string
+                      required:
+                      - title
+                      - first_name
+                      - last_name
+                      - email
+                      - mobileno
+                    forwarding_address_attributes:
+                      type: object
+                      properties:
+                        address_line1:
+                          type: string
+                        address_line2:
+                          type: string
+                        town:
+                          type: string
+                        county:
+                          type: string
+                        postcode:
+                          type: string
+                    pay_holding_fee:
+                      type: boolean
+                    pay_move_in_monies:
+                      type: boolean
+                    reference_required:
+                      type: boolean
+                    guarantor_required:
+                      type: boolean
+              required:
+              - deal_id
+        required: true
+  "/api/v1/tenants/{id}":
+    get:
+      summary: Retrieve a Tenant
+      tags:
+      - Tenants
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: Unique number Identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: tenant found
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174006
+                    user_email: tenant@email.com
+                    user_details:
+                      first_name: Tom
+                      last_name: Tenant
+                      title: Mr.
+                      mobileno: "+447777777778"
+                      company_name: Tenant Ltd.
+                    created_at: '2024-07-12T10:00:00Z'
+                    updated_at: '2024-07-12T10:00:00Z'
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  user_email:
+                    type: string
+                    format: email
+                  user_details:
+                    type: object
+                    nullable: true
+                    properties:
+                      first_name:
+                        type: string
+                        nullable: true
+                      last_name:
+                        type: string
+                        nullable: true
+                      title:
+                        type: string
+                        nullable: true
+                      mobileno:
+                        type: string
+                        nullable: true
+                      company_name:
+                        type: string
+                        nullable: true
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+  "/api/v1/users":
+    get:
+      summary: Retrieve all Users
+      tags:
+      - Users
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: created_at_from
+        in: query
+        required: false
+        description: 'Filter records created from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: created_at_to
+        in: query
+        required: false
+        description: 'Filter records created up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_from
+        in: query
+        required: false
+        description: 'Filter records updated from this date (inclusive). Format: YYYY-MM-DD
+          or ISO 8601 (example: 2024-01-15)'
+        example: ''
+        schema:
+          type: string
+      - name: updated_at_to
+        in: query
+        required: false
+        description: 'Filter records updated up to this date (inclusive). Format:
+          YYYY-MM-DD or ISO 8601 (example: 2024-01-20)'
+        example: ''
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        description: Number of records per page
+        example: 10
+        schema:
+          type: integer
+      - name: email
+        in: query
+        required: false
+        description: Filter by email address
+        example: ''
+        schema:
+          type: string
+      responses:
+        '200':
+          description: users found with custom pagination
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    users:
+                    - uuid: 123e4567-e89b-12d3-a456-426614174007
+                      email: user@email.com
+                      first_name: John
+                      last_name: User
+                      title: Mr.
+                      mobileno: "+447777777779"
+                      company_name: User Company Ltd.
+                      created_at: '2024-07-12T10:00:00Z'
+                      updated_at: '2024-07-12T10:00:00Z'
+                    total_entries: 1
+                    per_page: 10
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                          nullable: true
+                        first_name:
+                          type: string
+                          nullable: true
+                        last_name:
+                          type: string
+                          nullable: true
+                        email:
+                          type: string
+                          format: email
+                        mobileno:
+                          type: string
+                          nullable: true
+                        uuid:
+                          type: string
+                          format: uuid
+                        company_name:
+                          type: string
+                          nullable: true
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+                  total_entries:
+                    type: integer
+                  per_page:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: users not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+    post:
+      summary: Create a new User
+      tags:
+      - Users
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      responses:
+        '201':
+          description: user created
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    status: success
+                    user:
+                      uuid: 3b52cc33-0f06-4689-a353-6c8668c0786d
+                    message: User created successfully
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  user:
+                    type: object
+                    properties:
+                      uuid:
+                        type: string
+                        example: 3b52cc33-0f06-4689-a353-6c8668c0786d
+                  message:
+                    type: string
+                    example: User created successfully
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Role must be tenant
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    description: Validation error messages
+                    examples:
+                    - Role must be tenant
+                    - 'Invalid title. Must be one of: Mr, Mrs, Ms, Miss, Doc, Rev,
+                      Prof, C/O, Dr, Mx, Lady, Lord'
+                    - Title can't be blank
+                    - First name can't be blank
+                    - Last name can't be blank
+                    - Email can't be blank
+                    - Password can't be blank
+                    - Password must contain at least one digit, one lowercase and
+                      one uppercase letter
+                    - Mobile number can't be blank
+                    - First name is too long (maximum is 20 characters)
+                    - Email is invalid
+                    - Mobile number is invalid
+                    - Branch with UUID 'xxx-xxx-xxx' does not exist
+        '409':
+          description: Conflict - User already exists
+          content:
+            application/json:
+              examples:
+                conflict_example:
+                  value:
+                    status: error
+                    message: User with this email already exists
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: User with this email already exists
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              examples:
+                internal_server_error_example:
+                  value:
+                    status: error
+                    message: An error occurred while creating the user
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+                    example: An error occurred while creating the user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user:
+                  type: object
+                  properties:
+                    roles:
+                      type: string
+                      enum:
+                      - tenant
+                      description: User role (only tenant is allowed for now)
+                    email:
+                      type: string
+                      format: email
+                    password:
+                      type: string
+                      description: Password (8-128 characters, must contain at least
+                        one digit, one lowercase and one uppercase letter)
+                    title:
+                      type: string
+                      enum:
+                      - Mr
+                      - Mrs
+                      - Ms
+                      - Miss
+                      - Doc
+                      - Rev
+                      - Prof
+                      - C/O
+                      - Dr
+                      - Mx
+                      - Lady
+                      - Lord
+                      description: Title (must be one of the allowed values)
+                    first_name:
+                      type: string
+                    last_name:
+                      type: string
+                    mobileno:
+                      type: string
+                      description: Contact number
+                    branch_ids:
+                      type: array
+                      items:
+                        type: string
+                        format: uuid
+                      description: Optional array of branch IDs to associate with
+                        the user (Provide branch UUID)
+                  required:
+                  - roles
+                  - email
+                  - password
+                  - first_name
+                  - last_name
+                  - title
+                  - mobileno
+              required:
+              - user
+        required: true
+  "/api/v1/users/{id}":
+    get:
+      summary: Retrieve a User
+      tags:
+      - Users
+      security:
+      - bearer_auth: []
+      parameters:
+      - name: x-api-key
+        in: header
+        required: true
+        description: API Key provided to agents
+        schema:
+          type: string
+      - name: agent-name
+        in: header
+        required: true
+        description: Agent Name
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: Unique number Identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: user found
+          content:
+            application/json:
+              examples:
+                example_response:
+                  value:
+                    uuid: 123e4567-e89b-12d3-a456-426614174007
+                    email: user@email.com
+                    first_name: Alice
+                    last_name: Johnson
+                    title: Ms.
+                    mobileno: "+447777777779"
+                    created_at: '2024-07-12T10:00:00Z'
+                    updated_at: '2024-07-12T10:00:00Z'
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                    format: email
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                  title:
+                    type: string
+                  mobileno:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              examples:
+                unauthorized_example:
+                  value:
+                    status: error
+                    message: Unauthorized
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              examples:
+                forbidden_example:
+                  value:
+                    status: error
+                    message: Incorrect credentials.
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: user not found
+          content:
+            application/json:
+              examples:
+                not_found_example:
+                  value:
+                    status: error
+                    message: Not found
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              examples:
+                unprocessable_entity_example:
+                  value:
+                    status: error
+                    message: Unprocessable Entity
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+servers:
+- url: https://api.propoly.com
+  description: Production Environment
+components:
+  securitySchemes:
+    bearer_auth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+- basic_auth: []

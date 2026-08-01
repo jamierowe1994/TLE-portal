@@ -141,3 +141,22 @@ export const getPropolyDeal = (id: string | number) => propolyGet(`/api/v1/deals
 export const getPropolyProperties = () => propolyGet("/api/v1/properties");
 export const getPropolyProperty = (id: string | number) => propolyGet(`/api/v1/properties/${id}`);
 export const getPropolyTenant = (id: string | number) => propolyGet(`/api/v1/tenants/${id}`);
+export const getPropolyTenants = () => propolyGet("/api/v1/tenants");
+export const getPropolyLandlords = () => propolyGet("/api/v1/landlords");
+
+/* Configuration lists — the business's own vocabulary, straight from Propoly.
+ *
+ * From the production OpenAPI spec (docs/propoly-openapi.yaml). These matter
+ * more than they look: `document_types` is the authoritative list of what
+ * Propoly recognises as a compliance certificate, and the upload endpoint
+ * enforces jurisdiction rules against it — a portable appliance test and a
+ * legionella assessment are Scotland-only, a gas certificate is rejected on a
+ * property without gas. That is the nation-by-nation rule set the compliance
+ * work needs, asserted by a system the business already runs on rather than
+ * invented by us. */
+export const getPropolyTenancyAgreementOptions = () =>
+  propolyGet("/api/v1/configuration/tenancy_agreements");
+export const getPropolyDepositSchemes = () =>
+  propolyGet("/api/v1/configuration/deposit_schemes");
+export const getPropolyDocumentTypes = () =>
+  propolyGet("/api/v1/configuration/document_types");
