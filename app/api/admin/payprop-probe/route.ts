@@ -133,6 +133,68 @@ export async function GET(req: NextRequest) {
     pageSize[`asked_${size}`] = r?.items.length ?? 0;
   }
 
+  // The question the applications work is blocked on: does a payment row carry
+  // a PROPERTY or TENANCY, so a holding fee, deposit or first rent can be tied
+  // to a specific deal? We only ever declared amount/category/beneficiary/
+  // due_date/description on PaymentRow, which is not evidence the rest isn't
+  // there — it just means nothing has ever looked.
+  //
+  // Reported as keys plus a type map, because a key alone doesn't say whether
+  // `property` is an id, a name or a nested object. Full values only behind
+  // ?values=1, since these rows carry tenant names and real amounts.
+  const shapeOf = (row: Record<string, unknown>): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (v === null) out[k] = "null";
+      else if (Array.isArray(v)) out[k] = `array[${v.length}]`;
+      else if (typeof v === "object")
+        out[k] = `object{ ${Object.keys(v as object).join(", ")} }`;
+      else out[k] = `${typeof v}: ${String(v).slice(0, 40)}`;
+    }
+    return out;
+  };
+
+  const showValues = req.nextUrl.searchParams.get("values") === "1";
+  // Default to the current month; a range with no payments proves nothing, so
+  // both ends are overridable.
+  const today = new Date().toISOString().slice(0, 10);
+  const from = req.nextUrl.searchParams.get("from") ?? `${today.slice(0, 7)}-01`;
+  const to = req.nextUrl.searchParams.get("to") ?? today;
+
+  const payments: Record<string, unknown> = { range: { from, to } };
+  for (const id of payPropAccounts()) {
+    const res = await payPropGet(id, "report/all-payments", {
+      from_date: from,
+      to_date: to,
+      rows: 3,
+      page: 1,
+    }).catch((e: unknown) => {
+      return { error: e instanceof Error ? e.message : String(e) } as never;
+    });
+    if (!res || !("items" in res)) {
+      payments[id] = { ok: false, error: "call failed or not permitted" };
+      continue;
+    }
+    const rows = res.items as Array<Record<string, unknown>>;
+    const first = rows[0];
+    payments[id] = {
+      ok: true,
+      label: payPropLabel(id),
+      totalRows: res.pagination?.total_rows ?? null,
+      returned: rows.length,
+      keys: first ? Object.keys(first) : [],
+      shape: first ? shapeOf(first) : null,
+      // The actual answer, spelled out so it doesn't need eyeballing.
+      hasPropertyLink: first
+        ? Object.keys(first).some((k) => /propert/i.test(k))
+        : null,
+      hasTenancyLink: first
+        ? Object.keys(first).some((k) => /tenan|lease|contract/i.test(k))
+        : null,
+      ...(showValues ? { rawRows: rows } : {}),
+    };
+  }
+
   return NextResponse.json({
     configured: true,
     pageSize,
@@ -142,5 +204,6 @@ export async function GET(req: NextRequest) {
     ping,
     agents,
     accounts,
+    payments,
   });
 }
