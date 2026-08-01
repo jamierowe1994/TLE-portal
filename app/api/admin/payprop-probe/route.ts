@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
     const res = await payPropGet(id, "report/all-payments", {
       from_date: from,
       to_date: to,
-      rows: 3,
+      rows: 25, // the confirmed page cap — a fuller sample costs the same call
       page: 1,
     }).catch((e: unknown) => {
       return { error: e instanceof Error ? e.message : String(e) } as never;
@@ -194,12 +194,21 @@ export async function GET(req: NextRequest) {
       continue;
     }
     const rows = res.items as Array<Record<string, unknown>>;
-    const first = rows[0];
+    // Don't shape rows[0] blindly. The first two runs both returned a leading
+    // row with an empty id, a 0.00 amount and null category/beneficiary —
+    // identical across both accounts AND two different date ranges, which is
+    // not what real payments look like. Shape the first row that actually
+    // carries an id instead, and report how many were blank so the pattern is
+    // visible rather than silently skipped.
+    const populated = rows.filter((r) => String(r.id ?? "").trim() !== "");
+    const first = populated[0] ?? rows[0];
     payments[id] = {
       ok: true,
       label: payPropLabel(id),
       totalRows: res.pagination?.total_rows ?? null,
       returned: rows.length,
+      blankRows: rows.length - populated.length,
+      shapedFrom: populated[0] ? "a row with an id" : "rows[0] — none had an id",
       keys: first ? Object.keys(first) : [],
       shape: first ? shapeOf(first) : null,
       // The actual answer, spelled out so it doesn't need eyeballing. Searched
