@@ -157,7 +157,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v7"; // v7: payments carry property + reconciliation
+const CACHE_VERSION = "v8"; // v8: months bucketed by DUE date, not reconciliation
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -404,6 +404,43 @@ export function getYtdIncome(month: string): Promise<AgencyIncome | null> {
   );
 }
 
+/**
+ * Payments DUE in [from, to], whenever they happened to settle.
+ *
+ * PayProp's from_date/to_date on report/all-payments filter by RECONCILIATION
+ * date — when the money was matched — not by when the fee fell due. Proven on
+ * Rhiannon Dodge's June 2026: the same rows total GBP 3,001.22 by due date and
+ * GBP 4,173.14 by reconciliation date, and the portal was reporting the second
+ * while the business's own sheet reports the first (GBP 3,007).
+ *
+ * The business counts a fee in the month it was charged, so that is what the
+ * portal reports. Which means the wire query has to be WIDER than the answer:
+ * a fee due 30 June reconciled 6 July only comes back in a query that reaches
+ * into July, and one due 16 June was reconciled on the 15th, so the window has
+ * to open early as well as close late. A month either side covers both
+ * directions with room to spare; the observed lag was under a week.
+ *
+ * The cost is a walk about three times the size. That is the price of the
+ * figure agreeing with the sheet, and the range cache is persisted so it is
+ * paid once an hour rather than once a request.
+ */
+async function paymentsDueInRange(from: string, to: string): Promise<AccountRows> {
+  const shift = (iso: string, months: number, endOfMonth: boolean) => {
+    const [y, m] = iso.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + months, 1));
+    if (endOfMonth) d.setUTCMonth(d.getUTCMonth() + 1, 0);
+    return d.toISOString().slice(0, 10);
+  };
+  const wide = await paymentsForRange(shift(from, -1, false), shift(to, 1, true));
+  // Per account, not flattened: the Income tab splits E&W from Glasgow, and a
+  // split computed on a different basis from the total it sits under is worse
+  // than no split at all.
+  return wide.map((p) => ({
+    account: p.account,
+    rows: p.rows.filter((r) => r.d >= from && r.d <= to),
+  }));
+}
+
 async function computeIncomeRange(
   label: string,
   from: string,
@@ -412,7 +449,7 @@ async function computeIncomeRange(
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const perAccount = await paymentsForRange(from, to);
+  const perAccount = await paymentsDueInRange(from, to);
   const rows = perAccount.flatMap((p) => p.rows);
   if (rows.length === 0) return null;
 
@@ -893,7 +930,7 @@ async function computeAgentEarnings(
   // The same month's payments the admin figures use — already in hand, or
   // being fetched right now by whoever asked first.
   const { from, to } = monthRange(month);
-  const rows = (await paymentsForRange(from, to)).flatMap((p) => p.rows);
+  const rows = (await paymentsDueInRange(from, to)).flatMap((p) => p.rows);
 
   if (rows.length === 0) return null; // couldn't reach PayProp — not "earned nothing"
 
