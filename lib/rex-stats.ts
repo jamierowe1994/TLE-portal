@@ -1603,6 +1603,9 @@ export interface AgentApplication {
     holdingFee: number | null; // £
     deposit: number | null; // £
     service: string | null; // "Fully managed" | "Tenant find" | "Rent collect"
+    /** Propoly's standing order reference. Present means one has been set up
+     *  there — evidence for the checklist item, not a substitute for it. */
+    standingOrderRef?: string | null;
   };
   /** Portal overlay: pre-tenancy notes/stage-moves/checklist (lib/deal-store). */
   portal?: import("@/lib/types").DealPortalOverlay;

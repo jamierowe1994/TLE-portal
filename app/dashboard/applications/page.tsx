@@ -781,6 +781,20 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                           )}
                           <span className={`flex-1 text-[13px] ${done ? "text-muted" : "text-ink"}`}>
                             {item.label}
+                            {/* Propoly holds a standing order reference on every
+                                deal we sampled. A reference existing is good
+                                evidence one was set up — so it is shown beside
+                                the tick, and does not set it. Kirstie still
+                                owns the tick. */}
+                            {item.key === "standing_order" && p.standingOrderRef ? (
+                              <span className="ml-2 text-[11px] text-muted">
+                                ref{" "}
+                                <span className="font-medium text-ink">
+                                  {p.standingOrderRef}
+                                </span>{" "}
+                                · in Propoly
+                              </span>
+                            ) : null}
                           </span>
                           <span className="text-[11px] text-muted">
                             {done ? "Done" : "Outstanding"}

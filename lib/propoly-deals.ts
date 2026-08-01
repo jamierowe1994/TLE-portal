@@ -237,6 +237,10 @@ function toApplication(d: Record<string, unknown>, statusKey: string): AgentAppl
       holdingFee: holdingPence != null ? Math.round(holdingPence / 100) : null,
       deposit: depositPence != null ? Math.round(depositPence / 100) : null,
       service,
+      // Populated on 10 of 10 sampled deals, so it can be relied on — unlike
+      // property_type next to it, which was populated on 3 of 10 and only ever
+      // said "flat". Backs the "Standing order set up" checklist tick.
+      standingOrderRef: str(d.standing_order_reference) ?? null,
     },
   };
 }
