@@ -836,6 +836,26 @@ async function buildBeneficiaryIndex(): Promise<BeneficiaryIndex> {
  * ids the figure was built from — an audit that re-derives the match its own
  * way can agree with the sheet and still not explain the portal.
  */
+/**
+ * The reduced, cached rows for a range — for the earnings audit.
+ *
+ * Exported so a batch reconciliation can reuse the SAME cached walk the
+ * dashboard uses rather than re-fetching raw pages per partner per month. A
+ * three-month raw walk is a couple of hundred sequential PayProp calls; this is
+ * one, and it is already persisted.
+ *
+ * Carries everything the reconciliation needs — amount, category, beneficiary,
+ * due date, reconciliation date, property id — but NOT part_of_amount or the
+ * secondary_payment flags, which only the single-partner detail mode reads.
+ */
+export async function auditRowsForRange(
+  from: string,
+  to: string
+): Promise<Array<{ a: number; c: string; b: string; d: string; rd: string; p: string }>> {
+  const per = await paymentsForRange(from, to);
+  return per.flatMap((x) => x.rows);
+}
+
 export async function agentBeneficiaryIds(
   email: string,
   displayName: string
