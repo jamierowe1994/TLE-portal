@@ -630,8 +630,12 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
 
 export interface AgentEarnings {
   month: string;
-  /** What they earned — fees only. */
+  /** What they earned — fees only. VAT-INCLUSIVE, as PayProp reports it. */
   earned: number;
+  /** The same figure net of VAT — what the accounts sheet reports and what a
+   *  partner is told they earned. The sheet divides by 1.2 flat, so this
+   *  mirrors it exactly rather than second-guessing per-partner VAT status. */
+  earnedNet: number;
   /** Money that merely passed through them, kept separate so it can be shown. */
   passedThrough: number;
   byCategory: Array<{ category: string; amount: number }>;
@@ -940,6 +944,7 @@ async function computeAgentEarnings(
     return {
       month,
       earned: 0,
+      earnedNet: 0,
       passedThrough: 0,
       byCategory: [],
       paymentCount: 0,
@@ -974,6 +979,7 @@ async function computeAgentEarnings(
   return {
     month,
     earned,
+    earnedNet: Math.round((earned / 1.2) * 100) / 100,
     passedThrough,
     byCategory: [...cats.entries()]
       .map(([category, amount]) => ({ category, amount }))
