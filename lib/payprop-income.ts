@@ -792,6 +792,28 @@ async function buildBeneficiaryIndex(): Promise<BeneficiaryIndex> {
  * Wilson Slight" — so when it misses, the near-misses are worth more than a
  * bare false.
  */
+/**
+ * The beneficiary ids a partner resolves to, for the earnings audit.
+ *
+ * Exported because reconciling a disputed figure has to start from the same
+ * ids the figure was built from — an audit that re-derives the match its own
+ * way can agree with the sheet and still not explain the portal.
+ */
+export async function agentBeneficiaryIds(
+  email: string,
+  displayName: string
+): Promise<{ ids: string[]; matchedBy: "email" | "name" | null }> {
+  const { byEmail, byName } = await beneficiaryIndex(true);
+  if (!(byEmail instanceof Map) || byEmail.size === 0) {
+    return { ids: [], matchedBy: null };
+  }
+  const byMail = byEmail.get(email.trim().toLowerCase());
+  if (byMail?.size) return { ids: [...byMail], matchedBy: "email" };
+  const byNm = displayName ? byName.get(normaliseAgentName(displayName)) : null;
+  if (byNm?.size) return { ids: [...byNm], matchedBy: "name" };
+  return { ids: [], matchedBy: null };
+}
+
 export async function describeAgentMatch(
   email: string,
   displayName: string
