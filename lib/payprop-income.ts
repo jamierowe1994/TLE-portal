@@ -82,6 +82,9 @@ interface Payment {
   rd: string;
   /** outgoing batch status; "not approved" means in but not yet paid out. */
   bs: string;
+  /** Batch transfer date — when the money actually left. THIS is the month the
+   *  business counts a fee in; see paymentsSettledInRange. */
+  td: string;
 }
 
 function reduceRows(rows: PaymentRow[]): Payment[] {
@@ -106,6 +109,7 @@ function reduceRows(rows: PaymentRow[]): Payment[] {
       pk: propertyKey(r.incoming_transaction?.property?.name ?? ""),
       rd: r.incoming_transaction?.reconciliation_date ?? "",
       bs: r.payment_batch?.status ?? "",
+      td: r.payment_batch?.transfer_date ?? "",
     }));
 }
 
@@ -178,7 +182,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v8"; // v8: months bucketed by DUE date, not reconciliation
+const CACHE_VERSION = "v11"; // v11: batch-transfer basis, net of VAT on every fee figure
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -296,7 +300,7 @@ const rangeRead = new Set<string>();
 /** Bump with the Payment shape. A stored range the readers no longer
  *  understand isn't an error, it's a wrong money figure — see the cached-shape
  *  rule; forgetting this has cost this project four misdiagnoses. */
-const RANGE_CACHE_VERSION = "v3"; // v3: property, key, reconciliation, batch status
+const RANGE_CACHE_VERSION = "v4"; // v4: adds the batch transfer date
 const rangeKey = (range: string) => `payprop:payments:${RANGE_CACHE_VERSION}:${range}`;
 
 /** Past this, in-memory is enough: a multi-megabyte jsonb round-trip on every
@@ -445,7 +449,7 @@ export function getYtdIncome(month: string): Promise<AgencyIncome | null> {
  * figure agreeing with the sheet, and the range cache is persisted so it is
  * paid once an hour rather than once a request.
  */
-async function paymentsDueInRange(from: string, to: string): Promise<AccountRows> {
+async function paymentsSettledInRange(from: string, to: string): Promise<AccountRows> {
   const shift = (iso: string, months: number, endOfMonth: boolean) => {
     const [y, m] = iso.split("-").map(Number);
     const d = new Date(Date.UTC(y, m - 1 + months, 1));
@@ -458,7 +462,14 @@ async function paymentsDueInRange(from: string, to: string): Promise<AccountRows
   // than no split at all.
   return wide.map((p) => ({
     account: p.account,
-    rows: p.rows.filter((r) => r.d >= from && r.d <= to),
+    // On the BATCH TRANSFER date. Settled against the accounts spreadsheet:
+    // Rhiannon Dodge's May is 4,161.22 by due date, 2,857.18 by reconciliation
+    // and 2,915.09 by transfer — and the sheet says 2,915.09. June: 3,001.22 /
+    // 4,173.14 / 3,608.94, sheet 3,608.94. Exact on transfer, on both months.
+    //
+    // A row with no batch yet has not settled and belongs to no month at all;
+    // it surfaces as "in, not paid out" rather than being counted early.
+    rows: p.rows.filter((r) => r.td >= from && r.td <= to),
   }));
 }
 
@@ -470,7 +481,7 @@ async function computeIncomeRange(
   const accounts = payPropAccounts();
   if (accounts.length === 0) return null;
 
-  const perAccount = await paymentsDueInRange(from, to);
+  const perAccount = await paymentsSettledInRange(from, to);
   const rows = perAccount.flatMap((p) => p.rows);
   if (rows.length === 0) return null;
 
@@ -986,7 +997,7 @@ async function computeAgentEarnings(
   // The same month's payments the admin figures use — already in hand, or
   // being fetched right now by whoever asked first.
   const { from, to } = monthRange(month);
-  const rows = (await paymentsDueInRange(from, to)).flatMap((p) => p.rows);
+  const rows = (await paymentsSettledInRange(from, to)).flatMap((p) => p.rows);
 
   if (rows.length === 0) return null; // couldn't reach PayProp — not "earned nothing"
 
