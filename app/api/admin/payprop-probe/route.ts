@@ -154,12 +154,30 @@ export async function GET(req: NextRequest) {
     return out;
   };
 
+  // Where a key lives, at any depth — the first run of this probe reported
+  // "no property link" because it only looked at top level, while `property`,
+  // `tenant` and `deposit_id` were all sitting inside `incoming_transaction`.
+  const findPaths = (row: unknown, test: RegExp, trail = ""): string[] => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+    const hits: string[] = [];
+    for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+      const path = trail ? `${trail}.${k}` : k;
+      if (test.test(k)) hits.push(path);
+      hits.push(...findPaths(v, test, path));
+    }
+    return hits;
+  };
+
   const showValues = req.nextUrl.searchParams.get("values") === "1";
-  // Default to the current month; a range with no payments proves nothing, so
-  // both ends are overridable.
-  const today = new Date().toISOString().slice(0, 10);
-  const from = req.nextUrl.searchParams.get("from") ?? `${today.slice(0, 7)}-01`;
-  const to = req.nextUrl.searchParams.get("to") ?? today;
+  // Default to the last 30 days, not month-to-date: run on the 1st, a
+  // month-to-date range is a single day and comes back empty, which reads as
+  // "PayProp has nothing" rather than "you asked for one day".
+  const today = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const from =
+    req.nextUrl.searchParams.get("from") ??
+    iso(new Date(today.getTime() - 30 * 86_400_000));
+  const to = req.nextUrl.searchParams.get("to") ?? iso(today);
 
   const payments: Record<string, unknown> = { range: { from, to } };
   for (const id of payPropAccounts()) {
@@ -184,13 +202,14 @@ export async function GET(req: NextRequest) {
       returned: rows.length,
       keys: first ? Object.keys(first) : [],
       shape: first ? shapeOf(first) : null,
-      // The actual answer, spelled out so it doesn't need eyeballing.
-      hasPropertyLink: first
-        ? Object.keys(first).some((k) => /propert/i.test(k))
-        : null,
-      hasTenancyLink: first
-        ? Object.keys(first).some((k) => /tenan|lease|contract/i.test(k))
-        : null,
+      // The actual answer, spelled out so it doesn't need eyeballing. Searched
+      // at every depth, and reported as the PATH rather than a bare boolean —
+      // knowing it is `incoming_transaction.property` and not `property` is the
+      // difference between a working join and a null.
+      propertyPaths: first ? findPaths(first, /propert/i) : null,
+      tenantPaths: first ? findPaths(first, /tenan/i) : null,
+      depositPaths: first ? findPaths(first, /deposit/i) : null,
+      datePaths: first ? findPaths(first, /date|reconcil/i) : null,
       ...(showValues ? { rawRows: rows } : {}),
     };
   }
