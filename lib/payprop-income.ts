@@ -946,6 +946,11 @@ export async function describeAgentMatch(
   };
 }
 
+/**
+ * One month, for callers that only need one. The dashboard uses
+ * getAgentEarningsForMonths instead — calling this per month across a period
+ * is what left every past month on the snapshot.
+ */
 export function getAgentEarnings(
   email: string,
   month: string,
@@ -1131,6 +1136,100 @@ async function computeRentReceived(month: string): Promise<RentReceived | null> 
     receipts,
     awaitingPayout: receipts.filter((x) => !x.paidOut),
   };
+}
+
+/**
+ * Several months of one partner's earnings from ONE walk.
+ *
+ * getAgentEarnings is per month, and since the basis became the batch transfer
+ * date each month needs a window a month either side to catch a fee that
+ * settled just outside it. Called six times that is six DISTINCT range keys —
+ * [Dec,Feb], [Jan,Mar], [Feb,Apr] and so on — roughly 770 sequential PayProp
+ * pages at 2.5 a second. The dashboard's poll gives up minutes before that
+ * lands, every month comes back null, `complete` stays false and the page sits
+ * on the snapshot. Which is honest, and useless.
+ *
+ * One walk across the whole span answers all of them, on a single cache key
+ * that is persisted, so the second load is instant.
+ */
+export async function getAgentEarningsForMonths(
+  email: string,
+  months: string[],
+  displayName = ""
+): Promise<Array<{ month: string; earnings: AgentEarnings | null }>> {
+  if (months.length === 0) return [];
+  const sorted = [...months].sort();
+
+  const { byEmail, byName } = await beneficiaryIndex(true);
+  if (!(byEmail instanceof Map) || byEmail.size === 0) {
+    return sorted.map((month) => ({ month, earnings: null }));
+  }
+  let ids = byEmail.get(email.trim().toLowerCase());
+  let matchedBy: "email" | "name" = "email";
+  if (!ids?.size && displayName) {
+    ids = byName.get(normaliseAgentName(displayName));
+    if (ids?.size) matchedBy = "name";
+  }
+  if (!ids?.size) {
+    // Not "earned nothing" — PayProp has no beneficiary under this partner at
+    // all, which the caller shows differently from a zero.
+    return sorted.map((month) => ({
+      month,
+      earnings: {
+        month,
+        earned: 0,
+        earnedNet: 0,
+        passedThrough: 0,
+        byCategory: [],
+        paymentCount: 0,
+        matched: false,
+      },
+    }));
+  }
+
+  const from = `${sorted[0]}-01`;
+  const [ly, lm] = sorted[sorted.length - 1].split("-").map(Number);
+  const to = new Date(Date.UTC(ly, lm, 0)).toISOString().slice(0, 10);
+  const rows = (await paymentsSettledInRange(from, to)).flatMap((p) => p.rows);
+  if (rows.length === 0) {
+    // Couldn't reach PayProp. Null means unknown, so the caller keeps its
+    // fallback rather than publishing a zero.
+    return sorted.map((month) => ({ month, earnings: null }));
+  }
+
+  return sorted.map((month) => {
+    let earned = 0;
+    let passedThrough = 0;
+    let paymentCount = 0;
+    const cats = new Map<string, number>();
+    for (const r of rows) {
+      if (r.td.slice(0, 7) !== month) continue;
+      if (!r.b || !ids.has(r.b)) continue;
+      const category = r.c || "Other";
+      paymentCount++;
+      if (FEE_CATEGORIES.has(category)) {
+        earned += r.a;
+        cats.set(category, (cats.get(category) ?? 0) + r.a);
+      } else {
+        passedThrough += r.a;
+      }
+    }
+    return {
+      month,
+      earnings: {
+        month,
+        earned: Math.round(earned * 100) / 100,
+        earnedNet: Math.round((earned / 1.2) * 100) / 100,
+        passedThrough: Math.round(passedThrough * 100) / 100,
+        byCategory: [...cats.entries()]
+          .map(([category, amount]) => ({ category, amount }))
+          .sort((a, b) => b.amount - a.amount),
+        paymentCount,
+        matched: true,
+        matchedBy,
+      },
+    };
+  });
 }
 
 /** Rent received in a month, per property. Cached and persisted like the rest. */

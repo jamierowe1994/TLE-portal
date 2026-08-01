@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { payPropConfigured } from "@/lib/payprop";
-import { getAgentEarnings, describeAgentMatch, payPropRefreshing } from "@/lib/payprop-income";
+import { getAgentEarningsForMonths, describeAgentMatch, payPropRefreshing } from "@/lib/payprop-income";
 import { SNAPSHOT_MONTH } from "@/lib/seed-data";
 import type { AgentEarnings } from "@/lib/payprop-income";
 
@@ -63,13 +63,14 @@ export async function GET(req: NextRequest) {
   const months = requested.filter((m) => m <= liveMonth);
   const tooLong = months.length > MAX_MONTHS;
 
+  // One walk for the whole period, not one per month. Per month meant a
+  // separate widened range key each time — six months was ~770 sequential
+  // PayProp pages, the poll gave up first, and every month fell back to the
+  // snapshot no matter how long you left it.
   const byMonth = tooLong
     ? []
-    : await Promise.all(
-        months.map(async (m) => ({
-          month: m,
-          earnings: await getAgentEarnings(user.email, m, user.name ?? "").catch(() => null),
-        }))
+    : await getAgentEarningsForMonths(user.email, months, user.name ?? "").catch(
+        () => months.map((m) => ({ month: m, earnings: null }))
       );
 
   // Complete = every month answered AND matched a PayProp beneficiary. Anything
