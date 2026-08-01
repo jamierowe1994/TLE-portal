@@ -52,13 +52,51 @@ export async function GET(req: NextRequest) {
     getPortfolioBook(),
   ]);
 
+  // Report the FEE figures net of VAT.
+  //
+  // PayProp's amounts are VAT-inclusive; the business is not. The Income tab's
+  // own metric is literally labelled "Combined GCI (exc VAT)", so the inclusive
+  // figure was being rendered under a heading promising the opposite — and the
+  // accounts sheet confirms the convention (June: gross 41,438.44, VAT
+  // 6,906.49, net 34,531.95).
+  //
+  // Converted here, once, rather than at fifteen call sites where one missed
+  // conversion would put a 20% error on screen under a correct-looking label.
+  // ownerPayments and unclassified are deliberately left alone: rent passed to
+  // a landlord is not a VAT-able fee, and unclassified mixes contractor costs
+  // with deposit movements.
+  const ex = (n: number) => Math.round((n / 1.2) * 100) / 100;
+  const netted = <T extends typeof income>(i: T): T =>
+    i == null
+      ? i
+      : ({
+          ...i,
+          agencyIncome: i.net.agencyIncome,
+          combinedGci: i.net.combinedGci,
+          paidToBeneficiaries: i.net.paidToBeneficiaries,
+          byCategory: i.byCategory.map((c) => ({ ...c, amount: ex(c.amount) })),
+          byPartner: i.byPartner.map((p) => ({ ...p, amount: ex(p.amount) })),
+          byAccount: i.byAccount.map((a) => ({
+            ...a,
+            agencyIncome: ex(a.agencyIncome),
+            combinedGci: ex(a.combinedGci),
+          })),
+          /** The VAT-inclusive originals, so a figure can be traced to PayProp. */
+          gross: {
+            agencyIncome: i.agencyIncome,
+            combinedGci: i.combinedGci,
+            paidToBeneficiaries: i.paidToBeneficiaries,
+            vat: i.net.vat,
+          },
+        } as T);
+
   return NextResponse.json({
     connected: true,
     month,
-    income,
+    income: netted(income),
     prevMonth: prev,
-    prevIncome,
-    ytd,
+    prevIncome: netted(prevIncome),
+    ytd: netted(ytd),
     arrears,
     moveIns,
     portfolio,

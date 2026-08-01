@@ -96,7 +96,12 @@ interface StatsResponse {
 
 interface EarningsResponse {
   connected: boolean;
-  byMonth?: Array<{ month: string; earnings: { earned: number; matched: boolean } | null }>;
+  byMonth?: Array<{
+    month: string;
+    /** `earned` is VAT-INCLUSIVE from PayProp; `earnedNet` is what the accounts
+     *  sheet reports and what this page shows. */
+    earnings: { earned: number; earnedNet: number; matched: boolean } | null;
+  }>;
   period?: {
     months: string[];
     earned: number | null;
@@ -408,7 +413,7 @@ export default function MyDashboardPage() {
   const liveByMonth = new Map(
     (liveEarnings?.byMonth ?? []).map((r) => [
       r.month,
-      r.earnings?.matched ? r.earnings.earned : null,
+      r.earnings?.matched ? r.earnings.earnedNet : null,
     ])
   );
   const useLive = liveEarnings?.period?.complete === true;

@@ -85,7 +85,12 @@ export async function GET(req: NextRequest) {
   if (complete) {
     for (const r of answered) {
       for (const c of r.earnings.byCategory) {
-        categories.set(c.category, (categories.get(c.category) ?? 0) + c.amount);
+        // Net, to match the headline it sits under — a breakdown that does not
+        // add up to the total above it is worse than no breakdown.
+        categories.set(
+          c.category,
+          (categories.get(c.category) ?? 0) + c.amount / 1.2
+        );
       }
     }
   }
@@ -110,13 +115,25 @@ export async function GET(req: NextRequest) {
     byMonth,
     period: {
       months,
-      earned: complete ? answered.reduce((t, r) => t + r.earnings.earned, 0) : null,
+      // Net of VAT. PayProp's amounts are VAT-inclusive; the accounts sheet —
+      // and therefore what a partner is told they earned — is not. Showing the
+      // inclusive figure told everyone they earned 20% more than they did.
+      earned: complete
+        ? Math.round(answered.reduce((t, r) => t + r.earnings.earnedNet, 0) * 100) / 100
+        : null,
+      /** The VAT-inclusive total, kept so a figure can be traced to PayProp. */
+      earnedGross: complete
+        ? Math.round(answered.reduce((t, r) => t + r.earnings.earned, 0) * 100) / 100
+        : null,
       matched,
       complete,
       /** Months we asked for and haven't got an answer for yet. */
       missing: months.filter((m) => !answered.some((r) => r.month === m)),
       byCategory: [...categories.entries()]
-        .map(([category, amount]) => ({ category, amount }))
+        .map(([category, amount]) => ({
+          category,
+          amount: Math.round(amount * 100) / 100,
+        }))
         .sort((a, b) => b.amount - a.amount),
       ...(tooLong
         ? {

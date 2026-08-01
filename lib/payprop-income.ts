@@ -140,6 +140,27 @@ export interface AgencyIncome {
   byAccount: Array<{ account: PayPropAccountId; label: string; agencyIncome: number; combinedGci: number }>;
   paymentCount: number;
   accounts: PayPropAccountId[];
+  /**
+   * The fee figures net of VAT — what the accounts sheet reports and what the
+   * business reads.
+   *
+   * PayProp's amounts are VAT-INCLUSIVE. The accounts spreadsheet divides the
+   * fee total by 1.2 flat ("TLE Summary of Fees 2026": June gross 41,438.44,
+   * VAT 6,906.49, net 34,531.95), so this mirrors that rather than
+   * second-guessing per-partner VAT status.
+   *
+   * Deliberately NOT applied to ownerPayments or unclassified. Rent passed to
+   * a landlord is not a VAT-able fee, and `unclassified` is a mixed bag of
+   * contractor costs and deposit movements — dividing either by 1.2 would
+   * invent a VAT element that was never charged.
+   */
+  net: {
+    agencyIncome: number;
+    combinedGci: number;
+    paidToBeneficiaries: number;
+    /** The VAT element of combinedGci, so the three reconcile on screen. */
+    vat: number;
+  };
 }
 
 // Walking a month of payments is ~40 sequential requests, so hold the result —
@@ -530,6 +551,16 @@ async function computeIncomeRange(
     byAccount,
     paymentCount: rows.length,
     accounts,
+    net: (() => {
+      const ex = (n: number) => Math.round((n / 1.2) * 100) / 100;
+      const combined = ex(agencyIncome + paidToBeneficiaries);
+      return {
+        agencyIncome: ex(agencyIncome),
+        combinedGci: combined,
+        paidToBeneficiaries: ex(paidToBeneficiaries),
+        vat: Math.round((agencyIncome + paidToBeneficiaries - combined) * 100) / 100,
+      };
+    })(),
   };
 }
 
