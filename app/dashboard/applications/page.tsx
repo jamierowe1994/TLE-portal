@@ -514,6 +514,28 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
                         <p className="text-[12px] text-muted">
                           {state === "done" ? "Completed" : state === "current" ? s.blurb : "Pending"}
                         </p>
+                        {/* Rent payment is the only stage with a source of
+                            truth behind it, so it reports what PayProp saw
+                            rather than what the stage was ticked to. Shown as
+                            evidence beside the stage, never as the stage
+                            itself — the address join is loose and a miss means
+                            "couldn't tell", not "no rent". */}
+                        {s.key === "rent_payment" && a.rentReceived ? (
+                          <p className="mt-1 text-[11px] text-ink">
+                            <span className="font-semibold tnum">
+                              {formatGBP(a.rentReceived.amount)}
+                            </span>{" "}
+                            reached the landlord&rsquo;s account on{" "}
+                            {fmtDate(a.rentReceived.on)}
+                            {a.rentReceived.paidOut ? null : (
+                              <span className="text-muted">
+                                {" "}
+                                — in, not yet paid out
+                              </span>
+                            )}
+                            <span className="ml-1 text-muted">· live from PayProp</span>
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </li>

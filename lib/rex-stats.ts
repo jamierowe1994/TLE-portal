@@ -1606,6 +1606,21 @@ export interface AgentApplication {
   };
   /** Portal overlay: pre-tenancy notes/stage-moves/checklist (lib/deal-store). */
   portal?: import("@/lib/types").DealPortalOverlay;
+  /**
+   * Rent that actually landed for this property, from PayProp — the only
+   * milestone on the progression board with a source of truth behind it.
+   *
+   * Present only when the address-derived join found a match, and absent is
+   * NOT the same as "no rent received": the join is loose by design, so a miss
+   * means we could not tell, and the UI has to say so rather than show a zero.
+   */
+  rentReceived?: {
+    amount: number;
+    /** Reconciliation date — when PayProp matched the money, not when it was due. */
+    on: string;
+    /** False while the onward payment is still "not approved". */
+    paidOut: boolean;
+  };
 }
 
 function stageOfStatus(id: string): ApplicationStage {

@@ -8,6 +8,9 @@ import {
   matchListingPhoto,
 } from "@/lib/rex-stats";
 import { getPropolyAgentDeals } from "@/lib/propoly-deals";
+import { getRentReceived } from "@/lib/payprop-income";
+import { propertyKey } from "@/lib/payprop-portfolio";
+import { currentMonth } from "@/lib/format";
 import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
 import { PORTAL_STAGE_BY_KEY, portalStageOf } from "@/lib/propoly-stages";
 
@@ -42,10 +45,42 @@ export async function GET(req: NextRequest) {
     const rexId = await resolveRexUserId(user).catch(() => null);
     const photos = rexId ? await getAgentPhotoIndex(rexId).catch(() => null) : null;
 
+    // Rent payment is the one milestone on this board with a real source of
+    // truth behind it. PayProp's Owner rows carry the property, the date the
+    // tenant's money was reconciled, and whether it has been paid on — so the
+    // stage can report what happened instead of what someone ticked.
+    //
+    // The join is address-derived (propertyKey), because a Propoly deal holds
+    // an address string and no PayProp id. That key is deliberately loose and
+    // WILL collide for the same house number and street in two towns, so it is
+    // reported as evidence next to the stage rather than used to advance it.
+    // Nothing here moves a deal on its own.
+    const rent = await getRentReceived(currentMonth()).catch(() => null);
+    const rentByKey = new Map<string, { amount: number; on: string; paidOut: boolean }>();
+    for (const r of rent?.receipts ?? []) {
+      if (!r.propertyKey) continue;
+      const prev = rentByKey.get(r.propertyKey);
+      // Earliest receipt in the month is the one that answers "has rent started".
+      if (!prev || r.receivedOn < prev.on) {
+        rentByKey.set(r.propertyKey, {
+          amount: r.amount,
+          on: r.receivedOn,
+          paidOut: r.paidOut,
+        });
+      }
+    }
+
     const applications = propoly.map((a) => {
       const match = photos ? matchListingPhoto(photos, a.propertyName, a.locality) : null;
       if (match) {
         a = { ...a, image: match.image, images: match.images, listingId: match.listingId };
+      }
+      const hit = rentByKey.get(propertyKey(a.propertyName));
+      if (hit) {
+        a = {
+          ...a,
+          rentReceived: { amount: hit.amount, on: hit.on, paidOut: hit.paidOut },
+        };
       }
       if (!a.propoly) return a;
       const raw = a.propoly.statusKey;

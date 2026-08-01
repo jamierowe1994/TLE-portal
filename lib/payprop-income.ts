@@ -22,6 +22,24 @@ export interface PaymentRow {
   beneficiary?: { id?: string; name?: string; type?: string };
   due_date?: string;
   description?: string;
+  /**
+   * The tenant's payment that this row was funded from. One incoming payment
+   * fans out into several rows sharing an `incoming_transaction.id` — the
+   * landlord's share, the agency's fee, and so on — which is what lets a
+   * payment be tied back to a property and a tenancy.
+   *
+   * Confirmed populated on live data 1 Aug 2026: `property` on 100% of real
+   * rows in both agencies (199/199 Scotland, 192/192 UK).
+   */
+  incoming_transaction?: {
+    id?: string;
+    property?: { id?: string; name?: string };
+    tenant?: { id?: string; name?: string };
+    reconciliation_date?: string;
+    status?: string;
+  };
+  /** The outgoing batch. `status` is "not approved" until someone releases it. */
+  payment_batch?: { status?: string; transfer_date?: string };
 }
 
 /**
@@ -52,6 +70,18 @@ interface Payment {
   n: string;
   /** due date */
   d: string;
+  /** PayProp property id — the same id space as export/properties, so a payment
+   *  joins to a property and therefore to its responsible agent. */
+  p: string;
+  /** Address-derived join key (see propertyKey). Stored rather than the full
+   *  property name because the only thing that reads it is the join against
+   *  Propoly, whose deals carry an address string and no PayProp id. */
+  pk: string;
+  /** reconciliation date — when the money actually landed and was matched.
+   *  Truer than `d` (due date) for "has this been paid". */
+  rd: string;
+  /** outgoing batch status; "not approved" means in but not yet paid out. */
+  bs: string;
 }
 
 function reduceRows(rows: PaymentRow[]): Payment[] {
@@ -72,6 +102,10 @@ function reduceRows(rows: PaymentRow[]): Payment[] {
       t: r.beneficiary?.type ?? "",
       n: r.beneficiary?.name?.trim() ?? "",
       d: r.due_date ?? "",
+      p: r.incoming_transaction?.property?.id ?? "",
+      pk: propertyKey(r.incoming_transaction?.property?.name ?? ""),
+      rd: r.incoming_transaction?.reconciliation_date ?? "",
+      bs: r.payment_batch?.status ?? "",
     }));
 }
 
@@ -123,7 +157,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v6"; // v6: Scotland fees now count; unclassified named
+const CACHE_VERSION = "v7"; // v7: payments carry property + reconciliation
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -241,7 +275,7 @@ const rangeRead = new Set<string>();
 /** Bump with the Payment shape. A stored range the readers no longer
  *  understand isn't an error, it's a wrong money figure — see the cached-shape
  *  rule; forgetting this has cost this project four misdiagnoses. */
-const RANGE_CACHE_VERSION = "v2"; // v2: blank rows filtered out
+const RANGE_CACHE_VERSION = "v3"; // v3: property, key, reconciliation, batch status
 const rangeKey = (range: string) => `payprop:payments:${RANGE_CACHE_VERSION}:${range}`;
 
 /** Past this, in-memory is enough: a multi-megabyte jsonb round-trip on every
@@ -259,7 +293,12 @@ function isAccountRows(v: unknown): v is AccountRows {
     if (!p || typeof p !== "object") return false;
     const { account, rows } = p as { account?: unknown; rows?: unknown };
     if (typeof account !== "string" || !Array.isArray(rows)) return false;
-    return rows.length === 0 || typeof (rows[0] as Payment | undefined)?.a === "number";
+    // Check `pk`, not `a`. Every earlier reduced shape also had a numeric `a`,
+    // so testing that would let a v2 blob through as v3 and every property
+    // join would come back empty against perfectly valid-looking data.
+    return (
+      rows.length === 0 || typeof (rows[0] as Payment | undefined)?.pk === "string"
+    );
   });
 }
 
@@ -903,6 +942,75 @@ export interface MoveIns {
  * Business-wide only: PayProp holds no agent against a property, so this
  * can't be split by partner. The agent dashboard keeps its REX figure.
  */
+/* ------------------------------- rent received ------------------------------ */
+
+export interface RentReceipt {
+  /** PayProp property id — joins to export/properties and its responsible agent. */
+  propertyId: string;
+  /** Address-derived key, for matching a Propoly deal that has no PayProp id. */
+  propertyKey: string;
+  /** What was passed to the landlord out of this payment. */
+  amount: number;
+  /** When the tenant's money was reconciled — the honest "it arrived" date. */
+  receivedOn: string;
+  /** False while payment_batch.status is "not approved": in, not yet out. */
+  paidOut: boolean;
+}
+
+export interface RentReceived {
+  month: string;
+  receipts: RentReceipt[];
+  /** Reconciled in but not yet approved out. On 1 Aug 2026 this was 31% of the
+   *  UK agency's payments — the gap Kirstie checks by hand. */
+  awaitingPayout: RentReceipt[];
+}
+
+/**
+ * Rent that actually arrived in a month, per property.
+ *
+ * Built from the "Owner" rows: a tenant's payment fans out across several
+ * rows, and the Owner row is the landlord's share of it. It carries the
+ * property, the reconciliation date and the outgoing batch status, which is
+ * everything needed to say "rent for this property landed on this date, and
+ * has/hasn't been paid on".
+ *
+ * Deliberately NOT the same question as the agency's income — this is
+ * pass-through money, and it is counted in `ownerPayments`, not GCI.
+ */
+async function computeRentReceived(month: string): Promise<RentReceived | null> {
+  const { from, to } = monthRange(month);
+  const data = await paymentsForRange(from, to);
+  const rows = data.flatMap((d) => d.rows);
+  if (rows.length === 0) return null;
+
+  const receipts: RentReceipt[] = [];
+  for (const r of rows) {
+    if (r.c !== "Owner") continue;
+    // No property means nothing can be joined to it. Measured at 100%
+    // populated on live data, so this should never fire — but a receipt with
+    // no property would silently attach to no deal at all.
+    if (!r.p && !r.pk) continue;
+    receipts.push({
+      propertyId: r.p,
+      propertyKey: r.pk,
+      amount: r.a,
+      receivedOn: r.rd || r.d,
+      paidOut: r.bs !== "not approved",
+    });
+  }
+  receipts.sort((a, b) => a.receivedOn.localeCompare(b.receivedOn));
+  return {
+    month,
+    receipts,
+    awaitingPayout: receipts.filter((x) => !x.paidOut),
+  };
+}
+
+/** Rent received in a month, per property. Cached and persisted like the rest. */
+export function getRentReceived(month: string): Promise<RentReceived | null> {
+  return cachedAsync(`rent:${month}`, () => computeRentReceived(month));
+}
+
 export function getMoveIns(month: string): Promise<MoveIns | null> {
   return cachedAsync(`movein:${month}`, () => computeMoveIns(month));
 }
