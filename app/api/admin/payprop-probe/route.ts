@@ -233,6 +233,82 @@ export async function GET(req: NextRequest) {
     };
   }
 
+  // One sample row proves the shape. It does NOT tell us which payment TYPES
+  // exist, and that is what decides whether a holding fee can be told apart
+  // from a deposit from first rent automatically, or whether we are stuck
+  // pattern-matching the description string. So: census a capped walk.
+  //
+  // Capped at 8 pages (200 rows) per account rather than the full ~1,078. The
+  // queue paces at 2.5 req/s, so a full walk would hold an admin request open
+  // for ~40s and shove every partner's dashboard behind it.
+  const CENSUS_PAGES = 8;
+  const census: Record<string, unknown> = {};
+  for (const id of payPropAccounts()) {
+    const categories = new Map<string, { rows: number; total: number }>();
+    const txTypes = new Map<string, number>();
+    const batchStatuses = new Map<string, number>();
+    let rows = 0;
+    let blank = 0;
+    let withProperty = 0;
+    let withTenant = 0;
+    let withDeposit = 0;
+
+    for (let page = 1; page <= CENSUS_PAGES; page++) {
+      const res = await payPropGet(id, "report/all-payments", {
+        from_date: from,
+        to_date: to,
+        rows: 25,
+        page,
+      }).catch(() => null);
+      if (!res || res.items.length === 0) break;
+      for (const raw of res.items as Array<Record<string, unknown>>) {
+        rows++;
+        if (String(raw.id ?? "").trim() === "") {
+          blank++;
+          continue;
+        }
+        const cat = (raw.category as { name?: string } | null)?.name ?? "(none)";
+        const entry = categories.get(cat) ?? { rows: 0, total: 0 };
+        entry.rows++;
+        entry.total += Number(raw.amount ?? 0) || 0;
+        categories.set(cat, entry);
+
+        const it = raw.incoming_transaction as Record<string, unknown> | null;
+        if (it) {
+          const t = String(it.type ?? "(none)");
+          txTypes.set(t, (txTypes.get(t) ?? 0) + 1);
+          if ((it.property as { id?: string } | null)?.id) withProperty++;
+          if ((it.tenant as { id?: string } | null)?.id) withTenant++;
+          if (String(it.deposit_id ?? "").trim() !== "") withDeposit++;
+        }
+        const b = raw.payment_batch as { status?: string } | null;
+        const bs = String(b?.status ?? "(none)");
+        batchStatuses.set(bs, (batchStatuses.get(bs) ?? 0) + 1);
+      }
+      if (res.items.length < 25) break;
+    }
+
+    const real = rows - blank;
+    const pct = (n: number) => (real ? `${Math.round((n / real) * 100)}%` : "—");
+    census[id] = {
+      label: payPropLabel(id),
+      sampled: rows,
+      blank,
+      // The join question, answered as a rate rather than a single example —
+      // one populated row proves nothing about the other thousand.
+      propertyPopulated: `${withProperty}/${real} (${pct(withProperty)})`,
+      tenantPopulated: `${withTenant}/${real} (${pct(withTenant)})`,
+      depositIdPresent: `${withDeposit}/${real} (${pct(withDeposit)})`,
+      categories: Object.fromEntries(
+        [...categories.entries()]
+          .sort((a, b) => b[1].rows - a[1].rows)
+          .map(([k, v]) => [k, { rows: v.rows, total: v.total.toFixed(2) }])
+      ),
+      transactionTypes: Object.fromEntries(txTypes),
+      batchStatuses: Object.fromEntries(batchStatuses),
+    };
+  }
+
   return NextResponse.json({
     configured: true,
     pageSize,
@@ -243,5 +319,6 @@ export async function GET(req: NextRequest) {
     agents,
     accounts,
     payments,
+    census,
   });
 }
