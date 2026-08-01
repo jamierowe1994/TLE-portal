@@ -7,7 +7,9 @@ import {
   getPropolyAgents,
   getPropolyBranches,
   getPropolyDeals,
+  getPropolyDeal,
   getPropolyProperties,
+  propolyGet,
   type PropolyResult,
 } from "@/lib/propoly";
 
@@ -84,6 +86,63 @@ export async function GET(req: NextRequest) {
       getPropolyProperties(),
     ]);
 
+    // ---- how does a tenancy agreement actually get issued? -----------------
+    //
+    // The deals LIST is all the portal has ever read, and it carries no
+    // document fields at all. Two things could be true: Propoly holds the
+    // agreement and the list simply omits it, or the agreement lives in a
+    // separate system entirely. The list alone cannot tell them apart.
+    //
+    // So: pull ONE full deal and diff its keys against the list row, then ask
+    // for the document-shaped endpoints and report what comes back. A 404 is
+    // as much of an answer as a 200 — it rules a route out instead of leaving
+    // it a guess.
+    const dealRows = (() => {
+      const b = deals.body;
+      if (Array.isArray(b)) return b as Array<Record<string, unknown>>;
+      if (b && typeof b === "object") {
+        const found = Object.values(b as Record<string, unknown>).find((v) =>
+          Array.isArray(v)
+        );
+        if (Array.isArray(found)) return found as Array<Record<string, unknown>>;
+      }
+      return [];
+    })();
+    const listKeys = dealRows[0] ? Object.keys(dealRows[0]) : [];
+    const sampleId = String(dealRows[0]?.uuid ?? dealRows[0]?.id ?? "");
+
+    let fullDeal: Record<string, unknown> | null = null;
+    if (sampleId) {
+      const one = await getPropolyDeal(sampleId).catch(() => null);
+      const b = one?.body;
+      if (b && typeof b === "object" && !Array.isArray(b)) {
+        const inner = (b as Record<string, unknown>).data;
+        fullDeal =
+          inner && typeof inner === "object"
+            ? (inner as Record<string, unknown>)
+            : (b as Record<string, unknown>);
+      }
+    }
+
+    const DOC_WORDS = /doc|agree|contract|sign|template|tenancy|file|attach/i;
+    const paths = sampleId
+      ? [
+          `/api/v1/deals/${sampleId}/documents`,
+          `/api/v1/deals/${sampleId}/files`,
+          `/api/v1/deals/${sampleId}/agreements`,
+          "/api/v1/documents",
+          "/api/v1/agreements",
+          "/api/v1/templates",
+        ]
+      : [];
+    const documentRoutes: Record<string, unknown> = {};
+    for (const path of paths) {
+      const r = await propolyGet(path).catch(() => null);
+      documentRoutes[path] = r
+        ? { status: r.status, ...(r.status < 400 ? summarise(r) : {}) }
+        : { status: "call threw" };
+    }
+
     return NextResponse.json({
       configured: true,
       clientName: propolyClientName(),
@@ -92,6 +151,20 @@ export async function GET(req: NextRequest) {
         branches: summarise(branches),
         deals: summarise(deals),
         properties: summarise(properties),
+      },
+      contracts: {
+        sampleDealFound: Boolean(sampleId),
+        listRowKeys: listKeys,
+        fullDealKeys: fullDeal ? Object.keys(fullDeal) : [],
+        // What the single-deal call gives us that the list does not — this is
+        // where an agreement field would show up if Propoly holds one.
+        extraOnFullDeal: fullDeal
+          ? Object.keys(fullDeal).filter((k) => !listKeys.includes(k))
+          : [],
+        documentShapedKeys: fullDeal
+          ? Object.keys(fullDeal).filter((k) => DOC_WORDS.test(k))
+          : [],
+        documentRoutes,
       },
     });
   } catch (e) {
