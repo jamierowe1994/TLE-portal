@@ -133,6 +133,13 @@ export async function GET(req: NextRequest) {
           "/api/v1/documents",
           "/api/v1/agreements",
           "/api/v1/templates",
+          // CONTROL. Every document route came back 403, not 404 — which reads
+          // as "exists, you lack permission" and would mean asking Propoly to
+          // widen the key's scope. But plenty of APIs answer 403 for ANY path
+          // outside the granted scope, including ones that do not exist. This
+          // path certainly does not exist. If it 403s too, then 403 is just
+          // Propoly's word for "no" and the other six prove nothing.
+          "/api/v1/this-endpoint-does-not-exist-control-test",
         ]
       : [];
     const documentRoutes: Record<string, unknown> = {};
