@@ -159,6 +159,45 @@ export async function GET(req: NextRequest) {
         deals: summarise(deals),
         properties: summarise(properties),
       },
+      // Which of the 26 deal fields actually hold anything. The probe has only
+      // ever reported KEYS, and a key is not a value — the PayProp work was
+      // bitten by exactly this, shaping a row whose fields were all empty.
+      //
+      // Coverage counts only, plus distinct values for the handful of fields
+      // that are enums rather than personal data. tenant_details,
+      // landlord_details and guarantors_details are people; they get a count
+      // and nothing else.
+      fieldCoverage: (() => {
+        const SAFE_TO_SHOW = new Set([
+          "tenancy_status",
+          "property_type",
+          "payment_schedule",
+          "furnished",
+          "tenancy_service_level",
+        ]);
+        const out: Record<string, unknown> = {};
+        for (const k of listKeys) {
+          let filled = 0;
+          const seen = new Set<string>();
+          for (const row of dealRows) {
+            const v = row[k];
+            const empty =
+              v == null ||
+              v === "" ||
+              (Array.isArray(v) && v.length === 0) ||
+              (typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length === 0);
+            if (!empty) {
+              filled++;
+              if (SAFE_TO_SHOW.has(k) && seen.size < 6) seen.add(String(v).slice(0, 40));
+            }
+          }
+          out[k] = {
+            filled: `${filled}/${dealRows.length}`,
+            ...(seen.size ? { values: [...seen] } : {}),
+          };
+        }
+        return out;
+      })(),
       contracts: {
         sampleDealFound: Boolean(sampleId),
         listRowKeys: listKeys,
