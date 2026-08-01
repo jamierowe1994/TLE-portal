@@ -142,14 +142,24 @@ export async function GET(req: NextRequest) {
   // Reported as keys plus a type map, because a key alone doesn't say whether
   // `property` is an id, a name or a nested object. Full values only behind
   // ?values=1, since these rows carry tenant names and real amounts.
-  const shapeOf = (row: Record<string, unknown>): Record<string, string> => {
-    const out: Record<string, string> = {};
+  // Recurses, because "object{ id, name }" told us a property key EXISTS but
+  // not whether it holds anything — and a join against a null is still a null.
+  // Depth 3 reaches incoming_transaction.bank_statement.date, which is the
+  // deepest thing here worth seeing.
+  const shapeOf = (
+    row: Record<string, unknown>,
+    depth = 0
+  ): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(row)) {
       if (v === null) out[k] = "null";
       else if (Array.isArray(v)) out[k] = `array[${v.length}]`;
-      else if (typeof v === "object")
-        out[k] = `object{ ${Object.keys(v as object).join(", ")} }`;
-      else out[k] = `${typeof v}: ${String(v).slice(0, 40)}`;
+      else if (typeof v === "object") {
+        out[k] =
+          depth >= 3
+            ? `object{ ${Object.keys(v as object).join(", ")} }`
+            : shapeOf(v as Record<string, unknown>, depth + 1);
+      } else out[k] = `${typeof v}: ${String(v).slice(0, 40)}`;
     }
     return out;
   };

@@ -16,6 +16,7 @@ import { normaliseAgentName, propertyKey } from "@/lib/payprop-portfolio";
 
 /** What report/all-payments puts on the wire (the fields we care about). */
 export interface PaymentRow {
+  id?: string;
   amount?: string;
   category?: { id?: string; name?: string };
   beneficiary?: { id?: string; name?: string; type?: string };
@@ -54,14 +55,24 @@ interface Payment {
 }
 
 function reduceRows(rows: PaymentRow[]): Payment[] {
-  return rows.map((r) => ({
-    a: money(r.amount),
-    c: r.category?.name ?? "",
-    b: r.beneficiary?.id ?? "",
-    t: r.beneficiary?.type ?? "",
-    n: r.beneficiary?.name?.trim() ?? "",
-    d: r.due_date ?? "",
-  }));
+  // PayProp's all-payments report interleaves BLANK rows: no id, 0.00 amount,
+  // null category, beneficiary and due_date. Measured against live data on
+  // 1 Aug 2026 — 1 in 25 on Scotland, 3 in 25 on the rest of the UK.
+  //
+  // They carry no money, so they never moved a total. What they did do is
+  // inflate paymentCount (and byPartner[].payments), and get persisted to
+  // Postgres along with everything else. A payment count is a figure people
+  // read, so an overstatement of 4-12% is not cosmetic.
+  return rows
+    .filter((r) => String(r.id ?? "").trim() !== "")
+    .map((r) => ({
+      a: money(r.amount),
+      c: r.category?.name ?? "",
+      b: r.beneficiary?.id ?? "",
+      t: r.beneficiary?.type ?? "",
+      n: r.beneficiary?.name?.trim() ?? "",
+      d: r.due_date ?? "",
+    }));
 }
 
 export interface AgencyIncome {
@@ -106,7 +117,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5"; // v5: blank PayProp rows no longer counted
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -217,7 +228,7 @@ const rangeRead = new Set<string>();
 /** Bump with the Payment shape. A stored range the readers no longer
  *  understand isn't an error, it's a wrong money figure — see the cached-shape
  *  rule; forgetting this has cost this project four misdiagnoses. */
-const RANGE_CACHE_VERSION = "v1";
+const RANGE_CACHE_VERSION = "v2"; // v2: blank rows filtered out
 const rangeKey = (range: string) => `payprop:payments:${RANGE_CACHE_VERSION}:${range}`;
 
 /** Past this, in-memory is enough: a multi-megabyte jsonb round-trip on every
