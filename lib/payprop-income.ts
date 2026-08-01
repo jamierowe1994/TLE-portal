@@ -92,6 +92,12 @@ export interface AgencyIncome {
   /** Money moved that isn't rent and isn't a fee: contractor costs, deposits,
    *  refunds, uncategorised. Reported so the total is accounted for. */
   unclassified: number;
+  /** WHICH categories landed in `unclassified`, biggest first. An allowlist
+   *  drops anything it doesn't recognise without a sound, which is how
+   *  Scotland's management fees sat outside GCI unnoticed. Naming them means a
+   *  new or renamed PayProp category shows up as a number to explain rather
+   *  than as money that quietly vanished. */
+  unclassifiedByCategory: Array<{ category: string; amount: number }>;
   /** Agency income split by fee type, biggest first. */
   byCategory: Array<{ category: string; amount: number }>;
   /** What each partner earned this month, biggest first. */
@@ -117,7 +123,7 @@ const running = new Set<string>();
  * null and starts the walk; once it lands every later call is instant.
  */
 /** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v5"; // v5: blank PayProp rows no longer counted
+const CACHE_VERSION = "v6"; // v6: Scotland fees now count; unclassified named
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -193,6 +199,13 @@ export function payPropRefreshing(): boolean {
  */
 const FEE_CATEGORIES = new Set([
   "Management Fee",
+  // Scotland names the same thing differently. Found by censusing live
+  // categories on 1 Aug 2026: 73 of 199 sampled Scotland rows were "Monthly
+  // Management Fee" carrying GBP 5,002.48 — none of which reached GCI, because
+  // an exact-match allowlist silently drops what it doesn't recognise. The two
+  // agencies are configured separately in PayProp, so their category names
+  // cannot be assumed to match.
+  "Monthly Management Fee",
   "First Month Management Fee",
   "Set Up Fee",
   "Management Fee - Investor Services",
@@ -387,6 +400,7 @@ async function computeIncomeRange(
   let ownerPayments = 0;
   let unclassified = 0;
   const cats = new Map<string, number>();
+  const unclassifiedCats = new Map<string, number>();
   // Distinct partners who took a fee, for the per-agent figure.
   const earners = new Set<string>();
   const partners = new Map<string, { amount: number; payments: number }>();
@@ -402,6 +416,7 @@ async function computeIncomeRange(
       // Contractor costs, deposits, refunds, uncategorised — real money, but
       // not commission. Kept visible so the total is accounted for.
       unclassified += amount;
+      unclassifiedCats.set(category, (unclassifiedCats.get(category) ?? 0) + amount);
     } else if (type === "agency") {
       agencyIncome += amount;
       cats.set(category, (cats.get(category) ?? 0) + amount);
@@ -427,6 +442,9 @@ async function computeIncomeRange(
     paidToBeneficiaries,
     ownerPayments,
     unclassified,
+    unclassifiedByCategory: [...unclassifiedCats.entries()]
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount),
     byCategory: [...cats.entries()]
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount),
