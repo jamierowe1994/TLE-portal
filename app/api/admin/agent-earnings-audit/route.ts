@@ -8,6 +8,7 @@ import {
   payPropConfigured,
 } from "@/lib/payprop";
 import { agentBeneficiaryIds } from "@/lib/payprop-income";
+import { getAgentBook } from "@/lib/payprop-portfolio";
 
 // Reconcile ONE partner's month against the sheet, line by line.
 //
@@ -49,7 +50,7 @@ interface RawRow {
   payment_batch?: { status?: string; transfer_date?: string };
   incoming_transaction?: {
     reconciliation_date?: string;
-    property?: { name?: string };
+    property?: { id?: string; name?: string };
   };
 }
 
@@ -119,16 +120,26 @@ export async function GET(req: NextRequest) {
     const lastOfNext = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1, 0));
     const to = lastOfNext.toISOString().slice(0, 10);
 
+    // The audit asks "what was paid TO this partner". Susan's sheet may instead
+    // ask "what did this partner's properties earn" — a different question that
+    // can give a different number, because a fee on their property can be paid
+    // to someone else entirely. Now that payments carry a property id we can
+    // compute both and see which one the sheet is actually built on.
+    const book = await getAgentBook(name).catch(() => null);
+    const propertyIds = new Set(book?.propertyIds ?? []);
+
     const rows: Array<RawRow & { account: string }> = [];
+    const byPropertyRows: Array<RawRow & { account: string }> = [];
     for (const acc of payPropAccounts()) {
       const got = await payPropGetAll<RawRow>(acc, "report/all-payments", {
         from_date: from,
         to_date: to,
       }).catch(() => []);
       for (const r of got) {
-        if (r.beneficiary?.id && idSet.has(r.beneficiary.id)) {
-          rows.push({ ...r, account: payPropLabel(acc) });
-        }
+        const tagged = { ...r, account: payPropLabel(acc) };
+        if (r.beneficiary?.id && idSet.has(r.beneficiary.id)) rows.push(tagged);
+        const pid = r.incoming_transaction?.property?.id;
+        if (pid && propertyIds.has(pid)) byPropertyRows.push(tagged);
       }
     }
 
@@ -158,6 +169,33 @@ export async function GET(req: NextRequest) {
       beneficiaryIds: ids,
       searchedRange: { from, to },
       feeRowsInRange: feeRows.length,
+
+      // Attribution by PROPERTY rather than by who was paid. If the sheet is
+      // built this way the totals here will match it and the beneficiary ones
+      // will not — which is a different fix from a date basis.
+      byPropertyAttribution: (() => {
+        const feeByProp = byPropertyRows.filter((r) =>
+          FEE_CATEGORIES.has(r.category?.name ?? "")
+        );
+        const due = feeByProp.filter((r) => inMonth(r.due_date));
+        const recon = feeByProp.filter((r) =>
+          inMonth(r.incoming_transaction?.reconciliation_date)
+        );
+        return {
+          propertiesOnTheirBook: propertyIds.size,
+          bookLoaded: book != null,
+          totals: {
+            byDueDate: round(sum(due)),
+            byReconciliationDate: round(sum(recon)),
+          },
+          counts: { byDueDate: due.length, byReconciliationDate: recon.length },
+          // Fees on their properties that went to somebody ELSE. If this is
+          // large it explains a sheet reading higher than the portal.
+          paidToOthers: round(
+            sum(due.filter((r) => !(r.beneficiary?.id && idSet.has(r.beneficiary.id))))
+          ),
+        };
+      })(),
 
       // The same rows, bucketed three ways. If these disagree, the month
       // boundary IS the discrepancy and no amount of category work will fix it.
