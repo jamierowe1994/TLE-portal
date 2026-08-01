@@ -94,8 +94,13 @@ function PillMenu({
       <button
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
-        className={`inline-flex items-center gap-2 rounded-xl border-[1.5px] bg-transparent px-3 py-2 text-[13px] font-medium transition ${
-          off && !open ? "border-ink/30 text-muted hover:border-ink/60 hover:text-ink" : "border-ink/85 text-ink"
+        // Hairline pill, same as the controls on My Properties. The 1.5px inked
+        // frame belongs to .dash-cards .card — on a control this small it read
+        // as a heavier, darker line than anything else on the page.
+        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
+          off && !open
+            ? "border-line bg-transparent text-muted hover:border-black/25 hover:text-ink"
+            : "border-line bg-black/[0.04] text-ink"
         }`}
       >
         <DoodleIcon name={icon} size={15} />
@@ -645,7 +650,7 @@ export default function TodosPage() {
 
     if (editing) {
       return (
-        <li className="menu-pop col-span-full space-y-3 rounded-xl border border-black/20 p-4">
+        <li className="menu-pop col-span-full space-y-3 rounded-xl border border-line p-4">
           <input
             type="text"
             value={editNote}
@@ -846,8 +851,10 @@ export default function TodosPage() {
           <button
             type="button"
             onClick={() => (suggestOpen ? setSuggestOpen(false) : void loadSuggestions())}
-            className={`btn-press inline-flex shrink-0 items-center gap-1.5 rounded-lg border-[1.5px] px-3.5 py-2.5 text-[13px] font-medium transition ${
-              suggestOpen ? "border-ink text-ink" : "border-ink/30 text-muted hover:border-ink/60 hover:text-ink"
+            className={`btn-press inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3.5 py-2.5 text-[13px] font-medium transition ${
+              suggestOpen
+                ? "border-line bg-black/[0.04] text-ink"
+                : "border-line text-muted hover:border-black/25 hover:text-ink"
             }`}
           >
             <DoodleIcon name="magic-wand" size={15} className="text-accent" />

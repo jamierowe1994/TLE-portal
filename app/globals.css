@@ -94,6 +94,13 @@ h5 {
   border-radius: var(--radius-card);
 }
 
+/* Same drawn frame, no fill. For grids that are a list of links rather than a
+   set of figures — a wall of white boxes there reads as more weight than the
+   content carries, so they sit on the page colour with just the outline. */
+.card-flat {
+  background: transparent;
+}
+
 /* ---------------------------------------------------------------------------
    Notion-style white surface — scoped to the agent dashboard shell only
    (login/admin keep the light-grey page). White canvas, faint dark hairline

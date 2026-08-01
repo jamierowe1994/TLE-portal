@@ -67,7 +67,7 @@ function PlatformCard({ p, delay }: { p: Platform; delay: number }) {
 
   if (!p.url) {
     return (
-      <div className="enter enter-up card p-5 opacity-70" style={enterAt(delay)}>
+      <div className="enter enter-up card card-flat p-5 opacity-70" style={enterAt(delay)}>
         {body}
       </div>
     );
@@ -77,7 +77,7 @@ function PlatformCard({ p, delay }: { p: Platform; delay: number }) {
       href={p.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="enter enter-up card btn-press block p-5 transition hover:border-black/20"
+      className="enter enter-up card card-flat btn-press block p-5 transition hover:border-black/20"
       style={enterAt(delay)}
     >
       {body}
@@ -110,7 +110,7 @@ export default function ToolsPage() {
               <p className="mt-0.5 text-[12px] text-muted">{section.blurb}</p>
             </div>
             {items.length === 0 ? (
-              <div className="card p-5 text-[13px] text-muted">
+              <div className="card card-flat p-5 text-[13px] text-muted">
                 Nothing here yet — this is where your {section.title.toLowerCase()}{" "}
                 will live.
               </div>
