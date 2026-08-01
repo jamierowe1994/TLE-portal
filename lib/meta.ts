@@ -361,60 +361,6 @@ async function getAdsWithCreatives(campaignIds: string[]): Promise<RawAd[]> {
   }
 }
 
-interface AdFigures {
-  impressions: number;
-  clicks: number;
-  spend: number;
-  leads: number;
-  cpl: number | null;
-}
-
-// Per-ad figures for the agent's campaigns — keyed by ad id so the gallery
-// can pair each thumbnail with its own numbers.
-async function getAdInsightsByAd(
-  campaignIds: string[],
-  datePreset: string
-): Promise<Record<string, AdFigures>> {
-  if (campaignIds.length === 0) return {};
-  const groups = await groupCampaignsByAccount(campaignIds);
-  if (groups.size === 0) return {};
-
-  const out: Record<string, AdFigures> = {};
-  await Promise.all(
-    [...groups.entries()].map(async ([acc, ids]) => {
-      try {
-        const data = (await graph(`${acc}/insights`, {
-          level: "ad",
-          fields: "ad_id,impressions,clicks,spend,actions",
-          date_preset: datePreset,
-          filtering: JSON.stringify([
-            { field: "campaign.id", operator: "IN", value: ids },
-          ]),
-          limit: "100",
-        })) as { data?: Array<Record<string, unknown>> };
-        for (const row of data.data ?? []) {
-          const id = String(row.ad_id ?? "");
-          if (!id) continue;
-          const leads = countLeads(
-            (row.actions as Array<{ action_type: string; value: string }>) ?? []
-          );
-          const spend = Number(row.spend ?? 0);
-          out[id] = {
-            impressions: Number(row.impressions ?? 0),
-            clicks: Number(row.clicks ?? 0),
-            spend,
-            leads,
-            cpl: leads > 0 ? spend / leads : null,
-          };
-        }
-      } catch {
-        /* skip this account rather than failing the lot */
-      }
-    })
-  );
-  return out;
-}
-
 // ── Public per-agent API (what the routes call) ─────────────────────────────
 
 export interface AgentMetaStats {
@@ -455,64 +401,6 @@ export async function getAgentMetaStats(
       .filter((a) => a.imageUrl)
       .map((a) => ({ adName: a.name, imageUrl: a.imageUrl as string }));
     return { configured: true, snapshot, creatives };
-  } catch (e) {
-    return {
-      configured: true,
-      error: e instanceof Error ? e.message : "Meta request failed",
-    };
-  }
-}
-
-export interface AgentAdRow {
-  id: string;
-  name: string;
-  status: string;
-  imageUrl: string | null;
-  impressions: number;
-  clicks: number;
-  spend: number;
-  leads: number;
-  cpl: number | null;
-}
-
-export interface AgentAdsResult {
-  configured: boolean;
-  preset?: string;
-  ads?: AgentAdRow[];
-  error?: string;
-}
-
-// The agent's ads gallery: every ad in their tagged campaign(s) (cap 12),
-// each with its creative thumbnail and its own figures for the chosen range.
-export async function getAgentAds(
-  user: Pick<UserProfile, "metaCampaignId">,
-  preset?: string | null
-): Promise<AgentAdsResult> {
-  const campaignIds = parseCampaignIds(user.metaCampaignId);
-  if (!metaTokenSet() || campaignIds.length === 0) {
-    return { configured: false };
-  }
-  const datePreset = sanitizePreset(preset);
-  try {
-    const [ads, figures] = await Promise.all([
-      getAdsWithCreatives(campaignIds),
-      getAdInsightsByAd(campaignIds, datePreset),
-    ]);
-    return {
-      configured: true,
-      preset: datePreset,
-      ads: ads.map((a) => {
-        const f = figures[a.id];
-        return {
-          ...a,
-          impressions: f?.impressions ?? 0,
-          clicks: f?.clicks ?? 0,
-          spend: f?.spend ?? 0,
-          leads: f?.leads ?? 0,
-          cpl: f?.cpl ?? null,
-        };
-      }),
-    };
   } catch (e) {
     return {
       configured: true,
