@@ -108,7 +108,10 @@ export async function GET(req: NextRequest) {
     // And one bad month no longer loses the whole table: payPropGetAll refuses
     // to report a partial figure, which is right, but that refusal should cost
     // one column rather than all of them.
-    const byMonthRows = new Map<string, Array<{ a: number; c: string; b: string; d: string; rd: string; p: string }>>();
+    const byMonthRows = new Map<
+      string,
+      Array<{ a: number; c: string; b: string; d: string; rd: string; td: string; p: string }>
+    >();
     const failedMonths: Array<{ month: string; error: string }> = [];
     for (const month of months) {
       try {
@@ -152,17 +155,29 @@ export async function GET(req: NextRequest) {
         const mine = feeRows.filter((r) => r.b && idSet.has(r.b));
         const onTheirProperties = feeRows.filter((r) => r.p && propertyIds.has(r.p));
         const inM = (d: string) => d.slice(0, 7) === month;
+        // The BATCH TRANSFER date is the production basis, settled against the
+        // accounts sheet. Due and reconciliation are kept only so a mismatch
+        // can be diagnosed — they are not what the dashboard reports.
+        const settled = mine.filter((r) => inM(r.td));
         const due = mine.filter((r) => inM(r.d));
         const recon = mine.filter((r) => inM(r.rd));
-        const propDue = onTheirProperties.filter((r) => inM(r.d));
+        const propSettled = onTheirProperties.filter((r) => inM(r.td));
         const total = (rs: typeof mine) => round(rs.reduce((t, r) => t + r.a, 0));
+        const net = (n: number) => round(n / 1.2);
         perMonth[month] = {
-          paidToThem: {
+          // What the dashboard shows, and what the sheet's net column should say.
+          earnedNet: net(total(settled)),
+          earnedGross: total(settled),
+          rows: settled.length,
+          // Only for diagnosing a mismatch. Neither is the reported figure.
+          otherBases: {
             byDueDate: total(due),
             byReconciliationDate: total(recon),
           },
-          onTheirProperties: { byDueDate: total(propDue) },
-          rows: { byDueDate: due.length, byReconciliationDate: recon.length },
+          onTheirProperties: {
+            grossByTransferDate: total(propSettled),
+            netByTransferDate: net(total(propSettled)),
+          },
         };
       }
       results.push({ name, matched: true, matchedBy, perMonth });
@@ -173,10 +188,13 @@ export async function GET(req: NextRequest) {
       ...(failedMonths.length ? { failedMonths } : {}),
       partners: results.length,
       howToRead:
-        "Per partner per month: paidToThem is what PayProp paid that person; " +
-        "onTheirProperties is what was charged on properties they run, whoever " +
-        "was paid. Compare each against the sheet — the column that matches is " +
-        "the basis the business uses.",
+        "earnedNet is the figure the dashboard shows and should equal the " +
+        "accounts sheet's NET column: fees bucketed by BATCH TRANSFER date, " +
+        "divided by 1.2. earnedGross is the same rows VAT-inclusive, which is " +
+        "the sheet's other block. otherBases exists only to diagnose a " +
+        "mismatch — neither is what gets reported. onTheirProperties is what " +
+        "was charged on properties they run whoever was paid, which is a " +
+        "different question and will not match the earnings sheet.",
       results,
     });
   } catch (e) {

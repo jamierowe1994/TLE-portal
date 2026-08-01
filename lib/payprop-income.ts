@@ -897,7 +897,9 @@ async function buildBeneficiaryIndex(): Promise<BeneficiaryIndex> {
 export async function auditRowsForRange(
   from: string,
   to: string
-): Promise<Array<{ a: number; c: string; b: string; d: string; rd: string; p: string }>> {
+): Promise<
+  Array<{ a: number; c: string; b: string; d: string; rd: string; td: string; p: string }>
+> {
   const per = await paymentsForRange(from, to);
   return per.flatMap((x) => x.rows);
 }
