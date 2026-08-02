@@ -933,3 +933,16 @@ body.presenting .source-badge[class*="border"] {
     transition: none !important;
   }
 }
+
+/* The save button's tick: draws in with a tiny overshoot, so "saved" lands
+   rather than appears (components/SaveButton.tsx). */
+.tick-in {
+  animation: tick-in 0.32s cubic-bezier(0.34, 1.5, 0.5, 1) both;
+}
+@keyframes tick-in {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tick-in { animation: none; }
+}

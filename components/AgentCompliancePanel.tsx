@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import DoodleIcon from "@/components/DoodleIcon";
 import { BRAND } from "@/lib/brand";
+import SaveButton from "@/components/SaveButton";
 
 // The partner's own compliance: the certificates a TLE agent has to hold and
 // renew each year. Uploading one files a copy head office can see, and can
@@ -42,6 +43,7 @@ export default function AgentCompliancePanel() {
   const [expiry, setExpiry] = useState("");
   const [remind, setRemind] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<File | undefined>();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -55,8 +57,8 @@ export default function AgentCompliancePanel() {
     void load();
   }, []);
 
-  async function upload(file: File | undefined) {
-    if (!file || busy) return;
+  async function upload(file: File | undefined): Promise<boolean> {
+    if (!file || busy) return false;
     setBusy(true);
     setMsg(null);
     try {
@@ -71,7 +73,7 @@ export default function AgentCompliancePanel() {
       const data = (await res.json().catch(() => ({}))) as { error?: string; reminded?: boolean };
       if (!res.ok) {
         setMsg({ ok: false, text: data.error ?? "Couldn't upload that." });
-        return;
+        return false;
       }
       setMsg({
         ok: true,
@@ -82,10 +84,13 @@ export default function AgentCompliancePanel() {
       setLabel("");
       setExpiry("");
       await load();
+      return true;
     } catch {
       setMsg({ ok: false, text: "Couldn't upload that — try again." });
+      return false;
     } finally {
       setBusy(false);
+      setPending(undefined);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
@@ -216,15 +221,36 @@ export default function AgentCompliancePanel() {
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-            className="btn-press rounded-full px-4 py-2 text-[13px] font-semibold text-white transition disabled:opacity-50"
-            style={{ background: BRAND.accent }}
-          >
-            {busy ? "Uploading…" : "Upload certificate"}
-          </button>
+          {/* Pick first, then upload: the file dialog is a separate step, so
+              the button's spin wraps the actual request rather than the time
+              someone spends browsing their desktop. */}
+          {pending ? (
+            <>
+              <SaveButton
+                onSave={() => upload(pending)}
+                label={`Upload ${pending.name.slice(0, 22)}`}
+                savingLabel="Uploading certificate"
+                disabled={busy}
+              />
+              <button
+                type="button"
+                onClick={() => setPending(undefined)}
+                className="btn-press rounded-lg px-3 py-2 text-[13px] font-medium text-muted transition hover:text-ink"
+              >
+                Choose another
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              className="btn-press rounded-full px-4 py-2 text-[13px] font-semibold text-white transition disabled:opacity-50"
+              style={{ background: BRAND.accent }}
+            >
+              Choose certificate
+            </button>
+          )}
           {msg ? (
             <span className={`text-[12.5px] ${msg.ok ? "text-emerald-600" : "accent-text"}`}>
               {msg.text}
@@ -234,7 +260,8 @@ export default function AgentCompliancePanel() {
             ref={fileRef}
             type="file"
             className="hidden"
-            onChange={(e) => void upload(e.target.files?.[0])}
+            // Selecting a file no longer uploads it — it arms the button.
+            onChange={(e) => setPending(e.target.files?.[0])}
           />
         </div>
       </div>

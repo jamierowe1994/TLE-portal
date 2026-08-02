@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import PasswordInput from "@/components/PasswordInput";
 import { getUser, refreshUser, updateProfile, signOut } from "@/lib/session";
 import type { UserProfile } from "@/lib/types";
+import SaveButton from "@/components/SaveButton";
 
 // Profile — edit name / mobile / photo (FileReader → data URL, TEG pattern),
 // change password, sign out. The admin-managed links (agentKey, rexUserId,
@@ -18,13 +19,15 @@ const inputClass =
 
 function LinkedChip({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-line bg-gray-50 px-3 py-2">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+    // Label above value, not beside it: side by side in a quarter-width
+    // column the value had ~30px and every one of them truncated.
+    <div className="min-w-0 rounded-lg border border-line bg-transparent px-3 py-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
         {label}
-      </span>
-      <span className="tnum truncate text-[13px] font-medium">
+      </div>
+      <div className="tnum truncate text-[13px] font-medium">
         {value ?? "Not linked yet"}
-      </span>
+      </div>
     </div>
   );
 }
@@ -82,10 +85,10 @@ export default function ProfilePage() {
     reader.readAsDataURL(file);
   }
 
-  async function saveProfile() {
+  async function saveProfile(): Promise<boolean> {
     if (!name.trim()) {
       setProfileMsg({ ok: false, text: "Your name can't be empty." });
-      return;
+      return false;
     }
     setSaving(true);
     setProfileMsg(null);
@@ -98,25 +101,27 @@ export default function ProfilePage() {
       });
       setUser(updated);
       setProfileMsg({ ok: true, text: "Profile saved." });
+      return true;
     } catch (e) {
       setProfileMsg({
         ok: false,
         text: e instanceof Error ? e.message : "Could not save your profile.",
       });
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
-  async function changePassword() {
+  async function changePassword(): Promise<boolean> {
     setPwMsg(null);
     if (newPw.length < 8) {
       setPwMsg({ ok: false, text: "New password must be at least 8 characters." });
-      return;
+      return false;
     }
     if (newPw !== confirmPw) {
       setPwMsg({ ok: false, text: "New passwords don't match." });
-      return;
+      return false;
     }
     setChangingPw(true);
     try {
@@ -130,14 +135,16 @@ export default function ProfilePage() {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setPwMsg({ ok: false, text: data.error ?? "Could not change your password." });
-        return;
+        return false;
       }
       setPwMsg({ ok: true, text: "Password changed." });
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
+      return true;
     } catch {
       setPwMsg({ ok: false, text: "Could not change your password — try again." });
+      return false;
     } finally {
       setChangingPw(false);
     }
@@ -151,19 +158,31 @@ export default function ProfilePage() {
   if (!user) return null; // layout guard is redirecting
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
+    <div className="relative space-y-5">
+      {/* A large, faint illustration anchored bottom-right, sitting BEHIND the
+          cards — the page reads as considered rather than a stack of forms.
+          Every card above it is card-flat (transparent), so it shows through
+          them, which is the intent. pointer-events-none so it can never eat a
+          click; hidden below lg where the columns collapse and there is no
+          spare room for it. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-6 right-0 -z-10 hidden w-[26rem] max-w-[55%] select-none opacity-[0.09] lg:block"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/illustrations/notioly/accomplishment.svg" alt="" className="w-full" />
+      </div>
       <div className="pt-2">
         <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>
           Profile
         </h1>
-        <p className="mt-2.5 text-[13px] text-muted">{user.email}</p>
       </div>
 
       {/* Two columns: what's ABOUT the agent (details, compliance) takes the
           wide left; the account plumbing (admin links, password, sign out)
           stacks on the right. Single column again below lg. */}
-      <div className="grid items-start gap-5 lg:grid-cols-3">
-      <div className="space-y-5 lg:col-span-2">
+      <div className="grid items-start gap-5 lg:grid-cols-4">
+      <div className="space-y-5 lg:col-span-3">
       {/* Details */}
       <section className="card card-flat space-y-4 p-5">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
@@ -219,6 +238,19 @@ export default function ProfilePage() {
             />
           </div>
           <div>
+            {/* Read-only on purpose: the email IS the login and the key every
+                integration matches on, so changing it here would silently
+                break the REX/PayProp links. Shown, not editable. */}
+            <label className="mb-1 block text-[12px] font-medium text-muted">Email</label>
+            <input
+              value={user.email}
+              readOnly
+              disabled
+              title="Your email is your sign-in — ask an admin to change it."
+              className={`${inputClass} cursor-not-allowed text-muted opacity-70`}
+            />
+          </div>
+          <div>
             <label className="mb-1 block text-[12px] font-medium text-muted">Mobile</label>
             <input
               value={mobile}
@@ -244,13 +276,7 @@ export default function ProfilePage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={saveProfile}
-            disabled={saving}
-            className="btn-press accent-bg rounded-lg px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
+          <SaveButton onSave={saveProfile} label="Save changes" disabled={saving} />
           {profileMsg ? (
             <span
               className={`text-[13px] ${profileMsg.ok ? "text-green-600" : "accent-text"}`}
@@ -276,7 +302,10 @@ export default function ProfilePage() {
             MANAGED BY ADMIN
           </span>
         </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {/* Stacked, not three-across: this column is a quarter of the page,
+            and the three-up grid was truncating every value (review of the
+            live screenshot). */}
+        <div className="grid grid-cols-1 gap-2">
           <LinkedChip label="Agent" value={user.agentKey} />
           <LinkedChip label="REX user" value={user.rexUserId} />
           <LinkedChip label="Meta campaign" value={user.metaCampaignId} />
@@ -293,7 +322,7 @@ export default function ProfilePage() {
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
           Change password
         </h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3">
           <PasswordInput
             value={currentPw}
             onChange={setCurrentPw}
@@ -308,13 +337,13 @@ export default function ProfilePage() {
           />
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={changePassword}
+          <SaveButton
+            onSave={changePassword}
+            label="Change password"
+            savingLabel="Changing password"
+            variant="quiet"
             disabled={changingPw || !currentPw || !newPw || !confirmPw}
-            className="btn-press rounded-lg border border-line px-4 py-2 text-[13px] font-semibold transition hover:bg-gray-50 disabled:opacity-60"
-          >
-            {changingPw ? "Changing…" : "Change password"}
-          </button>
+          />
           {pwMsg ? (
             <span className={`text-[13px] ${pwMsg.ok ? "text-green-600" : "accent-text"}`}>
               {pwMsg.text}
@@ -324,7 +353,7 @@ export default function ProfilePage() {
       </section>
 
       {/* Sign out */}
-      <section className="card card-flat flex items-center justify-between p-5">
+      <section className="card card-flat space-y-3 p-5">
         <div>
           <div className="text-[13px] font-semibold">Sign out</div>
           <div className="text-[12px] text-muted">
@@ -333,7 +362,7 @@ export default function ProfilePage() {
         </div>
         <button
           onClick={handleSignOut}
-          className="btn-press rounded-lg border border-line px-4 py-2 text-[13px] font-semibold text-muted transition hover:text-ink"
+          className="btn-press w-full whitespace-nowrap rounded-lg border border-line px-4 py-2 text-[13px] font-semibold text-muted transition hover:text-ink"
         >
           Sign out
         </button>
