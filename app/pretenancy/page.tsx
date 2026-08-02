@@ -568,7 +568,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
             ) : null}
             {/* tiles ↔ kanban flick toggle */}
             {deals ? (
-              <div className="flex items-center rounded-xl border border-line bg-white p-0.5">
+              <div className="flex items-center rounded-xl border border-line p-0.5">
                 <button
                   type="button"
                   onClick={() => setView("tiles")}
@@ -606,12 +606,12 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search property, tenant or agent…"
-                className="w-52 rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] outline-none transition focus:border-gray-400"
+                className="w-52 rounded-xl border border-line bg-transparent px-3.5 py-2 text-[13px] outline-none transition focus:border-black/30"
               />
               <select
                 value={agent}
                 onChange={(e) => setAgent(e.target.value)}
-                className="rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none"
+                className="rounded-xl border border-line bg-transparent px-3 py-2 text-[13px] outline-none"
               >
                 <option value="all">All agents</option>
                 {agents.map((a) => (
@@ -625,7 +625,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         </section>
 
         {/* ---- the board: stage rail down the left, deals to the right ---- */}
-        <div className="mt-6 flex min-h-0 flex-1 gap-5">
+        <div className="mt-5 flex min-h-0 flex-1 gap-5 border-t border-line pt-5">
         {/* ---- stage rail: the 8 stages stacked; Slipped/All/Cancelled
              tucked behind a three-dot menu at the foot ---- */}
         {deals && view === "tiles" ? (
@@ -650,7 +650,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                   onClick={() => setTab(t.key)}
                   className={`relative flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
                     activeT
-                      ? "border-black/25 bg-card text-ink"
+                      ? "border-black/30 text-ink"
                       : "border-transparent text-muted hover:border-line hover:text-ink"
                   }`}
                 >
@@ -669,7 +669,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
 
             return (
               <section
-                className="enter enter-up w-[212px] shrink-0 space-y-1 overflow-y-auto pr-1"
+                className="enter enter-up w-[212px] shrink-0 space-y-1 overflow-y-auto border-r border-line pr-4"
                 style={enterAt(80)}
               >
                 {stageTabs.map((t) => (
@@ -763,7 +763,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
 
         {/* ---- tile grid: up to five across ---- */}
         {view === "tiles" ? (
-          <section className="enter enter-up min-h-0 min-w-0 flex-1 overflow-y-auto pb-8" style={enterAt(120)}>
+          <section className="enter enter-up min-h-0 min-w-0 flex-1 overflow-y-auto pb-8 pl-1" style={enterAt(120)}>
             {deals == null && !error ? (
               <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {Array.from({ length: 10 }).map((_, i) => (
@@ -880,7 +880,7 @@ function DealTile({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="btn-press flex w-full flex-col rounded-2xl border border-line bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-black/20 hover:shadow-md"
+      className="btn-press flex w-full flex-col rounded-2xl border border-line p-4 text-left transition hover:border-black/20 hover:shadow-md"
     >
       {/* header: icon + property address */}
       <div className="flex items-start gap-2.5">
@@ -1111,7 +1111,7 @@ function DealWorkspace({
         onClick={(e) => e.stopPropagation()}
       >
         {/* ---- panel header ---- */}
-        <div className="flex items-center gap-4 border-b border-line bg-white px-5 py-4 sm:px-8">
+        <div className="flex items-center gap-4 border-b border-line px-5 py-4 sm:px-8">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${stagePill(cancelled ? "cancelled" : effective)}`}>
@@ -1529,7 +1529,7 @@ function Composer({
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && void submit()}
         placeholder={placeholder}
-        className="min-w-0 flex-1 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] outline-none transition focus:border-gray-400"
+        className="min-w-0 flex-1 rounded-xl border border-line bg-transparent px-3.5 py-2.5 text-[13px] outline-none transition focus:border-gray-400"
       />
       <button
         type="button"
@@ -1776,7 +1776,7 @@ function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: ()
             }}
             rows={3}
             placeholder={`Write to ${agentFirst}…`}
-            className="w-full resize-none rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none transition focus:border-gray-400"
+            className="w-full resize-none rounded-xl border border-line bg-transparent px-3 py-2 text-[13px] outline-none transition focus:border-gray-400"
           />
           {sendError ? <p className="mt-1 text-[12px] text-accent">{sendError}</p> : null}
           <div className="mt-2 flex items-center justify-between">
@@ -1841,7 +1841,7 @@ function DealCardMini({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="btn-press w-full rounded-xl border border-line bg-white p-2.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-black/20"
+      className="btn-press w-full rounded-xl border border-line p-2.5 text-left transition hover:border-black/20"
     >
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold leading-snug">{d.app.propertyName}</p>
@@ -2009,7 +2009,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (iso: string
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`btn-press flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-[13px] outline-none transition ${
+        className={`btn-press flex items-center gap-2 rounded-xl border bg-transparent px-3 py-2.5 text-[13px] outline-none transition ${
           value ? "border-line text-ink" : "border-line text-muted"
         } hover:border-gray-400`}
       >
@@ -2236,7 +2236,7 @@ function TasksTab({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void add()}
           placeholder="Add a follow-up — e.g. Chase references…"
-          className="min-w-0 flex-1 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] outline-none transition focus:border-gray-400"
+          className="min-w-0 flex-1 rounded-xl border border-line bg-transparent px-3.5 py-2.5 text-[13px] outline-none transition focus:border-gray-400"
         />
         <DatePicker value={due} onChange={setDue} />
         <button
