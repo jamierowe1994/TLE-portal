@@ -520,29 +520,14 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   return (
     <main className="type-admin flex min-h-screen flex-col bg-page">
       {/* ---- header ---- */}
-      <header className="sticky top-0 z-30 border-b border-line bg-white/90 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-line bg-page/90 backdrop-blur">
         <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
           <WorkspaceSwitcher user={user} current="pretenancy" size={28} />
 
           <div className="ml-auto flex items-center gap-3">
-            {/* today's date + her worklist for the day */}
+            {/* Tasks moved to the dock, bottom right — the header is just
+                the brand and her profile now. */}
             <div className="hidden items-center gap-2 sm:flex">
-              <span className="text-[12px] text-muted">
-                {new Date().toLocaleDateString("en-GB", {
-                  weekday: "short",
-                  day: "numeric",
-                  month: "short",
-                })}
-              </span>
-              <button
-                type="button"
-                onClick={() => setTasksTodayOpen(true)}
-                className={`btn-press rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition ${
-                  todayCount ? "border-red-200 bg-red-50 text-red-700" : "border-line bg-card"
-                }`}
-              >
-                Tasks today{todayCount != null ? ` · ${todayCount}` : ""}
-              </button>
             </div>
 
             <ProfileMenu
@@ -563,12 +548,10 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         ) : null}
         {error ? <div className="card p-6 text-sm text-muted">{error}</div> : null}
 
-        {/* ---- title + stats + search ---- */}
-        <section className="enter enter-up flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-3" style={enterAt(30)}>
-          <div>
-            <h1 className="text-[26px] font-semibold tracking-tight">Pre-Tenancy pipeline</h1>
-            <p className="mt-1 text-[13px] text-muted">Every move-in in progress, across all agents.</p>
-          </div>
+        {/* ---- everything below the header rule: the figures and filters
+             first, then the stage rail with the deals beside it ---- */}
+        <div className="mt-5 flex min-h-0 flex-1 flex-col border-t border-line pt-5">
+          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             {deals ? (
               <div className="flex items-center gap-6">
@@ -633,10 +616,8 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
               </select>
             </div>
           </div>
-        </section>
-
-        {/* ---- the board: stage rail down the left, deals to the right ---- */}
-        <div className="mt-5 flex min-h-0 flex-1 gap-5 border-t border-line pt-5">
+          </div>
+          <div className="flex min-h-0 flex-1 gap-5">
         {/* ---- stage rail: the 8 stages stacked; Slipped/All/Cancelled
              tucked behind a three-dot menu at the foot ---- */}
         {deals && view === "tiles" ? (
@@ -659,18 +640,21 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                 <button
                   type="button"
                   onClick={() => setTab(t.key)}
-                  className={`relative flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
+                  className={`relative flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${
                     activeT
                       ? "border-black/30 text-ink"
                       : "border-transparent text-muted hover:border-line hover:text-ink"
                   }`}
                 >
-                  <span className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
-                    <StageIcon stageKey={t.key} size={15} />
-                    <MovementDot kind={t.movement} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
+                  {/* No chip behind the icon — the doodle carries itself, and
+                      at this size a tinted square just boxes it in. Accent red
+                      so a stage is recognisable at a glance. */}
+                  <span className="relative shrink-0 text-accent">
+                    <StageIcon stageKey={t.key} size={26} />
+                    <MovementDot kind={t.movement} className="absolute -right-1 -top-1 ring-2 ring-page" />
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{t.label}</span>
-                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${activeT ? "bg-ink/10 text-ink" : "bg-page text-muted"}`}>
+                  <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{t.label}</span>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${activeT ? "bg-ink/10 text-ink" : "text-muted"}`}>
                     {t.deals.length}
                   </span>
 
@@ -680,9 +664,12 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
 
             return (
               <section
-                className="enter enter-up w-[212px] shrink-0 space-y-1 overflow-y-auto border-r border-line pr-4"
+                className="enter enter-up flex w-[236px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line pr-4"
                 style={enterAt(80)}
               >
+                <h1 className="written mb-3 px-1 text-[24px] leading-none text-ink">
+                  Pre-tenancy pipeline
+                </h1>
                 {stageTabs.map((t) => (
                   <TabButton key={t.key} t={t} />
                 ))}
@@ -773,7 +760,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           })()
         ) : null}
 
-        {/* ---- tile grid: up to five across ---- */}
+        {/* ---- the deals, with the figures and filters over them ---- */}
         {view === "tiles" ? (
           <section className="enter enter-up min-h-0 min-w-0 flex-1 overflow-y-auto pb-8 pl-1" style={enterAt(120)}>
             {deals == null && !error ? (
@@ -828,6 +815,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
             </div>
           </section>
         )}
+          </div>
         </div>
       </div>
 
@@ -878,76 +866,45 @@ function MiniStat({ label, value }: { label: string; value: number | string }) {
 // movement dot flags anything new or updated at a glance.
 
 function DealTile({ d, onOpen }: { d: BoardDeal; onOpen: () => void }) {
-  const lead = d.app.tenants.find((t) => t.isPrimary) ?? d.app.tenants[0];
-  const overdue = isOverdue(d);
-  const cancelled = d.statusKey === "cancelled";
-  const key = cancelled ? "cancelled" : d.effectiveStatusKey;
-  const v = stageVisual(key);
   const attn = dealNeedsAttention(d);
   const upd = dealHasUpdate(d);
-  // Dots show how far through the pipeline the deal is — filled to its stage.
-  const { done, total } = stageProgress(key);
 
+  // Stripped back on purpose. The tile sits INSIDE a stage column, so the
+  // stage, the progress dots and the stage icon were all repeating what the
+  // column already says. What is left is what tells one tile from another:
+  // the photo, the address, whose deal it is, and whether it needs a look.
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="btn-press flex w-full flex-col rounded-2xl border border-line p-4 text-left transition hover:border-black/20 hover:shadow-md"
+      className="btn-press group flex w-full flex-col overflow-hidden rounded-2xl border border-line text-left transition hover:border-black/25"
     >
-      {/* header: icon + property address */}
-      <div className="flex items-start gap-2.5">
-        <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
-          <StageIcon stageKey={key} />
-          <MovementDot kind={attn ? "red" : upd ? "green" : null} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold leading-tight">{d.app.propertyName}</p>
-          <p className="truncate text-[11px] text-muted">{d.app.locality}</p>
-        </div>
-      </div>
-
-      {/* tenant + agent */}
-      <div className="mt-3 flex items-center justify-between gap-2 text-[11.5px] text-muted">
-        <span className="truncate">
-          {lead ? lead.name : "No tenant recorded"}
-          {d.app.tenants.length > 1 ? ` +${d.app.tenants.length - 1}` : ""}
-        </span>
-        <span className="shrink-0 truncate">{d.agentName ?? "—"}</span>
-      </div>
-
-      {/* rent + move-in (move-in stays black; the Slipped tab surfaces late ones) */}
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11.5px]">
-        <span className="font-medium text-ink">
-          {d.app.offer != null ? `${formatGBP(d.app.offer)}/mo` : "—"}
-        </span>
-        <span className={overdue ? "font-semibold text-ink" : "text-muted"}>
-          {d.app.startDate ? `Move-in ${fmtDate(d.app.startDate)}${overdue ? " · slipped" : ""}` : "Move-in TBC"}
-        </span>
-      </div>
-
-      {/* footer: pipeline progress + notes */}
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-2.5 text-[10.5px] text-muted">
-        <span className="flex items-center gap-1.5" title={`Stage ${done} of ${total}`}>
-          <span className="flex gap-0.5">
-            {Array.from({ length: total }).map((_, i) => (
-              <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < done ? v.dot : "bg-gray-200"}`} />
-            ))}
-          </span>
-          {done}/{total}
-        </span>
-        {d.portal.notesCount > 0 ? (
-          <span className="flex items-center gap-1">
-            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            {d.portal.notesCount}
-            {d.portal.lastNote?.authorRole === "agent" ? (
-              <span className="ml-0.5 rounded bg-red-50 px-1 py-px text-[9px] font-semibold text-red-600">reply</span>
-            ) : null}
-          </span>
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-black/[0.03]">
+        {d.app.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={d.app.image}
+            alt=""
+            aria-hidden
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          />
         ) : (
-          <span className="opacity-0">·</span>
+          <span className="flex h-full w-full items-center justify-center text-muted">
+            <DoodleIcon name="home-1" size={30} />
+          </span>
         )}
+        {attn || upd ? (
+          <span
+            title={attn ? "Needs attention" : "Updated recently"}
+            className={`absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+              attn ? "bg-accent" : "bg-emerald-500"
+            }`}
+          />
+        ) : null}
+      </div>
+      <div className="px-3.5 py-3">
+        <p className="truncate text-[13px] font-semibold leading-tight">{d.app.propertyName}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-muted">{d.agentName ?? "Unassigned"}</p>
       </div>
     </button>
   );
