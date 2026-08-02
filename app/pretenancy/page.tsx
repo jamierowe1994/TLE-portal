@@ -43,6 +43,9 @@ import { rexListingUrl } from "@/lib/rex-links";
 /* ------------------------------- data shapes ------------------------------- */
 
 interface BoardDeal {
+  /** Move-in slipped 30+ days with nobody reactivating it. Kept out of the
+   *  stage tabs entirely and gathered in Archive under the three-dot menu. */
+  archived?: boolean;
   app: AgentApplication;
   statusKey: string;
   effectiveStatusKey: string;
@@ -441,6 +444,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
     const needle = q.trim().toLowerCase();
     return (deals ?? [])
       .filter((d) => !isFrom2025(d))
+      .filter((d) => !d.archived)
       .filter((d) => d.agentName === agent || agent === "all")
       .filter((d) => {
         if (!needle) return true;
@@ -498,11 +502,17 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
     list.push({ key: "slipped", label: "Slipped", deals: sortDeals(byStage.slipped), movement: byStage.slipped.length ? "red" : null });
     const allActive = base.filter((d) => d.statusKey !== "cancelled");
     list.push({ key: "all", label: "All", deals: sortDeals(allActive), movement: movementOf(allActive) });
+    // Archive is built from the RAW list, not `base` — base filters archived
+    // deals out, which is the whole point of it.
+    const archived = (deals ?? [])
+      .filter((d) => d.archived)
+      .filter((d) => d.agentName === agent || agent === "all");
+    list.push({ key: "archive", label: "Archive", deals: sortDeals(archived), movement: null });
     if (showCancelled) {
       list.push({ key: "cancelled", label: "Cancelled", deals: byStage.cancelled, movement: null });
     }
     return list;
-  }, [base, byStage, showCancelled]);
+  }, [base, byStage, showCancelled, deals, agent]);
 
   const activeTab = tabs.find((t) => t.key === tab) ?? tabs[0];
   const open = openId ? (deals ?? []).find((d) => d.app.id === openId) ?? null : null;
@@ -704,6 +714,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                         {[
                           tabs.find((t) => t.key === "all"),
                           tabs.find((t) => t.key === "slipped"),
+                          tabs.find((t) => t.key === "archive"),
                         ]
                           .filter((t): t is (typeof tabs)[number] => !!t)
                           .map((t) => (
@@ -1154,11 +1165,24 @@ function DealWorkspace({
         </div>
 
         {/* ---- banners ---- */}
-        {(moved && meta?.stageBy) || actionError || cancelled ? (
+        {(moved && meta?.stageBy) || actionError || cancelled || deal.archived ? (
           <div className="space-y-2 px-5 pt-4 sm:px-8">
             {cancelled ? (
               <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[12px] text-red-700">
                 This deal was cancelled before completion.
+              </p>
+            ) : null}
+            {deal.archived ? (
+              <p className="flex flex-wrap items-center gap-2 rounded-xl border border-line px-4 py-2.5 text-[12px] text-muted">
+                Archived — the move-in date slipped more than 30 days ago.
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void postMeta({ unarchived: true })}
+                  className="font-semibold text-ink underline underline-offset-2"
+                >
+                  Put it back on the board
+                </button>
               </p>
             ) : null}
             {moved && meta?.stageBy ? (

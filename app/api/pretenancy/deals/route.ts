@@ -18,6 +18,8 @@ export interface PreTenancyDeal {
   app: import("@/lib/rex-stats").AgentApplication;
   /** Live RAW Propoly status (start_deal … cancelled). */
   statusKey: string;
+  /** Move-in slipped 30+ days and not reactivated — hidden from the stages. */
+  archived: boolean;
   /** PORTAL stage (8-stage pipeline) after any still-valid stage move. */
   effectiveStatusKey: string;
   agentName: string | null;
@@ -49,6 +51,9 @@ export async function GET(req: NextRequest) {
 
   const overlays = await getOverlays(deals.map((d) => d.app.id));
   const today = new Date().toISOString().slice(0, 10);
+  const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
 
   // Propoly holds no photos, so borrow them from REX by postcode and street
   // number — the same match the agent Applications page uses. Business-wide
@@ -80,6 +85,16 @@ export async function GET(req: NextRequest) {
       agentName: d.managerName,
       agentEmail: d.managerEmail,
       portal: overlay,
+      // Archived: the move-in slipped more than 30 days and nobody has pulled
+      // it back. A rule rather than a stored state — but a deal Kirstie has
+      // reactivated stays out of the pile until it slips another 30 days from
+      // whenever its date is next set.
+      archived:
+        meta?.unarchivedAt == null &&
+        d.statusKey !== "complete" &&
+        d.statusKey !== "cancelled" &&
+        d.app.startDate != null &&
+        d.app.startDate < THIRTY_DAYS_AGO,
     };
   });
 

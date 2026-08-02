@@ -112,6 +112,12 @@ CREATE INDEX IF NOT EXISTS deal_notes_deal_idx ON deal_notes (deal_id);
 -- (author-only — filtered to the author on read)
 ALTER TABLE deal_notes ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'note';
 
+-- Kirstie can pull a deal back out of the archive. The archive itself is a
+-- RULE (move-in slipped more than 30 days), not a stored state, so only the
+-- exception needs persisting — otherwise every deal would need writing to the
+-- moment it aged past the threshold.
+ALTER TABLE deal_meta ADD COLUMN IF NOT EXISTS unarchived_at TIMESTAMPTZ;
+
 -- Property notes (lib/property-notes-store.ts): the conversation log on a
 -- property drawer — agents and the pre-tenancy team leaving each other notes
 -- against a REX listing id.

@@ -5,6 +5,7 @@ import {
   logSystemEvent,
   setChecklistItem,
   setStageOverride,
+  setUnarchived,
 } from "@/lib/deal-store";
 import { CHECKLIST_ITEMS, PORTAL_STAGE_BY_KEY } from "@/lib/propoly-stages";
 
@@ -30,7 +31,7 @@ export async function POST(
     );
   }
 
-  let body: { stage?: unknown; checklist?: unknown };
+  let body: { stage?: unknown; checklist?: unknown; unarchived?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -61,6 +62,17 @@ export async function POST(
       statusKey: access.deal.statusKey,
       effectiveStatusKey: effectivePortalStage(access.deal.statusKey, meta),
     });
+  }
+
+  if (typeof (body as { unarchived?: unknown }).unarchived === "boolean") {
+    const on = (body as { unarchived: boolean }).unarchived;
+    const meta = await setUnarchived(id, on);
+    await logSystemEvent(
+      id,
+      { id: access.user.id, name: byName, role: access.role },
+      on ? "took the deal out of the archive" : "returned the deal to the archive"
+    );
+    return NextResponse.json({ meta });
   }
 
   if (body.checklist && typeof body.checklist === "object") {

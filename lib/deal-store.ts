@@ -95,6 +95,7 @@ function rowToTask(r: TaskRow): DealTask {
 }
 
 interface MetaRow extends Record<string, unknown> {
+  unarchived_at?: string | Date | null;
   deal_id: string;
   stage_override: string | null;
   stage_based_on: string | null;
@@ -112,6 +113,7 @@ function rowToMeta(r: MetaRow): DealMeta {
     stageBy: r.stage_by,
     stageAt: r.stage_at ? new Date(r.stage_at).toISOString() : null,
     checklist: r.checklist && typeof r.checklist === "object" ? r.checklist : {},
+    unarchivedAt: r.unarchived_at ? new Date(r.unarchived_at).toISOString() : null,
     updatedAt: new Date(r.updated_at).toISOString(),
   };
 }
@@ -402,6 +404,25 @@ export async function setChecklistItem(
  * Propoly has since moved the deal itself, the live system wins and the
  * move is stale.
  */
+/**
+ * Pull a deal out of the archive, or drop it back in.
+ *
+ * The archive is a rule — move-in slipped more than 30 days — so only the
+ * EXCEPTION is stored. Writing a row for every deal the moment it aged past
+ * the threshold would mean a table that grows with time rather than with what
+ * anyone actually did.
+ */
+export async function setUnarchived(dealId: string, on: boolean): Promise<DealMeta> {
+  if (!hasDb()) return emptyMeta(dealId);
+  await q(
+    `INSERT INTO deal_meta (deal_id, unarchived_at, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (deal_id) DO UPDATE SET unarchived_at = EXCLUDED.unarchived_at, updated_at = NOW()`,
+    [dealId, on ? new Date().toISOString() : null]
+  );
+  return getMeta(dealId);
+}
+
 export function effectivePortalStage(liveStatusKey: string, meta: DealMeta | null): string {
   if (meta?.stageOverride && meta.stageBasedOn === liveStatusKey) {
     return meta.stageOverride;

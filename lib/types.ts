@@ -159,6 +159,9 @@ export interface ChecklistTick {
 }
 
 export interface DealMeta {
+  /** Set when someone pulled this deal back out of the archive. Null means the
+   *  archive rule applies normally. */
+  unarchivedAt?: string | null;
   dealId: string;
   /** Propoly statusKey the deal was manually moved to (null = live status). */
   stageOverride: string | null;
