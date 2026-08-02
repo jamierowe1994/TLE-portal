@@ -13,6 +13,11 @@ import type { DealPortalOverlay } from "@/lib/types";
 // headline numbers for the top of Kirstie's dashboard. Gate: pre-tenancy
 // role or admin (Susan can look over Kirstie's board).
 
+// How long the board will wait on photos before rendering without them. The
+// walk keeps going after this and fills the cache, so a first load that misses
+// the deadline costs one photo-less render and nothing after it.
+const PHOTO_DEADLINE_MS = 2_500;
+
 export interface PreTenancyDeal {
   // AgentApplication fields the board renders, via the same shape the agent sees
   app: import("@/lib/rex-stats").AgentApplication;
@@ -33,6 +38,12 @@ export async function GET(req: NextRequest) {
   if (!user || (!isPreTenancyEmail(user.email) && !isAdminEmail(user.email))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  // The photo index starts HERE, alongside Propoly, not after it. It needs
+  // nothing from the deals, and it is much the slower of the two — kicking it
+  // off later just added its time to Propoly's. Timed 2 Aug 2026: Propoly ~1s,
+  // the index ~10s cold, and they were running one after the other.
+  const photosWork = getBusinessPhotoIndex(PHOTO_DEADLINE_MS).catch(() => null);
 
   const [deals, forecast] = await Promise.all([
     getAllPropolyDeals().catch(() => null),
@@ -61,8 +72,9 @@ export async function GET(req: NextRequest) {
   // herself, so the per-agent index has nothing to match against.
   //
   // Never blocks the board: a failed or slow index just means deals arrive
-  // without a picture, which is exactly what they do today.
-  const photos = await getBusinessPhotoIndex().catch(() => null);
+  // without a picture, which is exactly what they do today. Started above so
+  // it overlaps the Propoly fetch; by here it is usually already done.
+  const photos = await photosWork;
 
   const out: PreTenancyDeal[] = deals.map((d) => {
     const entry = overlays.get(d.app.id);

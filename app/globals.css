@@ -223,7 +223,7 @@ h5 {
 ::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
 
 /* Animation vocabulary */
-.fade-up { animation: fade-up 0.35s ease both; }
+.fade-up { animation: fade-up 0.24s ease both; }
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -473,15 +473,21 @@ h5 {
    `transform: none` keeps winning over `:hover` in the cascade, and every hover
    lift on an .enter element silently does nothing. */
 .enter {
-  animation-duration: 0.55s;
+  /* Was 0.55s with the authored delay applied in full, so the last block on a
+     page settled ~770ms after it arrived. These are people working a pipeline
+     at speed; that is felt as the app being slow even when the data is already
+     there. Halved, and the stagger is scaled rather than rewritten at 20-odd
+     call sites — the authored ORDER is what matters, not the exact millisecond.
+     Last block now settles around 380ms. */
+  animation-duration: 0.28s;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   animation-fill-mode: backwards;
-  animation-delay: var(--enter-delay, 0ms);
+  animation-delay: calc(var(--enter-delay, 0ms) * 0.45);
 }
 .enter-up { animation-name: enter-up; }
 .enter-left { animation-name: enter-left; }
 .enter-right { animation-name: enter-right; }
-.enter-fade { animation-name: enter-fade; animation-duration: 0.7s; }
+.enter-fade { animation-name: enter-fade; animation-duration: 0.4s; }
 .enter-pop { animation-name: enter-pop; }
 
 @keyframes enter-up {
@@ -505,14 +511,14 @@ h5 {
   to { opacity: 1; transform: none; }
 }
 
-.modal-pop { animation: modal-pop 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.modal-pop { animation: modal-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes modal-pop {
   from { opacity: 0; transform: translateY(16px) scale(0.975); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Pre-tenancy deal workspace: slides out from the left edge (app/pretenancy). */
-.panel-slide { animation: panel-slide 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.panel-slide { animation: panel-slide 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes panel-slide {
   from { transform: translateX(-40px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
@@ -523,8 +529,8 @@ h5 {
 .reveal-left,
 .reveal-right {
   opacity: 0;
-  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   transition-delay: var(--reveal-delay, 0ms);
 }
 .reveal { transform: translateY(18px); }

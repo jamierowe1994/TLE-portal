@@ -1898,17 +1898,45 @@ const LETTINGS_CATEGORIES = ["residential_rental", "rental", "commercial_rental"
 let businessListings: { at: number; data: AgentListing[] } | null = null;
 let businessListingsInflight: Promise<AgentListing[] | null> | null = null;
 
+/**
+ * Timed 2 Aug 2026: eight pages, one after another, 10.6 SECONDS — and it sat
+ * on the critical path of Kirstie's board, which otherwise takes about a
+ * second. So this now does three things it didn't:
+ *
+ *   · fetches pages in parallel batches — 10,608ms sequential, 1,506ms in one
+ *     batch of eight, measured on the live account
+ *   · serves a STALE index while refreshing behind the request, so only the
+ *     very first load after a deploy ever waits
+ *   · lets the caller impose a deadline (see getBusinessPhotoIndex), because a
+ *     board with no photos beats a board that isn't there yet
+ */
+// Eight: the index is 8 pages today, so one batch covers it. Measured on the
+// live account — sequential 10,608ms, batches of 4 3,141ms, batches of 8
+// 1,506ms, no rate-limit errors at either width. Concurrency stays bounded at
+// 8 however far the book grows, so this cannot run away at REX.
+const PAGE_BATCH = 8;
+
 export async function getBusinessListings(): Promise<AgentListing[] | null> {
   if (!rexConfigured()) return null;
-  if (businessListings && Date.now() - businessListings.at < BUSINESS_LISTINGS_TTL_MS) {
-    return businessListings.data;
+  const cached = businessListings;
+  if (cached && Date.now() - cached.at < BUSINESS_LISTINGS_TTL_MS) return cached.data;
+
+  // Stale but present: hand it straight back and let the refresh run behind
+  // the request. A 15-minute-old photo is indistinguishable from a fresh one.
+  if (cached) {
+    if (!businessListingsInflight) void startBusinessListingsRefresh().catch(() => null);
+    return cached.data;
   }
+  return startBusinessListingsRefresh();
+}
+
+function startBusinessListingsRefresh(): Promise<AgentListing[] | null> {
   if (businessListingsInflight) return businessListingsInflight;
 
-  businessListingsInflight = (async () => {
+  const work = (async () => {
     const rows: Record<string, unknown>[] = [];
-    for (let page = 0; page < BUSINESS_LISTINGS_MAX_PAGES; page++) {
-      const res = await rexCall("Listings", "search", {
+    const fetchPage = (page: number) =>
+      rexCall("Listings", "search", {
         criteria: [
           // `leased` as well as `current`. This index exists to put a photo on
           // a LETTING, and REX moves a property out of `current` the moment it
@@ -1927,21 +1955,42 @@ export async function getBusinessListings(): Promise<AgentListing[] | null> {
         limit: COUNT_LIMIT,
         offset: page * COUNT_LIMIT,
       }).catch(() => null);
-      // A failed page part-way means an INCOMPLETE index, and an incomplete
-      // photo index is harmless — a deal simply shows no photo, which is what
-      // it does today. So keep what we have rather than throwing it away.
-      if (!res || !res.ok) break;
-      const batch = rexRows(res.result);
-      rows.push(...batch);
-      if (batch.length < COUNT_LIMIT) break;
-      // Hitting the ceiling means the index is short and every deal past it
-      // silently loses its photo — the exact failure that went unnoticed for
-      // months. Say so rather than truncating in silence.
-      if (page === BUSINESS_LISTINGS_MAX_PAGES - 1) {
-        console.warn(
-          `[rex] business listing walk hit its ${BUSINESS_LISTINGS_MAX_PAGES}-page ceiling at ${rows.length} listings — the photo index is INCOMPLETE. Raise BUSINESS_LISTINGS_MAX_PAGES.`
-        );
+
+    let done = false;
+    let walked = 0;
+    for (let start = 0; start < BUSINESS_LISTINGS_MAX_PAGES && !done; start += PAGE_BATCH) {
+      const pages = [];
+      for (let i = 0; i < PAGE_BATCH && start + i < BUSINESS_LISTINGS_MAX_PAGES; i++) {
+        pages.push(start + i);
       }
+      const results = await Promise.all(pages.map(fetchPage));
+      // Consume IN ORDER and stop at the first short or failed page, so an
+      // overshooting batch contributes nothing rather than leaving a hole.
+      for (const res of results) {
+        walked++;
+        // A failed page part-way means an INCOMPLETE index, and an incomplete
+        // photo index is harmless — a deal simply shows no photo, which is what
+        // it did before any of this existed. So keep what we have rather than
+        // throwing it away.
+        if (!res || !res.ok) {
+          done = true;
+          break;
+        }
+        const batch = rexRows(res.result);
+        rows.push(...batch);
+        if (batch.length < COUNT_LIMIT) {
+          done = true;
+          break;
+        }
+      }
+    }
+    // Hitting the ceiling means the index is short and every deal past it
+    // silently loses its photo — the exact failure that went unnoticed for
+    // months. Say so rather than truncating in silence.
+    if (!done && walked >= BUSINESS_LISTINGS_MAX_PAGES) {
+      console.warn(
+        `[rex] business listing walk hit its ${BUSINESS_LISTINGS_MAX_PAGES}-page ceiling at ${rows.length} listings — the photo index is INCOMPLETE. Raise BUSINESS_LISTINGS_MAX_PAGES.`
+      );
     }
     if (rows.length === 0) return null;
     const data = rows.map(toListing);
@@ -1949,16 +1998,34 @@ export async function getBusinessListings(): Promise<AgentListing[] | null> {
     return data;
   })();
 
-  try {
-    return await businessListingsInflight;
-  } finally {
-    businessListingsInflight = null;
-  }
+  businessListingsInflight = work;
+  // Free the slot when the walk settles, whether or not anyone awaited it —
+  // the stale-while-revalidate path fires this and walks away. The identity
+  // check stops a slow walk from clearing a newer one that replaced it.
+  void work
+    .catch(() => null)
+    .finally(() => {
+      if (businessListingsInflight === work) businessListingsInflight = null;
+    });
+  return work;
 }
 
-/** The same postcode-bucketed index, built from every listing in the business. */
-export async function getBusinessPhotoIndex(): Promise<PhotoIndex> {
-  const listings = await getBusinessListings().catch(() => null);
+/**
+ * The same postcode-bucketed index, built from every letting in the business.
+ *
+ * `deadlineMs` caps how long a caller will wait. Photos are decoration: a
+ * board that arrives now without them beats one that arrives in ten seconds
+ * with them. Giving up does NOT cancel the walk — it carries on filling the
+ * cache, so the next load has the pictures.
+ */
+export async function getBusinessPhotoIndex(deadlineMs?: number): Promise<PhotoIndex> {
+  const work = getBusinessListings().catch(() => null);
+  const listings = deadlineMs
+    ? await Promise.race([
+        work,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), deadlineMs)),
+      ])
+    : await work;
   const index: PhotoIndex = new Map();
   for (const l of listings ?? []) {
     const pc = postcodeOf(l.name, l.locality);

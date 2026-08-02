@@ -28,6 +28,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
+  // Started before Propoly, not after it. Neither of these needs a deal: the
+  // photo index only needs the user's REX id, and the rent receipts only need
+  // the month. Awaiting them in sequence added three upstreams' latency
+  // together for no reason — they now overlap, and the page waits for the
+  // slowest rather than the sum.
+  const photosWork = (async () => {
+    const rexId = await resolveRexUserId(user).catch(() => null);
+    return rexId ? await getAgentPhotoIndex(rexId).catch(() => null) : null;
+  })();
+  const rentWork = getRentReceived(currentMonth()).catch(() => null);
+
   const propoly = await getPropolyAgentDeals({
     email: user.email,
     agentKey: user.agentKey ?? null,
@@ -37,14 +48,13 @@ export async function GET(req: NextRequest) {
     // and any stage move — so her actions show up in the agent's file. Raw
     // Propoly statuses are translated onto the shared 8-stage portal
     // pipeline so the agent's board matches Kirstie's exactly.
-    const overlays = await getOverlays(propoly.map((a) => a.id)).catch(() => null);
-
-    // Propoly holds no photos, so borrow them from the same property in REX,
+    // Overlays are the only one of the three that needs the deals, so it is
+    // the only one started here. Photos and rent were already in flight.
+    //
+    // Photos: Propoly holds none, so borrow them from the same property in REX,
     // matched on postcode + street number. That match also hands us the
     // listing id, which is what makes the address clickable in the drawer.
-    const rexId = await resolveRexUserId(user).catch(() => null);
-    const photos = rexId ? await getAgentPhotoIndex(rexId).catch(() => null) : null;
-
+    //
     // Rent payment is the one milestone on this board with a real source of
     // truth behind it. PayProp's Owner rows carry the property, the date the
     // tenant's money was reconciled, and whether it has been paid on — so the
@@ -55,7 +65,11 @@ export async function GET(req: NextRequest) {
     // WILL collide for the same house number and street in two towns, so it is
     // reported as evidence next to the stage rather than used to advance it.
     // Nothing here moves a deal on its own.
-    const rent = await getRentReceived(currentMonth()).catch(() => null);
+    const [overlays, photos, rent] = await Promise.all([
+      getOverlays(propoly.map((a) => a.id)).catch(() => null),
+      photosWork,
+      rentWork,
+    ]);
     const rentByKey = new Map<string, { amount: number; on: string; paidOut: boolean }>();
     for (const r of rent?.receipts ?? []) {
       if (!r.propertyKey) continue;
