@@ -1226,9 +1226,13 @@ function DealWorkspace({
               <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${stagePill(cancelled ? "cancelled" : effective)}`}>
                 {(cancelled ? "Cancelled" : stageLabel(effective)).toUpperCase()}
               </span>
-              {p?.service ? (
+              {/* Propoly first. It carries tenancy_service_level on every
+                  deal and always has — the PayProp lookup below it is the
+                  fallback for a deal Propoly has not labelled, and for the
+                  managed book, where there is no Propoly deal at all. */}
+              {p?.service || deal.serviceLevel ? (
                 <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted">
-                  {p.service.toUpperCase()}
+                  {(p?.service ?? deal.serviceLevel ?? "").toUpperCase()}
                 </span>
               ) : null}
             </div>
@@ -1564,18 +1568,6 @@ function DealWorkspace({
                     {deal.app.propertyName}
                   </p>
                   <p className="text-[12px] text-muted">{deal.app.locality}</p>
-                  {/* What the landlord actually bought. It decides who owns the
-                      paperwork — chasing a Let Only landlord for a certificate
-                      you handed back is worse than not chasing at all — and
-                      until now nothing in the estate recorded it: REX's own
-                      field is null on all 919 rentals. Shown only when PayProp
-                      gives an unambiguous answer, so a blank means "we don't
-                      know", not "let only". */}
-                  {deal.serviceLevel ? (
-                    <span className="mt-2 inline-block rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
-                      {deal.serviceLevel}
-                    </span>
-                  ) : null}
                   {/* The REX link moved up to the panel header, next to
                       Propoly. Buried down here it was the only way out to REX
                       and it only existed when the property had a photo. */}

@@ -110,3 +110,28 @@ export const CHECKLIST_ITEMS: { key: string; label: string }[] = [
   { key: "standing_order", label: "Standing order set up" },
   { key: "keys_inventory", label: "Keys & inventory arranged" },
 ];
+
+/* --------------------------- service level vocabulary --------------------------- */
+
+/**
+ * Propoly and PayProp name the same three products differently:
+ *
+ *   Propoly (tenancy_service_level)   PayProp (service_level)
+ *   full_managed  -> "Fully managed"  "Fully managed"
+ *   tenant_find   -> "Tenant find"    "Let only"
+ *   rent_collect  -> "Rent collect"   "Rent collect"
+ *
+ * "Tenant find" and "Let only" are the same thing under two names. Anything
+ * that compares the two sources, or branches on the level, has to normalise
+ * first — otherwise a Let Only property read from PayProp and a Tenant Find
+ * one read from Propoly look like different products and get different
+ * treatment for no reason.
+ */
+export function normaliseServiceLevel(raw: string | null | undefined): string | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes("manage")) return "Fully managed";
+  if (s.includes("rent collect")) return "Rent collect";
+  if (s.includes("tenant find") || s.includes("let only")) return "Let only";
+  return null; // an unrecognised label is not guessed at
+}
