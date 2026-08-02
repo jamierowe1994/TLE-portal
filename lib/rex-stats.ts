@@ -1884,7 +1884,17 @@ export type PhotoIndex = Map<string, IndexedProperty[]>;
  * thing it feeds — a photo on a deal — does not change minute to minute.
  */
 const BUSINESS_LISTINGS_TTL_MS = 15 * 60 * 1000;
-const BUSINESS_LISTINGS_MAX_PAGES = 12; // 1,200 listings; far above the ~600 live
+// 2,000 listings. The old cap was 12 pages against a comment claiming "~600
+// live" — there were 1,613 current listings by 2 Aug 2026, so it truncated at
+// 1,200 and silently dropped 413. A cap sized off a stale count fails quietly,
+// which is the worst way for it to fail: the page just shows fewer photos. The
+// walk still stops early on the first short page, so this ceiling only exists
+// to stop a runaway, not to bound normal work (8 pages today).
+const BUSINESS_LISTINGS_MAX_PAGES = 20;
+
+// REX's lettings listing categories. `commercial_rental` is in here because
+// the account carries a handful and a photo is a photo.
+const LETTINGS_CATEGORIES = ["residential_rental", "rental", "commercial_rental"];
 let businessListings: { at: number; data: AgentListing[] } | null = null;
 let businessListingsInflight: Promise<AgentListing[] | null> | null = null;
 
@@ -1899,7 +1909,20 @@ export async function getBusinessListings(): Promise<AgentListing[] | null> {
     const rows: Record<string, unknown>[] = [];
     for (let page = 0; page < BUSINESS_LISTINGS_MAX_PAGES; page++) {
       const res = await rexCall("Listings", "search", {
-        criteria: [{ name: "system_listing_state", type: "=", value: "current" }],
+        criteria: [
+          // `leased` as well as `current`. This index exists to put a photo on
+          // a LETTING, and REX moves a property out of `current` the moment it
+          // is let — so the deals furthest through the pre-tenancy pipeline
+          // were precisely the ones with no picture. Measured 2 Aug 2026: 422
+          // leased listings, 99% of them with images, all previously excluded.
+          { name: "system_listing_state", type: "in", value: ["current", "leased"] },
+          // Lettings only. Of 1,613 `current` listings just 300 are rentals —
+          // the rest are sales, which a lettings deal can never match. The walk
+          // was spending its whole page budget on them and truncating before it
+          // reached the rentals. Scoped this way the index is 722 listings /
+          // 8 pages: fewer REX calls than before AND complete.
+          { name: "listing_category_id", type: "in", value: LETTINGS_CATEGORIES },
+        ],
         extra_options: { extra_fields: ["related.listing_images"] },
         limit: COUNT_LIMIT,
         offset: page * COUNT_LIMIT,
@@ -1911,6 +1934,14 @@ export async function getBusinessListings(): Promise<AgentListing[] | null> {
       const batch = rexRows(res.result);
       rows.push(...batch);
       if (batch.length < COUNT_LIMIT) break;
+      // Hitting the ceiling means the index is short and every deal past it
+      // silently loses its photo — the exact failure that went unnoticed for
+      // months. Say so rather than truncating in silence.
+      if (page === BUSINESS_LISTINGS_MAX_PAGES - 1) {
+        console.warn(
+          `[rex] business listing walk hit its ${BUSINESS_LISTINGS_MAX_PAGES}-page ceiling at ${rows.length} listings — the photo index is INCOMPLETE. Raise BUSINESS_LISTINGS_MAX_PAGES.`
+        );
+      }
     }
     if (rows.length === 0) return null;
     const data = rows.map(toListing);
@@ -1936,6 +1967,14 @@ export async function getBusinessPhotoIndex(): Promise<PhotoIndex> {
     const bucket = index.get(pc) ?? [];
     bucket.push({ listingId: l.id, image: l.image, images: l.images, numbers, words });
     index.set(pc, bucket);
+  }
+  // Richest listing first. A postcode often holds the same property more than
+  // once — 2 Norwich Street is four listings, 10 Kensington Drive is two (one
+  // current, one leased) — and when the address tokens can't separate them the
+  // matcher falls back to the first in the bucket. Better that it be the one
+  // with the most photos than whichever REX happened to page in first.
+  for (const bucket of index.values()) {
+    bucket.sort((a, b) => b.images.length - a.images.length);
   }
   return index;
 }

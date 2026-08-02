@@ -850,7 +850,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                 ))}
               </div>
             ) : activeTab.deals.length === 0 ? (
-              <div className="card p-12 text-center text-[13px] text-muted">
+              <div className="card card-flat p-12 text-center text-[13px] text-muted">
                 Nothing in {activeTab.label.toLowerCase()} right now.
               </div>
             ) : (
