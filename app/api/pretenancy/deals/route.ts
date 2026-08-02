@@ -54,6 +54,12 @@ export interface PreTenancyDeal {
   /** Landlord Terms-of-Business signing state from REX's DocuSign log, via
    *  the matched listing. null = no envelope found for the listing. */
   tobStatus: TobStatus | null;
+  /**
+   * Verification checks: places where what the pipeline CLAIMS and what the
+   * money systems RECORD disagree. Computed, never stored — fix the
+   * underlying data and the flag clears itself on the next load.
+   */
+  flags: Array<{ kind: string; label: string }>;
 }
 
 export async function GET(req: NextRequest) {
@@ -148,6 +154,63 @@ export async function GET(req: NextRequest) {
     const confident = photos
       ? matchListingConfident(photos, d.app.propertyName, d.app.locality)
       : null;
+
+    // ---- verification flags ----
+    // Each one is claim-vs-record, and each states which side to fix. They
+    // are checks, not verdicts: a flag means "look", never "wrong".
+    const flags: Array<{ kind: string; label: string }> = [];
+    const stageIdx = PORTAL_STAGES.findIndex((s) => s.key === effective);
+    const depositStageIdx = PORTAL_STAGES.findIndex((s) => s.key === "deposit");
+    const plcStageIdx = PORTAL_STAGES.findIndex((s) => s.key === "plc");
+    const agreementStageIdx = PORTAL_STAGES.findIndex(
+      (s) => s.key === "tenancy_agreement"
+    );
+    const isFlatfair =
+      meta?.depositScheme?.startsWith("Flatfair") === true ||
+      d.app.propoly?.depositReplacement === true;
+    const live = d.statusKey !== "cancelled" && d.statusKey !== "complete";
+
+    if (live && register) {
+      // 1. Deposit claimed, PayProp never saw one. Only fires 14+ days after
+      // move-in (registration lags), never on Flatfair deals, and only when
+      // the register actually loaded — a cold register must not accuse.
+      const claimsDeposit =
+        stageIdx > depositStageIdx ||
+        meta?.checklist?.deposit_registered?.done === true;
+      const moveInPassed =
+        d.app.startDate != null &&
+        d.app.startDate <
+          new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
+      if (claimsDeposit && moveInPassed && !isFlatfair && !tenancyHit?.depositId) {
+        flags.push({
+          kind: "deposit-unverified",
+          label:
+            "Marked as deposit taken, but PayProp shows no deposit registered for this property. Check the deposit was lodged — or that the PayProp tenancy is set up.",
+        });
+      }
+
+      // 2. Past the PLC stage while PayProp records the property as Without
+      // RLP. Legitimate when the landlord declined cover — the flag asks the
+      // question rather than asserting the answer.
+      if (stageIdx > plcStageIdx && rlpHit && !rlpHit.disabledOnly && rlpHit.status === "without") {
+        flags.push({
+          kind: "plc-mismatch",
+          label:
+            "This deal is past the PLC stage, but PayProp records the property as \"Without RLP\". If cover was sold, the PayProp instruction wording needs updating; if the landlord declined, this is fine.",
+        });
+      }
+    }
+
+    // 3. Deep in the pipeline with no deposit scheme recorded. The portal is
+    // the only register of the scheme, so an empty entry here is a real gap,
+    // not a sync problem. Needs no PayProp data, so no register gate.
+    if (live && stageIdx >= agreementStageIdx && !meta?.depositScheme && !isFlatfair) {
+      flags.push({
+        kind: "scheme-missing",
+        label:
+          "No deposit scheme recorded. Pick one on the deal file — nothing else in any system records where this deposit is held.",
+      });
+    }
     return {
       serviceLevel: (key && book?.serviceLevelByKey[key]) || null,
       // disabledOnly evidence is excluded outright: the census found two
@@ -161,6 +224,7 @@ export async function GET(req: NextRequest) {
         ? { startDate: tenancyHit.startDate, depositId: tenancyHit.depositId }
         : null,
       tobStatus: (confident?.listingId && tob?.[confident.listingId]) || null,
+      flags,
       app: match
         ? { ...d.app, image: match.image, images: match.images, listingId: match.listingId }
         : d.app,

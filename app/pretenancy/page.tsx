@@ -63,6 +63,8 @@ interface BoardDeal {
   tenancy?: { startDate: string | null; depositId: string | null } | null;
   /** Landlord ToB signing state from REX's DocuSign log. */
   tobStatus?: { status: string; sentAt: string | null; completedAt: string | null } | null;
+  /** Claim-vs-record verification checks, computed server-side. */
+  flags?: Array<{ kind: string; label: string }>;
 }
 
 interface BoardSummary {
@@ -395,6 +397,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   const [tasksTodayOpen, setTasksTodayOpen] = useState(false);
   const [todayCount, setTodayCount] = useState<number | null>(null);
   const [moveInsOpen, setMoveInsOpen] = useState(false);
+  const [checksOpen, setChecksOpen] = useState(false);
 
   // "Tasks today" badge count — refreshed whenever the modal closes too,
   // so ticking things off updates the header straight away.
@@ -551,6 +554,13 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
       .filter((d) => d.app.startDate != null && d.app.startDate >= from && d.app.startDate <= to)
       .sort((a, b) => (a.app.startDate ?? "").localeCompare(b.app.startDate ?? ""));
   }, [base]);
+
+  // Built off base for the same reason the move-ins are: a dock that can
+  // disagree with the board behind it teaches people to trust neither.
+  const flaggedDeals = useMemo(
+    () => (base ?? []).filter((d) => (d.flags?.length ?? 0) > 0),
+    [base]
+  );
 
   const activeTab = tabs.find((t) => t.key === tab) ?? tabs[0];
   const open = openId ? (deals ?? []).find((d) => d.app.id === openId) ?? null : null;
@@ -942,6 +952,21 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
             </span>
           ) : null}
         </button>
+        {/* Only exists when something needs checking — an always-there
+            "Checks: 0" chip would train her to stop seeing it. */}
+        {flaggedDeals.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setChecksOpen(true)}
+            className="btn-press flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-4 py-2.5 text-[13px] font-semibold text-amber-800 shadow-lg transition hover:border-amber-400"
+          >
+            <DoodleIcon name="search" size={17} />
+            Checks
+            <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[11px]">
+              {flaggedDeals.length}
+            </span>
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => setTasksTodayOpen(true)}
@@ -958,6 +983,17 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           ) : null}
         </button>
       </div>
+
+      {checksOpen ? (
+        <ChecksModal
+          deals={flaggedDeals}
+          onClose={() => setChecksOpen(false)}
+          onOpenDeal={(id: string) => {
+            setChecksOpen(false);
+            setOpenId(id);
+          }}
+        />
+      ) : null}
 
       {moveInsOpen ? (
         <MoveInsSoonModal
@@ -1353,7 +1389,7 @@ function DealWorkspace({
         </div>
 
         {/* ---- banners ---- */}
-        {(moved && meta?.stageBy) || actionError || cancelled || deal.archived ? (
+        {(moved && meta?.stageBy) || actionError || cancelled || deal.archived || (deal.flags?.length ?? 0) > 0 ? (
           <div className="space-y-2 px-5 pt-4 sm:px-8">
             {cancelled ? (
               <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[12px] text-red-700">
@@ -1394,6 +1430,17 @@ function DealWorkspace({
                 {actionError}
               </p>
             ) : null}
+            {/* Claim-vs-record checks. Not stored anywhere — fixing the data
+                (tick the scheme, sort the PayProp record) clears the banner
+                on the next load, which is the whole design. */}
+            {(deal.flags ?? []).map((f) => (
+              <p
+                key={f.kind}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-[12px] text-amber-800"
+              >
+                {f.label}
+              </p>
+            ))}
           </div>
         ) : null}
 
@@ -2803,6 +2850,69 @@ function TasksTab({
 /* ------------------------------ tasks today ------------------------------ */
 
 /** The fortnight ahead, soonest first — the other question she asks all day. */
+function ChecksModal({
+  deals,
+  onClose,
+  onOpenDeal,
+}: {
+  deals: BoardDeal[];
+  onClose: () => void;
+  onOpenDeal: (dealId: string) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="modal-pop w-full max-w-lg rounded-2xl bg-card p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-accent">
+            <DoodleIcon name="search" size={20} />
+          </span>
+          <h2 className="text-[15px] font-semibold">Worth a check</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="ml-auto rounded-full border border-line p-1.5 text-muted transition hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <p className="mt-2 text-[12px] text-muted">
+          Where the pipeline and the money systems disagree. Fixing the data
+          clears the check by itself — there is nothing to dismiss.
+        </p>
+        <ul className="mt-4 max-h-[60vh] space-y-1.5 overflow-y-auto">
+          {deals.map((d) => (
+            <li key={d.app.id}>
+              <button
+                type="button"
+                onClick={() => onOpenDeal(d.app.id)}
+                className="w-full rounded-xl border border-line px-3.5 py-2.5 text-left transition hover:border-black/25"
+              >
+                <span className="block truncate text-[13px] font-medium text-ink">
+                  {d.app.propertyName}
+                  <span className="ml-2 font-normal text-muted">
+                    {d.agentName ?? "Unassigned"}
+                  </span>
+                </span>
+                {(d.flags ?? []).map((f) => (
+                  <span key={f.kind} className="mt-1 block text-[11.5px] leading-snug text-amber-800">
+                    {f.label}
+                  </span>
+                ))}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function MoveInsSoonModal({
   deals,
   onClose,
