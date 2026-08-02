@@ -1402,13 +1402,20 @@ function DealWorkspace({
 
         {/* ---- three working columns ---- */}
         <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 sm:p-8 lg:grid-cols-12 lg:overflow-hidden">
-          {/* -- the deal -- */}
-          <div className="min-h-0 space-y-4 lg:col-span-3 lg:overflow-y-auto lg:pr-1">
+          {/* -- the deal: numbers, property, checklist --
+               Wider than the middle column now (4/3/5, was 3/4/5). It carries
+               three blocks including a two-up checklist; the middle carries
+               one tall list and two small cards, and the stage labels are
+               short. */}
+          <div className="min-h-0 space-y-4 lg:col-span-4 lg:overflow-y-auto lg:pr-1">
             <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 The numbers
               </h3>
-              <dl className="mt-3 space-y-3">
+              {/* Stacked label-left/value-right rows in a narrow column, so
+                  two per line rather than six down. Label above value here —
+                  side by side in half the width, the longer dates collided. */}
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
                 <NumberRow label="Rent / month" value={deal.app.offer != null ? formatGBP(deal.app.offer) : "—"} big />
                 <NumberRow label="Deposit" value={p?.deposit != null ? formatGBP(p.deposit) : "—"} />
                 <NumberRow label="Holding fee" value={p?.holdingFee != null ? formatGBP(p.holdingFee) : "—"} />
@@ -1445,6 +1452,121 @@ function DealWorkspace({
                 </div>
               </div>
             ) : null}
+
+            {/* The checklist sits under the property now. Two columns, not
+                nine stacked rows: nine rows is 300-odd pixels and it was the
+                block that pushed this panel into scrolling. */}
+            <div className="card card-flat p-5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Pre-tenancy checklist
+                <span className="ml-2 font-normal normal-case text-muted">
+                  {checklistDone}/{CHECKLIST_ITEMS.length} done
+                </span>
+              </h3>
+              <div className="mt-3 grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
+                {CHECKLIST_ITEMS.map((item) => {
+                  const tick = meta?.checklist[item.key];
+                  return (
+                    <label
+                      key={item.key}
+                      className="flex cursor-pointer select-none items-start gap-2.5 rounded-lg px-1.5 py-1 transition hover:bg-page"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={tick?.done ?? false}
+                        disabled={busy || meta == null}
+                        onChange={(e) =>
+                          void postMeta({ checklist: { key: item.key, done: e.target.checked } })
+                        }
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-line accent-[#E31F36]"
+                      />
+                      <span className="min-w-0 text-[12.5px] leading-5">
+                        <span className={tick?.done ? "text-muted line-through" : ""}>
+                          {item.label}
+                        </span>
+                        {tick?.done ? (
+                          <span className="ml-1.5 whitespace-nowrap text-[10px] text-muted">
+                            {tick.by.split(" ")[0]} · {fmtDate(tick.at)}
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* -- progression, then who the deal belongs to -- */}
+          <div className="min-h-0 space-y-4 lg:col-span-3 lg:overflow-y-auto lg:pr-1">
+            <div className="card card-flat p-5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Progression
+              </h3>
+              <ol className="mt-4">
+                {PORTAL_STAGES.map((s, i) => {
+                  const state = cancelled
+                    ? "off"
+                    : i < currentIdx
+                      ? "done"
+                      : i === currentIdx
+                        ? "current"
+                        : "todo";
+                  const last = i === PORTAL_STAGES.length - 1;
+                  return (
+                    <li key={s.key} className="group/stage flex gap-3">
+                      <div className="flex flex-col items-center">
+                        {state === "done" ? (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-100">
+                            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-green-700" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
+                        ) : state === "current" ? (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full accent-soft-bg">
+                            <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: BRAND.accent }} />
+                          </span>
+                        ) : (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-page">
+                            <span className="h-2 w-2 rounded-full bg-gray-300" />
+                          </span>
+                        )}
+                        {!last ? (
+                          <span className={`w-px flex-1 ${state === "done" ? "bg-green-200" : "bg-line"}`} />
+                        ) : null}
+                      </div>
+                      {/* "Move here" shares the label's line and only shows on
+                          hover. On its own row it added ~20px to all eight
+                          stages — 160px of height for a control used once a
+                          deal. Still focusable, so it isn't mouse-only. */}
+                      <div className={`min-w-0 flex-1 ${last ? "pb-1" : "pb-2"}`}>
+                        <p className={`flex items-baseline gap-2 text-[13.5px] font-medium leading-6 ${state === "todo" || state === "off" ? "text-muted" : "text-ink"}`}>
+                          <span className="truncate">{s.label}</span>
+                          {state === "current" && !cancelled ? (
+                            <span className="shrink-0 rounded-full accent-soft-bg px-2 py-0.5 text-[9px] font-semibold accent-text">
+                              NOW
+                            </span>
+                          ) : null}
+                          {!cancelled && state !== "current" ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void postMeta({ stage: s.key })}
+                              className="ml-auto shrink-0 text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 opacity-0 transition hover:text-ink focus-visible:opacity-100 disabled:opacity-50 group-hover/stage:opacity-100"
+                            >
+                              Move here
+                            </button>
+                          ) : null}
+                        </p>
+                        {state === "current" ? (
+                          <p className="mt-0.5 text-[12px] text-muted">{s.blurb}</p>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
 
             {/* Tenant details fold away. They matter when she is contacting
                 someone and are noise the rest of the time. */}
@@ -1518,114 +1640,6 @@ function DealWorkspace({
             </div>
           </div>
 
-          {/* -- progression + checklist -- */}
-          <div className="min-h-0 space-y-4 lg:col-span-4 lg:overflow-y-auto lg:pr-1">
-            <div className="card card-flat p-5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Progression
-              </h3>
-              <ol className="mt-4">
-                {PORTAL_STAGES.map((s, i) => {
-                  const state = cancelled
-                    ? "off"
-                    : i < currentIdx
-                      ? "done"
-                      : i === currentIdx
-                        ? "current"
-                        : "todo";
-                  const last = i === PORTAL_STAGES.length - 1;
-                  return (
-                    <li key={s.key} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        {state === "done" ? (
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-100">
-                            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-green-700" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M5 13l4 4L19 7" />
-                            </svg>
-                          </span>
-                        ) : state === "current" ? (
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full accent-soft-bg">
-                            <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: BRAND.accent }} />
-                          </span>
-                        ) : (
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-page">
-                            <span className="h-2 w-2 rounded-full bg-gray-300" />
-                          </span>
-                        )}
-                        {!last ? (
-                          <span className={`w-px flex-1 ${state === "done" ? "bg-green-200" : "bg-line"}`} />
-                        ) : null}
-                      </div>
-                      <div className={last ? "pb-1" : "pb-5"}>
-                        <p className={`text-[13.5px] font-medium leading-6 ${state === "todo" || state === "off" ? "text-muted" : "text-ink"}`}>
-                          {s.label}
-                          {state === "current" && !cancelled ? (
-                            <span className="ml-2 rounded-full accent-soft-bg px-2 py-0.5 text-[9px] font-semibold accent-text">
-                              NOW
-                            </span>
-                          ) : null}
-                        </p>
-                        {state === "current" ? (
-                          <p className="mt-0.5 text-[12px] text-muted">{s.blurb}</p>
-                        ) : null}
-                        {!cancelled && state !== "current" ? (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void postMeta({ stage: s.key })}
-                            className="mt-0.5 text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink disabled:opacity-50"
-                          >
-                            Move here
-                          </button>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-
-            <div className="card card-flat p-5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Pre-tenancy checklist
-                <span className="ml-2 font-normal normal-case text-muted">
-                  {checklistDone}/{CHECKLIST_ITEMS.length} done
-                </span>
-              </h3>
-              <div className="mt-3 space-y-1">
-                {CHECKLIST_ITEMS.map((item) => {
-                  const tick = meta?.checklist[item.key];
-                  return (
-                    <label
-                      key={item.key}
-                      className="flex cursor-pointer select-none items-start gap-3 rounded-lg px-2 py-1.5 transition hover:bg-page"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={tick?.done ?? false}
-                        disabled={busy || meta == null}
-                        onChange={(e) =>
-                          void postMeta({ checklist: { key: item.key, done: e.target.checked } })
-                        }
-                        className="mt-0.5 h-4 w-4 rounded border-line accent-[#E31F36]"
-                      />
-                      <span className="text-[13px] leading-5">
-                        <span className={tick?.done ? "text-muted line-through" : ""}>
-                          {item.label}
-                        </span>
-                        {tick?.done ? (
-                          <span className="ml-1.5 text-[10px] text-muted">
-                            {tick.by.split(" ")[0]} · {fmtDate(tick.at)}
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
           {/* -- the working tabs: activity, emails, private notes, tasks -- */}
           <div className="flex min-h-0 flex-col lg:col-span-5">
             <WorkTabs
@@ -1656,10 +1670,10 @@ function NumberRow({
   alert?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-[12px] text-muted">{label}</dt>
+    <div className="min-w-0">
+      <dt className="text-[11px] leading-4 text-muted">{label}</dt>
       <dd
-        className={`${big ? "stat-value text-[18px]" : "text-[13px] font-medium"} ${
+        className={`truncate ${big ? "text-[17px] font-semibold leading-6" : "text-[13px] font-medium leading-5"} ${
           alert ? "text-red-600" : "text-ink"
         }`}
       >
@@ -1786,7 +1800,9 @@ function Composer({
   }
 
   return (
-    <div className="mt-3 flex gap-2 border-t border-line pt-3">
+    // No rule above it. The field already draws its own line underneath, and
+    // a divider 40px above that read as a double line.
+    <div className="mt-3 flex gap-2 pt-1">
       <input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -1985,9 +2001,21 @@ function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: ()
         {state.error ? (
           <p className="rounded-xl bg-page px-4 py-3 text-[12px] text-muted">{state.error}</p>
         ) : state.emails.length === 0 ? (
-          <p className="py-8 text-center text-[12px] text-muted">
-            No emails with {agentFirst} yet. Start the conversation below.
-          </p>
+          // The one place in this panel with room to spare, so it gets the
+          // house illustration. Empty states are where it can't push anything
+          // off the page — every other block here is fighting for height.
+          <div className="flex flex-col items-center justify-center py-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/illustrations/notioly/reminder.svg"
+              alt=""
+              aria-hidden
+              className="h-28 w-auto opacity-70"
+            />
+            <p className="mt-3 text-center text-[12px] text-muted">
+              No emails with {agentFirst} yet. Start the conversation below.
+            </p>
+          </div>
         ) : (
           state.emails.map((e) => <EmailBubble key={e.id} e={e} />)
         )}
@@ -1995,7 +2023,10 @@ function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: ()
 
       {/* composer */}
       {composing ? (
-        <div className="modal-pop rounded-2xl border border-line bg-card p-3 shadow-lg">
+        // Unboxed, like the note and task composers. It sits in normal flow at
+        // the foot of the log rather than floating over it, so it never needed
+        // a fill or a shadow to separate itself from anything.
+        <div className="modal-pop pt-2">
           {suggestions.length > 0 ? (
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Suggested</span>
@@ -2493,7 +2524,8 @@ function TasksTab({
       </div>
 
       {error ? <p className="mt-2 text-[12px] text-accent">{error}</p> : null}
-      <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
+      {/* Same as the note composer — one line, under the field, not two. */}
+      <div className="mt-3 flex flex-wrap gap-2 pt-1">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
