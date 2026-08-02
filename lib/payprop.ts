@@ -512,7 +512,10 @@ export interface PayPropRawResponse {
 export async function payPropRaw(
   account: PayPropAccountId,
   path: string,
-  params: Record<string, string | number | boolean | undefined> = {}
+  params: Record<string, string | number | boolean | undefined> = {},
+  /** Probe-only: swap the API base (e.g. the v2.0 root) while keeping the
+   *  same auth and the same shared throttle. */
+  baseOverride?: string
 ): Promise<PayPropRawResponse> {
   const auth = await authHeader(account);
   if (!auth) {
@@ -522,7 +525,7 @@ export async function payPropRaw(
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
   }
-  const url = `${base()}/${path.replace(/^\//, "")}${qs.size ? `?${qs}` : ""}`;
+  const url = `${(baseOverride ?? base()).replace(/\/$/, "")}/${path.replace(/^\//, "")}${qs.size ? `?${qs}` : ""}`;
 
   const out = await enqueue(async () => {
     const controller = new AbortController();

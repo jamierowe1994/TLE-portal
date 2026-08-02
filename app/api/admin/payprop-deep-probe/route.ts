@@ -68,7 +68,38 @@ const CANDIDATES = [
   "webhooks",
   "tags",
   "meta/categories",
+  // From PayProp's OWN public OpenAPI spec (uk.payprop.com/api/docs/agency),
+  // fetched 2 Aug 2026 — documented v1.1 endpoints never previously probed.
+  // meta/me is the prize: it returns the token's SCOPE LIST, which translates
+  // every 403 into the exact permission names to put in the ask to PayProp.
+  "meta/me",
+  "agents",
+  "export/invoice-instructions",
+  "global-beneficiaries",
+  "id-types",
+  "posted-payments/types",
+  "transactions/tax",
+  "transactions/frequencies",
+  // The changelog says these were ADDED to v1.1 in late 2023 but they are
+  // absent from today's v1.1 spec — a 403 here (not 404) proves they still
+  // exist in the runtime and only need scope.
+  "report/damage-deposits",
+  "report/property-account",
+  "report/property-accounts",
   ...CONTROLS,
+];
+
+// v2.0 exists (85 path items, documented OAuth-only) and holds exactly what
+// the business asked about: damage deposits, UNRECONCILED incoming payments
+// (the holding-fee home), suspense funds, account statements. These checks
+// establish whether our existing keys are rejected with 401 (auth mode), 403
+// (scope) or 404 — three very different asks to PayProp.
+const V2_CHECKS = [
+  "meta/me",
+  "report/incoming-payments/unreconciled",
+  "report/incoming-payments/pending",
+  "report/damage-deposits",
+  "report/account-statement/summary",
 ];
 
 // Anything compliance-, deposit- or tenancy-flavoured in free text.
@@ -391,10 +422,31 @@ export async function GET(req: NextRequest) {
       };
     }
 
+    // ---- v2.0: status codes only, one call each ----
+    const v2Base = (process.env.PAYPROP_API_BASE ?? "https://uk.payprop.com/api/agency/v1.1")
+      .replace(/\/$/, "")
+      .replace(/v1\.1$/, "v2.0");
+    const v2: Array<{ path: string; status: number; note: string | null; sample?: unknown }> = [];
+    for (const path of V2_CHECKS) {
+      const res = await payPropRaw(account, path, { rows: 1, page: 1 }, v2Base);
+      v2.push({
+        path,
+        status: res.status,
+        note: res.ok ? null : (res.error ?? res.text?.slice(0, 140) ?? null),
+        ...(res.ok ? { sample: res.json } : {}),
+      });
+    }
+
     perAccount[payPropLabel(account)] = {
       discovery,
       working,
       endpoints,
+      v2: {
+        base: v2Base,
+        howToRead:
+          "401 = these keys cannot auth against v2 at all (ask PayProp about OAuth for v2); 403 = v2 reachable, scope missing (name it in the permissions ask); 404 = endpoint not in this runtime.",
+        checks: v2,
+      },
     };
   }
 
