@@ -6,6 +6,7 @@ import {
   payPropConfigured,
   payPropLabel,
   payPropRaw,
+  payPropGetAll,
   type PayPropAccountId,
 } from "@/lib/payprop";
 import { getAllPropolyDeals } from "@/lib/propoly-deals";
@@ -142,6 +143,11 @@ export async function GET(req: NextRequest) {
   ) as PayPropAccountId[];
   const sampleRows = Math.min(Math.max(Number(q.get("rows") ?? 50), 1), 200);
   const full = q.get("full") === "1";
+  // The service-level census walks the WHOLE property book — ~40 pages per
+  // account at 25 rows a page, throttled to 2.5/s. Off by default so the
+  // ordinary probe stays inside a request timeout; ?census=1 when you want the
+  // real distribution rather than the first 25.
+  const census = q.get("census") === "1";
 
   // The deals we are trying to find money for. Only the holding-fee stage and
   // the one before it — a fee taken for a deal already past PLC has usually
@@ -246,36 +252,98 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // A match REQUIRES a street word. The first version scored a house number
+    // at 2 and passed anything reaching 3, so two digits cleared the bar with
+    // no street name involved at all — "52 Moor Street" matched the landlord
+    // registration number "1520261/380/21122", and "22 Ryecroft Way" matched
+    // "Annual Rent - 22 Abacus Drive". 7 of 10 reported matches were that.
+    // Numbers now only separate two candidates that both hit on the name.
     for (const w of wanted) {
-      let best: { score: number; endpoint: string; text: string; amount: number | null } | null =
-        null;
+      let best: {
+        words: string[];
+        score: number;
+        endpoint: string;
+        text: string;
+        amount: number | null;
+      } | null = null;
       for (const p of pool) {
         if (!p.text) continue;
-        let score = 0;
-        for (const n of w.tokens.numbers) if (p.text.includes(n)) score += 2;
-        for (const word of w.tokens.words) if (p.text.includes(word)) score += 3;
+        const words = w.tokens.words.filter((word) => p.text.includes(word));
+        if (words.length === 0) continue; // no street name → not a candidate
+        let score = words.length * 3;
+        for (const n of w.tokens.numbers) if (p.text.includes(n)) score += 1;
         const amt = money(p.row.amount ?? p.row.gross_amount ?? p.row.value);
         if (w.holdingFee != null && amt != null && Math.abs(amt - w.holdingFee) < 0.01) {
           score += 1; // tie-breaker only — amounts collide, addresses don't
         }
         if (score > (best?.score ?? 0)) {
-          best = { score, endpoint: p.endpoint, text: p.text.slice(0, 200), amount: amt };
+          best = { words, score, endpoint: p.endpoint, text: p.text.slice(0, 200), amount: amt };
         }
       }
-      // 3 = at least one whole street word. A lone house number is a
-      // coincidence, not a match.
-      if (best && best.score >= 3) {
+      if (best) {
         matches.push({
           deal: `${w.address}, ${w.locality}`,
           agent: w.agent,
           propolyHoldingFee: w.holdingFee,
           matchedOn: best.endpoint,
+          matchedWords: best.words,
           score: best.score,
           payPropAmount: best.amount,
           payPropText: best.text,
+          // Even a true address match is usually a RENT line, not a holding
+          // fee. Say so rather than letting the match imply otherwise.
+          looksLikeHoldingFee:
+            w.holdingFee != null &&
+            best.amount != null &&
+            Math.abs(best.amount - w.holdingFee) < 0.01,
         });
       } else {
         unmatched.push(`${w.address}, ${w.locality}`);
+      }
+    }
+
+    // ---- 4. service level, and RLP ----
+    // Two things fell out of the first run that matter more than the holding
+    // fee did.
+    //
+    // export/properties carries a `service_level` field — a STRUCTURED answer
+    // to "what has this landlord bought", which is what REX's empty
+    // lettings_service_type was supposed to be.
+    //
+    // And the free text is full of "Without RLP": "Experts Managed Service-
+    // Without RLP- Lianna Denholm", "Experts Managed Service (10%+VAT)-
+    // Without RLP- MHK Lettings (Margo Wilson)". RLP is rent & legal
+    // protection — the PLC we could not find anywhere in REX or Propoly. If
+    // staff mark it consistently, PayProp already knows who has it.
+    const serviceLevels = new Map<string, number>();
+    const propertyRows = census
+      ? await payPropGetAll<Record<string, unknown>>(account, "export/properties")
+      : (sampled.get("export/properties") ?? []);
+    for (const row of propertyRows) {
+      const lvl = row.service_level;
+      const key =
+        lvl == null || lvl === ""
+          ? "(blank)"
+          : typeof lvl === "object"
+            ? JSON.stringify(lvl)
+            : String(lvl);
+      serviceLevels.set(key, (serviceLevels.get(key) ?? 0) + 1);
+    }
+
+    const RLP = /\brlp\b|rent.{0,12}legal|legal.{0,12}protect|\bplc\b/i;
+    const rlpHits: Array<{ endpoint: string; path: string; text: string }> = [];
+    const rlpCounts = { mentioning: 0, saysWithout: 0, saysWith: 0 };
+    for (const [path, rows] of sampled) {
+      for (const row of rows) {
+        for (const s of strings(row)) {
+          if (!RLP.test(s.value)) continue;
+          rlpCounts.mentioning++;
+          if (/without\s+rlp/i.test(s.value)) rlpCounts.saysWithout++;
+          else if (/with\s+rlp|\+\s*rlp|incl.{0,4}rlp/i.test(s.value)) rlpCounts.saysWith++;
+          if (rlpHits.length < 30) {
+            rlpHits.push({ endpoint: path, path: s.path, text: s.value.slice(0, 180) });
+          }
+        }
       }
     }
 
@@ -283,6 +351,22 @@ export async function GET(req: NextRequest) {
       discovery,
       working,
       endpoints,
+      serviceLevel: {
+        propertiesCounted: propertyRows.length,
+        complete: census,
+        byLevel: Object.fromEntries(
+          [...serviceLevels].sort((a, b) => b[1] - a[1])
+        ),
+      },
+      rlp: {
+        ...rlpCounts,
+        note:
+          "RLP = rent & legal protection, i.e. the PLC we could not find in REX " +
+          "or Propoly. 'saysWithout' vastly outnumbering 'saysWith' may mean " +
+          "staff only ever write the exception — in which case silence is not " +
+          "evidence of cover and this cannot be inverted.",
+        examples: rlpHits,
+      },
       join: {
         dealsLookedFor: wanted.length,
         rowsSearched: pool.length,
