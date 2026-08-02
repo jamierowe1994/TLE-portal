@@ -1871,6 +1871,75 @@ export type PhotoIndex = Map<string, IndexedProperty[]>;
  * Properties) for the agent's own properties, bucketed by postcode. Covers
  * both books: what's on the market now and what they already manage.
  */
+/**
+ * Every current listing in the business, not one agent's.
+ *
+ * Kirstie's board is business-wide and she is not an agent, so the per-agent
+ * index has nothing to match her deals against. Same search as
+ * getAgentListings with the listing_agent_1_id criterion dropped — and
+ * therefore paged, because the business runs to several hundred listings and
+ * REX hard-caps a page at 100.
+ *
+ * Cached for longer than the per-agent one. It is a much bigger walk and the
+ * thing it feeds — a photo on a deal — does not change minute to minute.
+ */
+const BUSINESS_LISTINGS_TTL_MS = 15 * 60 * 1000;
+const BUSINESS_LISTINGS_MAX_PAGES = 12; // 1,200 listings; far above the ~600 live
+let businessListings: { at: number; data: AgentListing[] } | null = null;
+let businessListingsInflight: Promise<AgentListing[] | null> | null = null;
+
+export async function getBusinessListings(): Promise<AgentListing[] | null> {
+  if (!rexConfigured()) return null;
+  if (businessListings && Date.now() - businessListings.at < BUSINESS_LISTINGS_TTL_MS) {
+    return businessListings.data;
+  }
+  if (businessListingsInflight) return businessListingsInflight;
+
+  businessListingsInflight = (async () => {
+    const rows: Record<string, unknown>[] = [];
+    for (let page = 0; page < BUSINESS_LISTINGS_MAX_PAGES; page++) {
+      const res = await rexCall("Listings", "search", {
+        criteria: [{ name: "system_listing_state", type: "=", value: "current" }],
+        extra_options: { extra_fields: ["related.listing_images"] },
+        limit: COUNT_LIMIT,
+        offset: page * COUNT_LIMIT,
+      }).catch(() => null);
+      // A failed page part-way means an INCOMPLETE index, and an incomplete
+      // photo index is harmless — a deal simply shows no photo, which is what
+      // it does today. So keep what we have rather than throwing it away.
+      if (!res || !res.ok) break;
+      const batch = rexRows(res.result);
+      rows.push(...batch);
+      if (batch.length < COUNT_LIMIT) break;
+    }
+    if (rows.length === 0) return null;
+    const data = rows.map(toListing);
+    businessListings = { at: Date.now(), data };
+    return data;
+  })();
+
+  try {
+    return await businessListingsInflight;
+  } finally {
+    businessListingsInflight = null;
+  }
+}
+
+/** The same postcode-bucketed index, built from every listing in the business. */
+export async function getBusinessPhotoIndex(): Promise<PhotoIndex> {
+  const listings = await getBusinessListings().catch(() => null);
+  const index: PhotoIndex = new Map();
+  for (const l of listings ?? []) {
+    const pc = postcodeOf(l.name, l.locality);
+    if (!pc || !l.image) continue;
+    const { numbers, words } = tokensOf(l.name);
+    const bucket = index.get(pc) ?? [];
+    bucket.push({ listingId: l.id, image: l.image, images: l.images, numbers, words });
+    index.set(pc, bucket);
+  }
+  return index;
+}
+
 export async function getAgentPhotoIndex(rexUserId: string): Promise<PhotoIndex> {
   const [listings, portfolio] = await Promise.all([
     getAgentListings(rexUserId).catch(() => null),

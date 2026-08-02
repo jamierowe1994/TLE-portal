@@ -38,6 +38,7 @@ import type {
   UserProfile,
 } from "@/lib/types";
 import type { AgentApplication } from "@/lib/rex-stats";
+import { rexListingUrl } from "@/lib/rex-links";
 
 /* ------------------------------- data shapes ------------------------------- */
 
@@ -1290,6 +1291,37 @@ function DealWorkspace({
                 {deal.app.hasPets ? <NumberRow label="Pets" value="Yes" /> : null}
               </dl>
             </div>
+
+            {deal.app.image ? (
+              <div className="card card-flat overflow-hidden p-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={deal.app.image}
+                  alt=""
+                  aria-hidden
+                  className="h-[136px] w-full object-cover"
+                />
+                <div className="px-5 py-3.5">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    Property
+                  </h3>
+                  <p className="mt-1 text-[13px] font-medium text-ink">
+                    {deal.app.propertyName}
+                  </p>
+                  <p className="text-[12px] text-muted">{deal.app.locality}</p>
+                  {deal.app.listingId ? (
+                    <a
+                      href={rexListingUrl(deal.app.listingId, "rental")}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-block text-[11px] font-semibold text-muted underline-offset-4 hover:text-ink hover:underline"
+                    >
+                      Open in REX ↗
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">

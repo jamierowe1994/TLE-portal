@@ -3,6 +3,7 @@ import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { isPreTenancyEmail } from "@/lib/brand";
 import { findById } from "@/lib/users-store";
 import { getAllPropolyDeals, getPropolyMoveInForecast } from "@/lib/propoly-deals";
+import { getBusinessPhotoIndex, matchListingPhoto } from "@/lib/rex-stats";
 import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
 import { PORTAL_STAGES, portalStageOf } from "@/lib/propoly-stages";
 import type { DealPortalOverlay } from "@/lib/types";
@@ -49,6 +50,15 @@ export async function GET(req: NextRequest) {
   const overlays = await getOverlays(deals.map((d) => d.app.id));
   const today = new Date().toISOString().slice(0, 10);
 
+  // Propoly holds no photos, so borrow them from REX by postcode and street
+  // number — the same match the agent Applications page uses. Business-wide
+  // here, because Kirstie sees every agent's deals and is not an agent
+  // herself, so the per-agent index has nothing to match against.
+  //
+  // Never blocks the board: a failed or slow index just means deals arrive
+  // without a picture, which is exactly what they do today.
+  const photos = await getBusinessPhotoIndex().catch(() => null);
+
   const out: PreTenancyDeal[] = deals.map((d) => {
     const entry = overlays.get(d.app.id);
     const meta = entry?.meta ?? null;
@@ -60,8 +70,11 @@ export async function GET(req: NextRequest) {
           override: effective === portalStageOf(d.statusKey) ? null : entry.overlay.override,
         }
       : { notesCount: 0, lastNote: null, override: null, checklistDone: 0, checklistTotal: 0 };
+    const match = photos ? matchListingPhoto(photos, d.app.propertyName, d.app.locality) : null;
     return {
-      app: d.app,
+      app: match
+        ? { ...d.app, image: match.image, images: match.images, listingId: match.listingId }
+        : d.app,
       statusKey: d.statusKey,
       effectiveStatusKey: effective,
       agentName: d.managerName,
