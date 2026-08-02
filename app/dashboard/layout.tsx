@@ -9,8 +9,8 @@ import FontSwitcher from "@/components/FontSwitcher";
 import SearchOverlay from "@/components/SearchOverlay";
 import DoodleIcon from "@/components/DoodleIcon";
 import Loader from "@/components/Loader";
+import TleOsChips from "@/components/TleOsChips";
 import { refreshUser, signOut } from "@/lib/session";
-import { PLATFORMS } from "@/lib/platforms";
 import type { UserProfile } from "@/lib/types";
 
 // Agent dashboard shell — a flat, Notion-style layout: one grey canvas, a grey
@@ -33,21 +33,6 @@ const NAV = [
 // Hairlines a shade darker than the grey canvas — the only thing that breaks
 // the rail up, exactly like the reference.
 const RAIL_LINE = "border-black/[0.16]";
-
-// Two columns leave about eleven characters per chip, so a name that would
-// otherwise ellipsise can give the rail a shorter label than the copy its
-// tools-page card uses. "Training platform" reads fine as a card title and
-// terribly as "Training pl…".
-const CHIP_LABEL: Record<string, string> = { training: "Training" };
-
-// TLE OS launcher. There's no "All tools →" chip any more — the grid is apps
-// only — which is why it reads the whole registry rather than the "platforms"
-// slice, and why the registry is the only list. Adding an app is one entry in
-// lib/platforms.ts and it shows up in both the rail and /dashboard/tools.
-const LAUNCHER = PLATFORMS.map((a) => ({ name: CHIP_LABEL[a.id] ?? a.name, url: a.url }));
-
-const CHIP_COLS = 2;
-const CHIP_ROWS = Math.ceil(LAUNCHER.length / CHIP_COLS);
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
@@ -352,56 +337,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             again tumbles them back down behind it. ── */}
         {tleOpen || tleClosing ? (
           <div className="shrink-0 overflow-hidden px-3">
-            {/* Two columns, not one: at eight apps a single stack is taller
-                than the rail has left, and the box is overflow-hidden, so the
-                bottom chips would be silently clipped rather than scroll. */}
-            <div className="grid grid-cols-2 gap-1.5 pb-2">
-              {LAUNCHER.map((c, i) => {
-                // Alternating tilts + uneven delays = thrown in the air,
-                // knocking about, landing in place. --travel is each chip's
-                // distance past the bottom line, so every chip rises from
-                // behind it and falls fully back behind it — the top row
-                // travels the furthest, no fading. Travel is per ROW, not per
-                // chip: two chips side by side have to set off from the same
-                // height or the row arrives crooked. The delays stay per chip
-                // — that mismatch is the knocking-about.
-                const tilt = [-7, 6, -5, 8, -6, 5, -8, 4][i % 8];
-                const delay = [0, 70, 35, 105, 55, 120, 20, 90][i % 8];
-                const travel = (CHIP_ROWS - Math.floor(i / CHIP_COLS)) * 38 + 24;
-                // truncate does double duty: it ellipsises the long names and,
-                // by clipping overflow, stops one of them widening its grid
-                // track past the 240px rail.
-                const cls = `${tleClosing ? "chip-fall" : "chip-pop"} block min-w-0 truncate rounded-lg border ${RAIL_LINE} bg-white/70 px-2.5 py-1.5 text-[12.5px] font-medium`;
-                const style = {
-                  "--tilt": `${tilt}deg`,
-                  "--delay": `${delay}ms`,
-                  "--travel": `${travel}px`,
-                } as React.CSSProperties;
-                if (!c.url) {
-                  return (
-                    <span key={c.name} title={`${c.name} — link coming`} className={`${cls} cursor-default text-muted/50`} style={style}>
-                      {c.name}
-                    </span>
-                  );
-                }
-                // Every app in the rail lives outside the portal, so there's
-                // no internal-route branch left — add one back if that stops
-                // being true rather than sending a portal page to a new tab.
-                return (
-                  <a
-                    key={c.name}
-                    href={c.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={c.name}
-                    className={`${cls} text-ink transition hover:bg-white`}
-                    style={style}
-                  >
-                    {c.name}
-                  </a>
-                );
-              })}
-            </div>
+            <TleOsChips closing={tleClosing} line={RAIL_LINE} />
           </div>
         ) : null}
         <div className={`mx-4 border-t ${RAIL_LINE}`} />

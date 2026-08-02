@@ -18,6 +18,7 @@ import PasswordInput from "@/components/PasswordInput";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import { NotesThread } from "@/components/DealNotes";
 import DoodleIcon from "@/components/DoodleIcon";
+import TleOsChips from "@/components/TleOsChips";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import { formatGBP } from "@/lib/format";
@@ -363,11 +364,27 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   // Which stage tab is active. Always opens on the first stage.
   const [tab, setTab] = useState<string>("deal_started");
   const [moreOpen, setMoreOpen] = useState(false);
+  // TLE OS spring box at the foot of the rail — same behaviour as the partner
+  // shell: open pops the chips up, closing keeps them mounted long enough to
+  // tumble back down behind the line.
+  const [tleOpen, setTleOpen] = useState(false);
+  const [tleClosing, setTleClosing] = useState(false);
+  const toggleTle = () => {
+    if (tleOpen) {
+      setTleOpen(false);
+      setTleClosing(true);
+      setTimeout(() => setTleClosing(false), 600);
+    } else {
+      setTleClosing(false);
+      setTleOpen(true);
+    }
+  };
   // Board layout: focused tiles (one stage) or the full kanban.
   const [view, setView] = useState<"tiles" | "kanban">("tiles");
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [tasksTodayOpen, setTasksTodayOpen] = useState(false);
   const [todayCount, setTodayCount] = useState<number | null>(null);
+  const [moveInsOpen, setMoveInsOpen] = useState(false);
 
   // "Tasks today" badge count — refreshed whenever the modal closes too,
   // so ticking things off updates the header straight away.
@@ -513,6 +530,17 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
     }
     return list;
   }, [base, byStage, showCancelled, deals, agent]);
+
+  // Move-ins inside the next 14 days, soonest first. Off `base`, so archived
+  // and filtered-out deals never appear — the dock must agree with the board.
+  const upcomingMoveIns = useMemo(() => {
+    const from = today();
+    const to = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+    return base
+      .filter((d) => d.statusKey !== "cancelled")
+      .filter((d) => d.app.startDate != null && d.app.startDate >= from && d.app.startDate <= to)
+      .sort((a, b) => (a.app.startDate ?? "").localeCompare(b.app.startDate ?? ""));
+  }, [base]);
 
   const activeTab = tabs.find((t) => t.key === tab) ?? tabs[0];
   const open = openId ? (deals ?? []).find((d) => d.app.id === openId) ?? null : null;
@@ -678,6 +706,42 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                     can always see the current view */}
                 {activeExtra ? <TabButton t={activeExtra} compact /> : null}
 
+                {/* ---- TLE OS, pinned at the foot of the rail ---- */}
+                <div className="mt-auto pt-2">
+                  {tleOpen || tleClosing ? (
+                    <div className="overflow-hidden">
+                      <TleOsChips closing={tleClosing} line="border-line" />
+                    </div>
+                  ) : null}
+                  <div className="border-t border-line pt-2">
+                    <button
+                      type="button"
+                      onClick={toggleTle}
+                      aria-expanded={tleOpen}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[14px] font-semibold transition ${
+                        tleOpen ? "text-ink" : "text-muted hover:text-ink"
+                      }`}
+                    >
+                      <span className="shrink-0 text-accent">
+                        <DoodleIcon name="grid" size={24} />
+                      </span>
+                      <span className="flex-1">TLE OS</span>
+                      <svg
+                        className={`h-3.5 w-3.5 transition-transform duration-200 ${tleOpen ? "rotate-180" : ""}`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d="M18 15l-6-6-6 6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
                 {/* three-dot "more views" menu */}
                 <div className="relative flex shrink-0 items-center pt-1">
                   <button
@@ -828,6 +892,54 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           }}
           onPatched={(patch) => patchDeal(open.app.id, patch)}
           onOpenMailbox={() => setMailboxOpen(true)}
+        />
+      ) : null}
+
+      {/* ---- the dock: her two standing questions, always one click away ----
+           Tasks moved here out of the header, and move-ins joined it. Both
+           counts come from data already on the page, so the dock costs no
+           extra fetch. */}
+      <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 print:hidden">
+        <button
+          type="button"
+          onClick={() => setMoveInsOpen(true)}
+          className="btn-press flex items-center gap-2 rounded-full border border-line bg-card px-4 py-2.5 text-[13px] font-semibold text-ink shadow-lg transition hover:border-black/30"
+        >
+          <span className="text-accent">
+            <DoodleIcon name="calendar" size={17} />
+          </span>
+          Moving soon
+          {upcomingMoveIns.length ? (
+            <span className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[11px]">
+              {upcomingMoveIns.length}
+            </span>
+          ) : null}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTasksTodayOpen(true)}
+          className="btn-press flex items-center gap-2 rounded-full border border-line bg-card px-4 py-2.5 text-[13px] font-semibold text-ink shadow-lg transition hover:border-black/30"
+        >
+          <span className="text-accent">
+            <DoodleIcon name="checklist" size={17} />
+          </span>
+          Tasks
+          {todayCount ? (
+            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[11px] text-white">
+              {todayCount}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {moveInsOpen ? (
+        <MoveInsSoonModal
+          deals={upcomingMoveIns}
+          onClose={() => setMoveInsOpen(false)}
+          onOpenDeal={(id: string) => {
+            setMoveInsOpen(false);
+            setOpenId(id);
+          }}
         />
       ) : null}
 
@@ -1304,12 +1416,30 @@ function DealWorkspace({
               </div>
             ) : null}
 
-            <div className="card card-flat p-5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                {deal.app.tenants.length === 1
-                  ? "Tenant"
-                  : `Tenants (${deal.app.tenants.length})`}
-              </h3>
+            {/* Tenant details fold away. They matter when she is contacting
+                someone and are noise the rest of the time. */}
+            <details className="card card-flat group p-5">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted marker:content-none">
+                <span className="flex-1">
+                  {deal.app.tenants.length === 1
+                    ? "Tenant"
+                    : `Tenants (${deal.app.tenants.length})`}
+                </span>
+                <span className="truncate text-[11px] font-medium normal-case tracking-normal text-ink">
+                  {(deal.app.tenants.find((t) => t.isPrimary) ?? deal.app.tenants[0])?.name ?? ""}
+                </span>
+                <svg
+                  viewBox="0 0 16 16"
+                  className="h-3.5 w-3.5 shrink-0 transition group-open:rotate-180"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.8}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M4 6l4 4 4-4" />
+                </svg>
+              </summary>
               <div className="mt-3 space-y-2.5">
                 {deal.app.tenants.length ? (
                   deal.app.tenants.map((t, i) => (
@@ -1340,7 +1470,7 @@ function DealWorkspace({
                   <p className="text-[13px] text-muted">No tenant details recorded yet.</p>
                 )}
               </div>
-            </div>
+            </details>
 
             <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
@@ -1627,7 +1757,7 @@ function Composer({
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && void submit()}
         placeholder={placeholder}
-        className="min-w-0 flex-1 rounded-xl border border-line bg-transparent px-3.5 py-2.5 text-[13px] outline-none transition focus:border-gray-400"
+        className="min-w-0 flex-1 border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2.5 text-[13px] outline-none transition focus:border-ink/70"
       />
       <button
         type="button"
@@ -1874,7 +2004,7 @@ function EmailsTab({ deal, onOpenMailbox }: { deal: BoardDeal; onOpenMailbox: ()
             }}
             rows={3}
             placeholder={`Write to ${agentFirst}…`}
-            className="w-full resize-none rounded-xl border border-line bg-transparent px-3 py-2 text-[13px] outline-none transition focus:border-gray-400"
+            className="w-full resize-none border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2 text-[13px] outline-none transition focus:border-ink/70"
           />
           {sendError ? <p className="mt-1 text-[12px] text-accent">{sendError}</p> : null}
           <div className="mt-2 flex items-center justify-between">
@@ -2334,7 +2464,7 @@ function TasksTab({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void add()}
           placeholder="Add a follow-up — e.g. Chase references…"
-          className="min-w-0 flex-1 rounded-xl border border-line bg-transparent px-3.5 py-2.5 text-[13px] outline-none transition focus:border-gray-400"
+          className="min-w-0 flex-1 border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2.5 text-[13px] outline-none transition focus:border-ink/70"
         />
         <DatePicker value={due} onChange={setDue} />
         <button
@@ -2352,6 +2482,72 @@ function TasksTab({
 }
 
 /* ------------------------------ tasks today ------------------------------ */
+
+/** The fortnight ahead, soonest first — the other question she asks all day. */
+function MoveInsSoonModal({
+  deals,
+  onClose,
+  onOpenDeal,
+}: {
+  deals: BoardDeal[];
+  onClose: () => void;
+  onOpenDeal: (dealId: string) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="modal-pop w-full max-w-lg rounded-2xl bg-card p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-accent">
+            <DoodleIcon name="calendar" size={20} />
+          </span>
+          <h2 className="text-[15px] font-semibold">Moving in the next 14 days</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="ml-auto rounded-full border border-line p-1.5 text-muted transition hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        {deals.length === 0 ? (
+          <p className="mt-5 text-[13px] text-muted">
+            Nothing due to move in for a fortnight.
+          </p>
+        ) : (
+          <ul className="mt-4 max-h-[60vh] space-y-1.5 overflow-y-auto">
+            {deals.map((d) => (
+              <li key={d.app.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenDeal(d.app.id)}
+                  className="flex w-full items-center gap-3 rounded-xl border border-line px-3.5 py-2.5 text-left transition hover:border-black/25"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-ink">
+                      {d.app.propertyName}
+                    </span>
+                    <span className="block truncate text-[11.5px] text-muted">
+                      {d.agentName ?? "Unassigned"} · {stageLabel(d.effectiveStatusKey)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[12px] font-semibold text-ink">
+                    {fmtDate(d.app.startDate)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function TasksTodayModal({
   onClose,
