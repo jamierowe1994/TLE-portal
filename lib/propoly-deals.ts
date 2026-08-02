@@ -25,6 +25,12 @@ import type {
 
 const PER_PAGE = 25;
 const DEALS_TTL_MS = 60_000; // active pipeline — changes during the day
+// Beyond the minute, serve the stale list and refresh behind the request —
+// but only up to two minutes old. The pipeline is not photos: Kirstie moves a
+// deal and expects the board to agree with her, so "stale" has to stay short
+// enough that she never sees yesterday's answer. Past two minutes the caller
+// waits (~1s) rather than being shown something that old.
+const DEALS_STALE_MAX_MS = 2 * 60_000;
 const PROPS_TTL_MS = 10 * 60_000; // property→manager map — changes rarely
 const OVERALL_DEADLINE_MS = 15_000; // cold cache is ~30 parallel calls
 
@@ -245,6 +251,8 @@ function toApplication(d: Record<string, unknown>, statusKey: string): AgentAppl
   };
 }
 
+let dealsInflight: Promise<CachedDeal[] | null> | null = null;
+
 async function fetchAllDeals(): Promise<CachedDeal[] | null> {
   if (dealsCache && Date.now() - dealsCache.at < DEALS_TTL_MS) return dealsCache.deals;
   if (!dealsCache) {
@@ -255,6 +263,32 @@ async function fetchAllDeals(): Promise<CachedDeal[] | null> {
     }
   }
 
+  // Stale but recent: hand it back now and refresh behind the request, so a
+  // board opened a minute after the last one is instant instead of paying the
+  // ~1s round trip again.
+  if (dealsCache && Date.now() - dealsCache.at < DEALS_STALE_MAX_MS) {
+    void startDealsRefresh().catch(() => null);
+    return dealsCache.deals;
+  }
+  return startDealsRefresh();
+}
+
+// One walk at a time. There was no inflight guard here at all: two people
+// opening the board within the same second each fired their own ~30-call
+// Propoly fetch, and so did every tab of the agent dashboard.
+function startDealsRefresh(): Promise<CachedDeal[] | null> {
+  if (dealsInflight) return dealsInflight;
+  const work = runDealsFetch();
+  dealsInflight = work;
+  void work
+    .catch(() => null)
+    .finally(() => {
+      if (dealsInflight === work) dealsInflight = null;
+    });
+  return work;
+}
+
+async function runDealsFetch(): Promise<CachedDeal[] | null> {
   const [managerMap, ...statusLists] = await Promise.all([
     propertyManagers(),
     ...ACTIVE_STATUSES.map((s) => listAll(`/api/v1/deals?tenancy_status=${s}`, 8)),

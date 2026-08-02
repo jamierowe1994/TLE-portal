@@ -1401,14 +1401,15 @@ function DealWorkspace({
         </div>
 
         {/* ---- three working columns ---- */}
-        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 sm:p-8 lg:grid-cols-12 lg:overflow-hidden">
-          {/* -- the deal: numbers, property, checklist --
-               Wider than the middle column now (4/3/5, was 3/4/5). It carries
-               three blocks including a two-up checklist; the middle carries
-               one tall list and two small cards, and the stage labels are
-               short. */}
-          <div className="min-h-0 space-y-4 lg:col-span-4 lg:overflow-y-auto lg:pr-1">
-            <div className="card card-flat p-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 sm:p-8 lg:overflow-hidden">
+        <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-12">
+          {/* -- the deal: numbers, then the property --
+               Back to 3 now the checklist has moved out to its own full-width
+               row, which gives the middle column back the width Progression
+               needs. A flex column, so the illustration at the foot can take
+               the leftover space rather than leaving a hole under the photo. */}
+          <div className="flex min-h-0 flex-col gap-4 lg:col-span-3 lg:overflow-y-auto lg:pr-1">
+            <div className="card card-flat shrink-0 p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 The numbers
               </h3>
@@ -1430,7 +1431,7 @@ function DealWorkspace({
             </div>
 
             {deal.app.image ? (
-              <div className="card card-flat overflow-hidden p-0">
+              <div className="card card-flat shrink-0 overflow-hidden p-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={deal.app.image}
@@ -1453,57 +1454,35 @@ function DealWorkspace({
               </div>
             ) : null}
 
-            {/* The checklist sits under the property now. Two columns, not
-                nine stacked rows: nine rows is 300-odd pixels and it was the
-                block that pushed this panel into scrolling. */}
-            <div className="card card-flat p-5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Pre-tenancy checklist
-                <span className="ml-2 font-normal normal-case text-muted">
-                  {checklistDone}/{CHECKLIST_ITEMS.length} done
-                </span>
-              </h3>
-              <div className="mt-3 grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
-                {CHECKLIST_ITEMS.map((item) => {
-                  const tick = meta?.checklist[item.key];
-                  return (
-                    <label
-                      key={item.key}
-                      className="flex cursor-pointer select-none items-start gap-2.5 rounded-lg px-1.5 py-1 transition hover:bg-page"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={tick?.done ?? false}
-                        disabled={busy || meta == null}
-                        onChange={(e) =>
-                          void postMeta({ checklist: { key: item.key, done: e.target.checked } })
-                        }
-                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-line accent-[#E31F36]"
-                      />
-                      <span className="min-w-0 text-[12.5px] leading-5">
-                        <span className={tick?.done ? "text-muted line-through" : ""}>
-                          {item.label}
-                        </span>
-                        {tick?.done ? (
-                          <span className="ml-1.5 whitespace-nowrap text-[10px] text-muted">
-                            {tick.by.split(" ")[0]} · {fmtDate(tick.at)}
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+            {/* Fills whatever the numbers and the photo leave, and collapses
+                to nothing when they leave nothing — min-h-0 on a flex child is
+                what lets an image shrink instead of forcing a scrollbar. */}
+            <div className="mt-auto hidden min-h-0 flex-1 items-end justify-center pt-2 lg:flex">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/illustrations/notioly/checking-the-calendar.svg"
+                alt=""
+                aria-hidden
+                className="max-h-full w-auto max-w-[85%] object-contain opacity-60"
+              />
             </div>
           </div>
 
-          {/* -- progression, then who the deal belongs to -- */}
-          <div className="min-h-0 space-y-4 lg:col-span-3 lg:overflow-y-auto lg:pr-1">
-            <div className="card card-flat p-5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+          {/* -- progression, then who the deal belongs to --
+               Back to 4 columns wide: at 3 the stage labels and the hover
+               "Move here" were fighting over the same 290px.
+
+               A flex column where Progression takes the slack and the two
+               small cards below it don't. Opening the tenant fold therefore
+               costs Progression height rather than pushing the panel into a
+               scrollbar — its own list scrolls if it has to, which is a much
+               smaller thing to scroll than the whole file. */}
+          <div className="flex min-h-0 flex-col gap-4 lg:col-span-4">
+            <div className="card card-flat flex min-h-0 flex-1 flex-col p-5">
+              <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Progression
               </h3>
-              <ol className="mt-4">
+              <ol className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
                 {PORTAL_STAGES.map((s, i) => {
                   const state = cancelled
                     ? "off"
@@ -1570,7 +1549,7 @@ function DealWorkspace({
 
             {/* Tenant details fold away. They matter when she is contacting
                 someone and are noise the rest of the time. */}
-            <details className="card card-flat group p-5">
+            <details className="card card-flat group shrink-0 p-5">
               <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted marker:content-none">
                 <span className="flex-1">
                   {deal.app.tenants.length === 1
@@ -1624,7 +1603,7 @@ function DealWorkspace({
               </div>
             </details>
 
-            <div className="card card-flat p-5">
+            <div className="card card-flat shrink-0 p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Agent
               </h3>
@@ -1653,6 +1632,59 @@ function DealWorkspace({
             />
           </div>
         </div>
+
+        {/* ---- the checklist, across the foot ----
+             It was crammed two-up into a narrow column. Nine ticks laid out
+             across the full width of the panel is one strip about as tall as a
+             single card, and it reads as what it is: the run of things that
+             have to happen, in order, left to right.
+
+             flex-wrap rather than nine fixed columns — nine equal tracks at
+             this width would put "Agreement signed by all parties" on three
+             lines while "Deposit registered" sat on one. Flowing means the
+             long labels take the room they need and the strip finds its own
+             height, which is one line on a wide window and two on a laptop. */}
+        <div className="card card-flat shrink-0 px-5 py-3.5">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+            <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Pre-tenancy checklist
+              <span className="ml-2 font-normal normal-case">
+                {checklistDone}/{CHECKLIST_ITEMS.length}
+              </span>
+            </h3>
+            {CHECKLIST_ITEMS.map((item) => {
+              const tick = meta?.checklist[item.key];
+              return (
+                <label
+                  key={item.key}
+                  title={
+                    tick?.done ? `${tick.by} · ${fmtDate(tick.at)}` : "Not done yet"
+                  }
+                  className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-1 py-0.5 transition hover:bg-page"
+                >
+                  <input
+                    type="checkbox"
+                    checked={tick?.done ?? false}
+                    disabled={busy || meta == null}
+                    onChange={(e) =>
+                      void postMeta({ checklist: { key: item.key, done: e.target.checked } })
+                    }
+                    className="h-4 w-4 shrink-0 rounded border-line accent-[#E31F36]"
+                  />
+                  {/* Who ticked it and when moves to the tooltip. Inline, it
+                      doubled the width of every completed item and made the
+                      strip jump about as boxes were ticked. */}
+                  <span
+                    className={`text-[12.5px] leading-5 ${tick?.done ? "text-muted line-through" : ""}`}
+                  >
+                    {item.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
       </div>
     </div>
   );
