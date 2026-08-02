@@ -17,6 +17,7 @@ import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import { NotesThread } from "@/components/DealNotes";
+import DoodleIcon from "@/components/DoodleIcon";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import { formatGBP } from "@/lib/format";
@@ -99,26 +100,25 @@ function stageVisual(key: string): StageVisual {
 }
 
 // One simple stroke icon per stage. `d` paths are drawn inside a 24-box.
-const STAGE_ICON_PATH: Record<string, string> = {
-  deal_started: "M9 12h6M9 16h6M9 8h2M7 3h7l5 5v11a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5",
-  holding_fee: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
-  referencing: "M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3zM9 12l2 2 4-4",
-  plc: "M9 3h6a1 1 0 0 1 1 1v1h1a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1V4a1 1 0 0 1 1-1zM9 5h6M9.5 13l2 2 3.5-4",
-  deposit: "M12 3a4 4 0 0 0-4 4v3H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2V7a4 4 0 0 0-4-4zM10 10V7a2 2 0 0 1 4 0v3M12 14v3",
-  tenancy_agreement: "M16 3l5 5-11 11H5v-5L16 3zM13 6l5 5",
-  rent_payment: "M3 7h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM2 11h20M6 15h3",
-  move_day: "M14 3a4 4 0 0 1 0 8 4 4 0 0 1-3.9-3H8v2H6v2H3v-3l7.1-7.1A4 4 0 0 1 14 3zM15 6.5h.01",
-  cancelled: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 9l6 6M15 9l-6 6",
-  all: "M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z",
-  slipped: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8v5M12 16h.01",
+
+/** Which doodle stands for each stage. Same hand-drawn pack the rest of the
+ *  portal uses, so the board stops looking like a different product. */
+const STAGE_DOODLE: Record<string, string> = {
+  deal_started: "rocket",
+  holding_fee: "coin",
+  referencing: "search",
+  plc: "shield",
+  deposit: "bank",
+  tenancy_agreement: "file-contract",
+  rent_payment: "wallet",
+  move_day: "key",
+  slipped: "clock",
+  all: "grid",
+  cancelled: "cross",
 };
 
-function StageIcon({ stageKey, className = "h-4 w-4" }: { stageKey: string; className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-      <path d={STAGE_ICON_PATH[stageKey] ?? STAGE_ICON_PATH.deal_started} />
-    </svg>
-  );
+function StageIcon({ stageKey, size = 16 }: { stageKey: string; size?: number; className?: string }) {
+  return <DoodleIcon name={STAGE_DOODLE[stageKey] ?? "rocket"} size={size} />;
 }
 
 /* --------------------------- movement detection --------------------------- */
@@ -624,8 +624,10 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           </div>
         </section>
 
-        {/* ---- stage nav: the 8 stages on one row; Slipped/All/Cancelled
-             tucked behind a three-dot menu at the end (no scroll bar) ---- */}
+        {/* ---- the board: stage rail down the left, deals to the right ---- */}
+        <div className="mt-6 flex min-h-0 flex-1 gap-5">
+        {/* ---- stage rail: the 8 stages stacked; Slipped/All/Cancelled
+             tucked behind a three-dot menu at the foot ---- */}
         {deals && view === "tiles" ? (
           (() => {
             const STAGE_KEYS = new Set(PORTAL_STAGES.map((s) => s.key));
@@ -646,27 +648,30 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                 <button
                   type="button"
                   onClick={() => setTab(t.key)}
-                  className={`relative flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2 py-3 transition ${
-                    activeT ? "text-ink" : "text-muted hover:text-ink"
+                  className={`relative flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
+                    activeT
+                      ? "border-black/25 bg-card text-ink"
+                      : "border-transparent text-muted hover:border-line hover:text-ink"
                   }`}
                 >
                   <span className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
-                    <StageIcon stageKey={t.key} className="h-3.5 w-3.5" />
+                    <StageIcon stageKey={t.key} size={15} />
                     <MovementDot kind={t.movement} className="absolute -right-0.5 -top-0.5 ring-2 ring-white" />
                   </span>
-                  <span className={`truncate text-[12.5px] font-semibold ${compact ? "" : "hidden xl:inline"}`}>{t.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{t.label}</span>
                   <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${activeT ? "bg-ink/10 text-ink" : "bg-page text-muted"}`}>
                     {t.deals.length}
                   </span>
-                  {activeT ? (
-                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full" style={{ background: BRAND.accent }} />
-                  ) : null}
+
                 </button>
               );
             };
 
             return (
-              <section className="enter enter-up mt-6 flex items-stretch border-b border-line" style={enterAt(80)}>
+              <section
+                className="enter enter-up w-[212px] shrink-0 space-y-1 overflow-y-auto pr-1"
+                style={enterAt(80)}
+              >
                 {stageTabs.map((t) => (
                   <TabButton key={t.key} t={t} />
                 ))}
@@ -676,7 +681,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                 {activeExtra ? <TabButton t={activeExtra} compact /> : null}
 
                 {/* three-dot "more views" menu */}
-                <div className="relative flex shrink-0 items-center">
+                <div className="relative flex shrink-0 items-center pt-1">
                   <button
                     type="button"
                     onClick={() => setMoreOpen((v) => !v)}
@@ -694,7 +699,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                   {moreOpen ? (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
-                      <div className="menu-pop absolute right-0 top-full z-50 mt-1 w-52 rounded-xl border border-line bg-card p-1.5 shadow-lg">
+                      <div className="menu-pop absolute left-0 top-full z-50 mt-1 w-52 rounded-xl border border-line bg-card p-1.5 shadow-lg">
                         {[
                           tabs.find((t) => t.key === "all"),
                           tabs.find((t) => t.key === "slipped"),
@@ -758,7 +763,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
 
         {/* ---- tile grid: up to five across ---- */}
         {view === "tiles" ? (
-          <section className="enter enter-up mt-5 min-h-0 flex-1 overflow-y-auto pb-8" style={enterAt(120)}>
+          <section className="enter enter-up min-h-0 min-w-0 flex-1 overflow-y-auto pb-8" style={enterAt(120)}>
             {deals == null && !error ? (
               <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {Array.from({ length: 10 }).map((_, i) => (
@@ -779,7 +784,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           </section>
         ) : (
           /* ---- kanban: a column per stage ---- */
-          <section className="enter enter-up mt-5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-4" style={enterAt(120)}>
+          <section className="enter enter-up min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden pb-4" style={enterAt(120)}>
             <div className="flex h-full gap-3">
               {[...PORTAL_STAGES.map((s) => s.key), ...(showCancelled ? ["cancelled"] : [])].map((key) => {
                 const col = tabs.find((t) => t.key === key);
@@ -789,7 +794,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                   <div key={key} className="flex w-64 shrink-0 flex-col rounded-2xl bg-black/[0.02]">
                     <div className="flex items-center gap-2 px-3 pb-2 pt-3">
                       <span className={`flex h-6 w-6 items-center justify-center rounded-lg ${v.iconBg} ${v.iconText}`}>
-                        <StageIcon stageKey={key} className="h-3 w-3" />
+                        <StageIcon stageKey={key} size={13} />
                       </span>
                       <span className="text-[12px] font-semibold text-ink">{stageLabel(key)}</span>
                       <span className="ml-auto flex items-center gap-1.5">
@@ -811,6 +816,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
             </div>
           </section>
         )}
+        </div>
       </div>
 
       {open ? (
