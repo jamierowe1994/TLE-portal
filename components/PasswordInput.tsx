@@ -12,6 +12,7 @@ export default function PasswordInput({
   autoFocus = false,
   disabled = false,
   onEnter,
+  underline = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -20,6 +21,9 @@ export default function PasswordInput({
   autoFocus?: boolean;
   disabled?: boolean;
   onEnter?: () => void;
+  /** A ruled line to type on instead of a box — for surfaces where a bordered
+   *  field would need its own fill to read against the page colour. */
+  underline?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -36,7 +40,11 @@ export default function PasswordInput({
         autoFocus={autoFocus}
         disabled={disabled}
         autoComplete="current-password"
-        className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 pr-11 text-sm text-ink outline-none transition focus:border-gray-400 disabled:opacity-60"
+        className={
+          underline
+            ? "w-full border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2.5 pr-11 text-sm text-ink outline-none transition focus:border-ink/70 disabled:opacity-60"
+            : "w-full rounded-xl border border-line bg-white px-3.5 py-2.5 pr-11 text-sm text-ink outline-none transition focus:border-gray-400 disabled:opacity-60"
+        }
       />
       <button
         type="button"

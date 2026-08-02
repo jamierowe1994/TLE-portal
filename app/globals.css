@@ -54,45 +54,43 @@
    the right thing without touching anything.
 --------------------------------------------------------------------------- */
 
-/* Everything that isn't the partner dashboard: the website face throughout,
-   Inter for figures. */
+/* Everything that isn't the partner dashboard: the website face throughout. */
 :root {
   --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
-  --font-figures: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-figures: var(--font-montserrat), system-ui, -apple-system, sans-serif;
 }
 
-/* The partner front end: handwritten titles, Inter for numbers and body copy. */
+/* The partner front end, as designed: handwritten headings AND figures. */
 .type-agent {
-  --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
   --font-heading: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
-  --font-figures: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-figures: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
   /* The var has to be re-resolved HERE. `body` computes font-family once, and
      children inherit that computed value — redefining the variable further down
      the tree changes nothing unless the same element also uses it. */
   font-family: var(--font-body);
 }
 
-/* The corner switcher, for trying something else on. Scoped INSIDE the surface
-   so it outranks the defaults above; a rule on :root alone would lose to
-   .type-agent and the control would silently do nothing on the dashboard. */
-:root[data-font="hand"] .type-agent,
-:root[data-font="hand"] .type-admin {
-  --font-heading: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+/* The corner switcher, and it reaches the partner front end ONLY.
+   half    → handwritten titles, everything else on the website face
+   branded → the website face throughout
+   Scoped inside .type-agent so it outranks the block above; a rule on :root
+   alone would lose to .type-agent and the control would silently do nothing. */
+:root[data-font="half"] .type-agent {
+  --font-figures: var(--font-montserrat), system-ui, -apple-system, sans-serif;
 }
-:root[data-font="montserrat"] .type-agent,
-:root[data-font="montserrat"] .type-admin {
-  --font-body: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+:root[data-font="branded"] .type-agent {
   --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
-}
-:root[data-font="inter"] .type-agent,
-:root[data-font="inter"] .type-admin {
-  --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
-  --font-heading: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-figures: var(--font-montserrat), system-ui, -apple-system, sans-serif;
 }
 
-/* Admin and pre-tenancy carry the class only so the switcher can reach them —
-   their defaults are already the :root ones. */
+/* Susan's admin centre and Kirstie's pre-tenancy board: Montserrat, always,
+   whatever the switcher is set to. Pinned here rather than left to inherit the
+   :root defaults, so a future scheme added above can't reach in and change a
+   surface people read all day. */
 .type-admin {
+  --font-body: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+  --font-figures: var(--font-montserrat), system-ui, -apple-system, sans-serif;
   font-family: var(--font-body);
 }
 

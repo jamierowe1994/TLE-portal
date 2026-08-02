@@ -74,12 +74,14 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-page px-4 py-10">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-line bg-card shadow-xl md:grid-cols-2">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-page px-4 py-10">
+      {/* One surface, page colour throughout — the card is a frame around the
+          two halves rather than a white panel sitting on the page. */}
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-line bg-page shadow-xl md:grid-cols-2">
         {/* ---- the picture half ---- */}
-        <div className="relative hidden items-center justify-center bg-page p-10 md:flex">
+        <div className="relative hidden items-center justify-center p-6 md:flex">
           {/* Fixed height so the card doesn't resize when the art lands. */}
-          <div className="flex h-[380px] w-full items-center justify-center">
+          <div className="flex h-[440px] w-full items-center justify-center">
             {art ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -97,22 +99,26 @@ function LoginForm() {
           <h1 className="written text-[34px] leading-none text-ink">TLE OS</h1>
           <p className="mt-3 text-sm text-muted">Sign in with your work email.</p>
 
+          {/* Ruled lines rather than boxes, the same treatment as the note and
+              to-do fields elsewhere in the portal. On a page-coloured card a
+              bordered box would need its own fill to read at all. */}
           <input
             autoFocus={!prefilled}
             type="email"
-            className="mt-8 w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm text-ink outline-none transition focus:border-black/30"
+            className="mt-8 w-full border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-2.5 text-sm text-ink outline-none transition focus:border-ink/70"
             placeholder={`you@${BRAND.domains[0]}`}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && signIn()}
           />
-          <div className="mt-3">
+          <div className="mt-4">
             <PasswordInput
               autoFocus={!!prefilled}
               placeholder="Password"
               value={password}
               onChange={setPassword}
               onEnter={signIn}
+              underline
             />
           </div>
           <label className="mt-4 flex cursor-pointer select-none items-center gap-2.5 text-sm text-muted">
@@ -140,6 +146,16 @@ function LoginForm() {
           </p>
         </div>
       </div>
+
+      {/* The way into the admin centre. It was reachable only by typing the
+          URL, which is fine for two people who know it and no use to anyone
+          else. Quiet on purpose — it isn't where most people are going. */}
+      <Link
+        href="/admin"
+        className="mt-8 text-[13px] text-muted underline-offset-4 transition hover:text-ink hover:underline"
+      >
+        Admin sign-in
+      </Link>
     </main>
   );
 }

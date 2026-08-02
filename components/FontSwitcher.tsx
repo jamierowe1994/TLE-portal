@@ -6,6 +6,11 @@ import { useEffect, useRef, useState } from "react";
 // data-font on <html>; the schemes themselves live in globals.css. The
 // choice is remembered per browser, so it survives a reload while everyone
 // makes their mind up.
+//
+// It reaches the PARTNER FRONT END only. Susan's admin centre and Kirstie's
+// pre-tenancy board are pinned to Montserrat whatever this is set to, so the
+// control isn't mounted there — a button that visibly does nothing is worse
+// than no button.
 
 const KEY = "tle-font-scheme";
 
@@ -13,26 +18,20 @@ const OPTIONS = [
   {
     key: "default",
     label: "As designed",
-    note: "Handwritten titles here, plain in admin",
+    note: "Handwritten titles and figures",
     sample: "var(--font-shantell)",
   },
   {
-    key: "hand",
-    label: "Handwritten titles",
-    note: "The written face on every heading",
+    key: "half",
+    label: "Half",
+    note: "Handwritten titles, the rest Montserrat",
     sample: "var(--font-shantell)",
   },
   {
-    key: "montserrat",
-    label: "Montserrat",
-    note: "The website face throughout",
+    key: "branded",
+    label: "Branded",
+    note: "Montserrat throughout",
     sample: "var(--font-montserrat)",
-  },
-  {
-    key: "inter",
-    label: "Inter",
-    note: "One clean face throughout",
-    sample: "var(--font-inter)",
   },
 ] as const;
 

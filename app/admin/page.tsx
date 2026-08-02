@@ -10,7 +10,6 @@ import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import { PresentProvider, PresentButton, usePresent } from "@/components/PresentMode";
-import FontSwitcher from "@/components/FontSwitcher";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import type { UserProfile } from "@/lib/types";
@@ -555,9 +554,6 @@ function AdminShell({
           </section>
         </div>
       </main>
-      {/* Type switcher, same control the partner side has. */}
-      <FontSwitcher />
-
     </div>
   );
 }
