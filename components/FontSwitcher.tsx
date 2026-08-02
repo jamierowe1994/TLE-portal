@@ -11,20 +11,26 @@ const KEY = "tle-font-scheme";
 
 const OPTIONS = [
   {
-    key: "full",
-    label: "Handwritten",
-    note: "Headings, numbers and the menu",
+    key: "default",
+    label: "As designed",
+    note: "Handwritten titles here, plain in admin",
     sample: "var(--font-shantell)",
   },
   {
-    key: "half",
-    label: "Half",
-    note: "Only the numbers stay handwritten",
+    key: "hand",
+    label: "Handwritten titles",
+    note: "The written face on every heading",
+    sample: "var(--font-shantell)",
+  },
+  {
+    key: "montserrat",
+    label: "Montserrat",
+    note: "The website face throughout",
     sample: "var(--font-montserrat)",
   },
   {
-    key: "brand",
-    label: "Brand font",
+    key: "inter",
+    label: "Inter",
     note: "One clean face throughout",
     sample: "var(--font-inter)",
   },
@@ -35,12 +41,15 @@ type Scheme = (typeof OPTIONS)[number]["key"];
 /** Applied on mount too, so a reload keeps whatever was being trialled. */
 function apply(scheme: Scheme) {
   const root = document.documentElement;
-  if (scheme === "full") root.removeAttribute("data-font");
+  // "default" means no override at all, so each surface keeps the type it was
+  // designed with — handwritten titles on the partner front end, the website
+  // face in admin and pre-tenancy.
+  if (scheme === "default") root.removeAttribute("data-font");
   else root.setAttribute("data-font", scheme);
 }
 
 export default function FontSwitcher() {
-  const [scheme, setScheme] = useState<Scheme>("full");
+  const [scheme, setScheme] = useState<Scheme>("default");
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);

@@ -254,7 +254,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 
   return (
-    <div className="relative min-h-screen" style={{ background: "var(--page)" }}>
+    <div className="type-agent relative min-h-screen" style={{ background: "var(--page)" }}>
       {/* ── Desktop sidebar — grey on grey, broken up by darker hairlines and
           capped off by its own right-hand line ── */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r border-ink/40 lg:flex">

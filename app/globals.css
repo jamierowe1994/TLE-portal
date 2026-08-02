@@ -43,19 +43,57 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Type schemes — the switcher in the corner sets data-font on <html>.
-   "full" is the default and needs no block.
-     half  → headings and nav go plain; only the figures stay handwritten.
-     brand → one face throughout.
+   Type, by surface.
+
+   The handwritten face belongs to the partner front end and nowhere else. The
+   admin centre and the pre-tenancy board are working tools that people read all
+   day, so they get the plain website face, with figures in Inter because that
+   is what a column of numbers wants.
+
+   Defaults live here rather than in the switcher, so a first-time visitor sees
+   the right thing without touching anything.
 --------------------------------------------------------------------------- */
-:root[data-font="half"] {
+
+/* Everything that isn't the partner dashboard: the website face throughout,
+   Inter for figures. */
+:root {
   --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
-  --font-figures: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+  --font-figures: var(--font-inter), system-ui, -apple-system, sans-serif;
 }
-:root[data-font="brand"] {
+
+/* The partner front end: handwritten titles, Inter for numbers and body copy. */
+.type-agent {
+  --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+  --font-figures: var(--font-inter), system-ui, -apple-system, sans-serif;
+  /* The var has to be re-resolved HERE. `body` computes font-family once, and
+     children inherit that computed value — redefining the variable further down
+     the tree changes nothing unless the same element also uses it. */
+  font-family: var(--font-body);
+}
+
+/* The corner switcher, for trying something else on. Scoped INSIDE the surface
+   so it outranks the defaults above; a rule on :root alone would lose to
+   .type-agent and the control would silently do nothing on the dashboard. */
+:root[data-font="hand"] .type-agent,
+:root[data-font="hand"] .type-admin {
+  --font-heading: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+}
+:root[data-font="montserrat"] .type-agent,
+:root[data-font="montserrat"] .type-admin {
+  --font-body: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-montserrat), system-ui, -apple-system, sans-serif;
+}
+:root[data-font="inter"] .type-agent,
+:root[data-font="inter"] .type-admin {
   --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
   --font-heading: var(--font-inter), system-ui, -apple-system, sans-serif;
-  --font-figures: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
+/* Admin and pre-tenancy carry the class only so the switcher can reach them —
+   their defaults are already the :root ones. */
+.type-admin {
+  font-family: var(--font-body);
 }
 
 body {

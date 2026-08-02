@@ -17,6 +17,7 @@ import BrandMark from "@/components/BrandMark";
 import PasswordInput from "@/components/PasswordInput";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import { NotesThread } from "@/components/DealNotes";
+import FontSwitcher from "@/components/FontSwitcher";
 import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import { formatGBP } from "@/lib/format";
@@ -507,7 +508,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
   const open = openId ? (deals ?? []).find((d) => d.app.id === openId) ?? null : null;
 
   return (
-    <main className="flex min-h-screen flex-col bg-page">
+    <main className="type-admin flex min-h-screen flex-col bg-page">
       {/* ---- header ---- */}
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 backdrop-blur">
         <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
@@ -840,6 +841,9 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           }}
         />
       ) : null}
+      {/* Type switcher, same control the partner side has. */}
+      <FontSwitcher />
+
     </main>
   );
 }
