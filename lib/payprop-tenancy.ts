@@ -1,5 +1,5 @@
 import "server-only";
-import { payPropAccounts, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
+import { payPropAccounts, payPropGetAll, payPropRaw, type PayPropAccountId } from "@/lib/payprop";
 import { propertyKey } from "@/lib/payprop-portfolio";
 import { readCache, writeCache } from "@/lib/integration-cache";
 
@@ -43,6 +43,22 @@ export interface RlpEntry {
   disabledOnly: boolean;
 }
 
+export interface SchemeDetection {
+  /** A DEPOSIT_SCHEMES value, derived from WHO the deposit money is paid to —
+   *  "Safe Deposits Scotland" and "TDS Custodial" exist as PayProp
+   *  beneficiaries, so a payment instruction to one names the scheme. */
+  scheme: string;
+  /** The beneficiary string it came from, verbatim. */
+  evidence: string;
+}
+
+export interface HoldingInvoice {
+  /** Gross amount of the "Holding deposit" invoice — the category exists in
+   *  PayProp's own vocabulary (Scotland list, 2 Aug 2026). */
+  amount: number;
+  fromDate: string | null;
+}
+
 export interface TenancyRegister {
   /** Keyed by PayProp property id. */
   tenancyByPropertyId: Record<string, PropertyTenancy>;
@@ -55,6 +71,10 @@ export interface TenancyRegister {
    */
   tenancyByKey: Record<string, PropertyTenancy>;
   rlpByKey: Record<string, RlpEntry>;
+  schemeByPropertyId: Record<string, SchemeDetection>;
+  schemeByKey: Record<string, SchemeDetection>;
+  holdingByPropertyId: Record<string, HoldingInvoice>;
+  holdingByKey: Record<string, HoldingInvoice>;
   counts: {
     tenancies: number;
     withDepositId: number;
@@ -62,11 +82,13 @@ export interface TenancyRegister {
     rlpWithout: number;
     /** Properties whose instructions said BOTH things. Listed, never resolved. */
     rlpContradictory: string[];
+    /** Properties whose instructions named TWO different schemes. */
+    schemeContradictory: string[];
   };
   computedAt: string;
 }
 
-const CACHE_KEY = "payprop:tenancy-register:v1";
+const CACHE_KEY = "payprop:tenancy-register:v2";
 const TTL_MS = 60 * 60_000;
 const FAILURE_COOLDOWN_MS = 60_000;
 
@@ -78,6 +100,20 @@ let lastError: string | null = null;
 export function tenancyRegisterError(): string | null {
   return lastError;
 }
+
+/** Beneficiary-name → scheme. Order matters: insured before custodial so
+ *  "TDS Insured" doesn't fall through to the custodial default. Unmatched
+ *  names produce NOTHING — a guessable scheme is worse than an empty one.
+ *  Exported so the census probe can measure how often these actually fire. */
+export const SCHEME_PATTERNS: Array<[RegExp, string]> = [
+  [/safe\s*deposits?\s*scotland/i, "SafeDeposits Scotland"],
+  [/\btds\b.{0,12}insur/i, "TDS Insured"],
+  [/\btds\b/i, "TDS Custodial"],
+  [/\bdps\b.{0,12}insur/i, "DPS Insured"],
+  [/\bdps\b|deposit\s+protection\s+service/i, "DPS Custodial"],
+  [/my\s*deposits.{0,12}insur/i, "My Deposits Insured"],
+  [/my\s*deposits/i, "My Deposits Custodial"],
+];
 
 const RLP_PROTECTED = /protected\s+with\s+rlp/i;
 const RLP_WITHOUT = /without\s+rlp/i;
@@ -99,6 +135,11 @@ async function computeRegister(): Promise<TenancyRegister | null> {
   >();
   let tenancies = 0;
   let withDepositId = 0;
+  // Schemes accumulate per property and only resolve when exactly ONE
+  // distinct scheme was seen — two instructions naming different schemes is
+  // a contradiction to drop, not a row-order race (review find).
+  const schemeSeen = new Map<string, Map<string, string>>();
+  const holdingByPropertyId: Record<string, HoldingInvoice> = {};
 
   for (const account of accounts as PayPropAccountId[]) {
     // ---- tenancies ----
@@ -161,6 +202,29 @@ async function computeRegister(): Promise<TenancyRegister | null> {
       const nm = str(prop?.name);
       if (nm && !nameByPropertyId[pid]) nameByPropertyId[pid] = nm;
       const enabled = row.enabled !== false;
+      // Scheme detection: the deposit money's PAYEE names the scheme — but
+      // ONLY on instructions whose category is deposit-flavoured. Without the
+      // gate, "DPS Plumbing & Heating Ltd" on a maintenance instruction reads
+      // as the Deposit Protection Service (review find). Only enabled
+      // instructions count — a dead instruction is not custody.
+      if (enabled) {
+        const category = str(row.category);
+        const beneficiary = str(row.beneficiary);
+        if (
+          beneficiary &&
+          category &&
+          /deposit|custodial|safe\s*deposits|scheme/i.test(category)
+        ) {
+          for (const [re, scheme] of SCHEME_PATTERNS) {
+            if (re.test(beneficiary)) {
+              const seen = schemeSeen.get(pid) ?? new Map<string, string>();
+              if (!seen.has(scheme)) seen.set(scheme, beneficiary);
+              schemeSeen.set(pid, seen);
+              break;
+            }
+          }
+        }
+      }
       for (const field of [row.description, row.beneficiary_reference]) {
         const text = str(field);
         if (!text) continue;
@@ -175,6 +239,119 @@ async function computeRegister(): Promise<TenancyRegister | null> {
         if (hitW && e.without.length < 3) e.without.push(note);
         rlpEvidence.set(pid, e);
       }
+    }
+
+    // ---- holding-deposit invoices ----
+    // "Holding deposit" is a real invoice category in PayProp's own
+    // vocabulary (seen verbatim on the Scotland category list). Invoice rows
+    // carry category.name whether or not the key can read the category LIST,
+    // so this works on both agencies today.
+    const invoices = await payPropGetAll<Record<string, unknown>>(
+      account,
+      "export/invoices"
+    );
+    for (const inv of invoices) {
+      const cat = str((inv.category as Record<string, unknown> | undefined)?.name);
+      if (!cat || !/holding\s*deposit/i.test(cat)) continue;
+      const prop = inv.property as Record<string, unknown> | undefined;
+      // Field-name fallbacks, because PayProp shapes drift between endpoints
+      // (review find): property.id and property.name are what the probe saw
+      // on export/invoices, the flat forms are how other exports spell it.
+      const pid = str(prop?.id) ?? str(inv.property_id);
+      if (!pid) continue;
+      const nm =
+        str(prop?.name) ??
+        str((prop?.address as Record<string, unknown> | undefined)?.first_line);
+      if (nm && !nameByPropertyId[pid]) nameByPropertyId[pid] = nm;
+      const amount = Number(inv.gross_amount);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      const fromDate = str(inv.from_date);
+      const existing = holdingByPropertyId[pid];
+      // Latest invoice wins — a property re-let gets a fresh holding deposit.
+      if (!existing || (fromDate ?? "") > (existing.fromDate ?? "")) {
+        holdingByPropertyId[pid] = { amount, fromDate };
+      }
+    }
+
+    // ---- RLP from structured tags, where the key can see them ----
+    // Scotland tags properties "Experts Managed Service with RLP" / "No RLP".
+    // A tag is a deliberate act on the property — it OUTRANKS wording scraped
+    // from instruction descriptions. On the UK agency the tags endpoint is
+    // currently 403 and this whole block no-ops; free text stands there.
+    //
+    // Both walks are PAGINATED and each tag's entity list is applied
+    // all-or-nothing: a partial page-1-only read would tag some identically-
+    // tagged properties and not others, silently (review find). A property
+    // carrying BOTH tags is a contradiction to record, not a race to whoever
+    // iterates last (review find).
+    const pageItems = async (
+      path: string,
+      params: Record<string, string | number>
+    ): Promise<Array<Record<string, unknown>> | null> => {
+      const out: Array<Record<string, unknown>> = [];
+      for (let page = 1; page <= 40; page++) {
+        const res = await payPropRaw(account, path, { ...params, rows: 25, page });
+        if (!res.ok) return page === 1 ? null : null; // partial = refuse
+        const body = res.json as Record<string, unknown>;
+        const items = Array.isArray(body?.items)
+          ? (body.items as Array<Record<string, unknown>>)
+          : Array.isArray(res.json)
+            ? (res.json as Array<Record<string, unknown>>)
+            : [];
+        out.push(...items);
+        const totalPages = Number(
+          (body?.pagination as Record<string, unknown> | undefined)?.total_pages ?? 1
+        );
+        if (!Number.isFinite(totalPages) || page >= totalPages) return out;
+      }
+      return null; // hit the ceiling with more to go — refuse, never partial
+    };
+
+    const tagRows = await pageItems("tags", {});
+    if (tagRows) {
+      const tagVerdicts = new Map<string, { withTag: string[]; noTag: string[] }>();
+      for (const tag of tagRows) {
+        const tagName = str(tag.name) ?? "";
+        const isWith = /with\s+rlp/i.test(tagName);
+        const isNo = /no\s+rlp|without\s+rlp/i.test(tagName);
+        if (!isWith && !isNo) continue;
+        const tagId = str(tag.id);
+        if (!tagId) continue;
+        const entRows = await pageItems(`tags/${tagId}/entities`, {
+          entity_type: "property",
+        });
+        if (!entRows) continue; // couldn't read the WHOLE list — skip this tag
+        for (const ent of entRows) {
+          const pid = str(ent.id);
+          if (!pid) continue;
+          const nm = str(ent.name);
+          if (nm && !nameByPropertyId[pid]) nameByPropertyId[pid] = nm;
+          const v = tagVerdicts.get(pid) ?? { withTag: [], noTag: [] };
+          if (isWith) v.withTag.push(`tag: ${tagName}`);
+          if (isNo) v.noTag.push(`tag: ${tagName}`);
+          tagVerdicts.set(pid, v);
+        }
+      }
+      for (const [pid, v] of tagVerdicts) {
+        // Both tags on one property → write a both-sided entry so the
+        // existing contradiction handling drops it and lists it.
+        rlpEvidence.set(pid, {
+          protected: v.withTag,
+          without: v.noTag,
+          enabledHit: true,
+        });
+      }
+    }
+  }
+
+  const schemeByPropertyId: Record<string, SchemeDetection> = {};
+  const schemeContradictory: string[] = [];
+  for (const [pid, seen] of schemeSeen) {
+    if (seen.size === 1) {
+      const [scheme, evidence] = [...seen.entries()][0];
+      schemeByPropertyId[pid] = { scheme, evidence };
+    } else {
+      schemeContradictory.push(pid);
     }
   }
 
@@ -245,12 +422,17 @@ async function computeRegister(): Promise<TenancyRegister | null> {
     rlpByPropertyId,
     tenancyByKey: project(tenancyByPropertyId),
     rlpByKey: project(rlpByPropertyId),
+    schemeByPropertyId,
+    schemeByKey: project(schemeByPropertyId),
+    holdingByPropertyId,
+    holdingByKey: project(holdingByPropertyId),
     counts: {
       tenancies,
       withDepositId,
       rlpProtected: protectedCount,
       rlpWithout: withoutCount,
       rlpContradictory: contradictory,
+      schemeContradictory,
     },
     computedAt: new Date().toISOString(),
   };

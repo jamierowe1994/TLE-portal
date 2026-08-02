@@ -65,6 +65,10 @@ interface BoardDeal {
   tobStatus?: { status: string; sentAt: string | null; completedAt: string | null } | null;
   /** Claim-vs-record verification checks, computed server-side. */
   flags?: Array<{ kind: string; label: string }>;
+  /** Scheme detected from the deposit's PayProp payee — a suggestion only. */
+  schemeSuggestion?: { scheme: string; evidence: string } | null;
+  /** "Holding deposit" invoice in PayProp for this property. */
+  holdingInvoice?: { amount: number; fromDate: string | null } | null;
 }
 
 interface BoardSummary {
@@ -1715,6 +1719,33 @@ function DealWorkspace({
                 {p?.depositReplacement && !meta?.depositScheme ? (
                   <p className="mt-1 text-[11px] text-muted">
                     Propoly&apos;s clauses say Flatfair — no cash deposit to register.
+                  </p>
+                ) : null}
+                {/* The auto-detected scheme, from who PayProp pays the deposit
+                    to. A suggestion Kirstie confirms with one click — never
+                    written on its own, because the payee join is address-
+                    matched and she is the register. */}
+                {!meta?.depositScheme && deal.schemeSuggestion ? (
+                  <p className="mt-1 flex items-center gap-2 text-[11px] text-muted">
+                    <span className="min-w-0 truncate">
+                      PayProp pays this deposit to {deal.schemeSuggestion.evidence}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy || meta == null}
+                      onClick={() =>
+                        void postMeta({ depositScheme: deal.schemeSuggestion!.scheme })
+                      }
+                      className="shrink-0 font-semibold text-ink underline decoration-dotted underline-offset-2 transition hover:text-accent disabled:opacity-50"
+                    >
+                      Record as {deal.schemeSuggestion.scheme}
+                    </button>
+                  </p>
+                ) : null}
+                {deal.holdingInvoice ? (
+                  <p className="mt-1 text-[11px] text-muted">
+                    Holding deposit invoiced in PayProp: {formatGBP(deal.holdingInvoice.amount)}
+                    {deal.holdingInvoice.fromDate ? ` (${fmtDate(deal.holdingInvoice.fromDate)})` : ""}
                   </p>
                 ) : null}
               </div>

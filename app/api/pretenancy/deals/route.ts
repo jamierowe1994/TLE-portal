@@ -60,6 +60,11 @@ export interface PreTenancyDeal {
    * underlying data and the flag clears itself on the next load.
    */
   flags: Array<{ kind: string; label: string }>;
+  /** Scheme detected from WHO the deposit money is paid to in PayProp — a
+   *  suggestion for the register, never written without Kirstie confirming. */
+  schemeSuggestion: { scheme: string; evidence: string } | null;
+  /** A "Holding deposit" invoice PayProp holds for this property. */
+  holdingInvoice: { amount: number; fromDate: string | null } | null;
 }
 
 export async function GET(req: NextRequest) {
@@ -148,6 +153,21 @@ export async function GET(req: NextRequest) {
           86_400_000
       ) <= 60;
     const tenancyHit = withinWindow ? tenancyRaw : undefined;
+    const schemeHit = key ? register?.schemeByKey[key] : undefined;
+    // Same discipline as the tenancy join: a holding invoice from the LAST
+    // let must not render on this deal. Asymmetric window because holding
+    // deposits are invoiced before move-in: from 90 days before to 30 after.
+    const holdingRaw = key ? register?.holdingByKey[key] : undefined;
+    const holdingDelta =
+      holdingRaw?.fromDate != null && d.app.startDate != null
+        ? (new Date(holdingRaw.fromDate).getTime() -
+            new Date(d.app.startDate).getTime()) /
+          86_400_000
+        : null;
+    const holdingHit =
+      holdingDelta != null && holdingDelta >= -90 && holdingDelta <= 30
+        ? holdingRaw
+        : undefined;
     // ToB rides the CONFIDENT matcher, not the photo one — the photo match
     // deliberately falls back to "same postcode, best guess", which is fine
     // for a picture and wrong for a signing status (review find).
@@ -225,6 +245,10 @@ export async function GET(req: NextRequest) {
         : null,
       tobStatus: (confident?.listingId && tob?.[confident.listingId]) || null,
       flags,
+      // A Flatfair deal has no cash deposit — suggesting a scheme under the
+      // "no deposit to register" note was a contradiction on screen (review).
+      schemeSuggestion: isFlatfair ? null : (schemeHit ?? null),
+      holdingInvoice: holdingHit ?? null,
       app: match
         ? { ...d.app, image: match.image, images: match.images, listingId: match.listingId }
         : d.app,

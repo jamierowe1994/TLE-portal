@@ -8,6 +8,7 @@ import {
   payPropRaw,
   type PayPropAccountId,
 } from "@/lib/payprop";
+import { SCHEME_PATTERNS } from "@/lib/payprop-tenancy";
 
 // The kitchen-sink PayProp probe, built for one question: what does this API
 // hold that could serve as a source of truth for compliance, deposits, or
@@ -284,6 +285,35 @@ async function runCensus(accounts: PayPropAccountId[]) {
         protectedList: rlpProtected.slice(0, 300),
         withoutList: rlpWithout.slice(0, 300),
       },
+      // How often would scheme auto-detection actually fire? Counted with
+      // and without the category gate, so "we saw it" and "we can build on
+      // it" stay distinguishable (review find: no evidence yet that deposit
+      // instructions carry scheme beneficiaries at all).
+      schemeDetection: (() => {
+        let gated = 0;
+        let ungated = 0;
+        const examples: Array<{ beneficiary: string; category: string; scheme: string }> = [];
+        for (const row of pays.rows) {
+          if (row.enabled === false) continue;
+          const beneficiary = String(row.beneficiary ?? "");
+          const category = String(row.category ?? "");
+          const hit = SCHEME_PATTERNS.find(([re]) => re.test(beneficiary));
+          if (!hit) continue;
+          ungated++;
+          if (/deposit|custodial|safe\s*deposits|scheme/i.test(category)) {
+            gated++;
+            if (examples.length < 10) {
+              examples.push({ beneficiary, category, scheme: hit[1] });
+            }
+          }
+        }
+        return {
+          matchesWithCategoryGate: gated,
+          matchesIgnoringCategory: ungated,
+          note: "gated is what production uses; a large ungated-minus-gated difference is the false positives the gate exists to stop",
+          examples,
+        };
+      })(),
       tenancies: {
         tenantRows: tens.rows.length,
         tenancies,

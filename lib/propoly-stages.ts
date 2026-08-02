@@ -151,6 +151,9 @@ export const DEPOSIT_SCHEMES: string[] = [
   "DPS Insured",
   "My Deposits Custodial",
   "My Deposits Insured",
+  // Scotland's scheme — it appears as an actual PayProp beneficiary
+  // ("Safe Deposits Scotland"), which is how auto-detection finds it.
+  "SafeDeposits Scotland",
   "Held by landlord",
   "Flatfair (no cash deposit)",
 ];
