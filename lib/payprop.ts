@@ -488,6 +488,84 @@ export interface PayPropPage<T> {
  * One authenticated GET against a single account. Returns null on any failure
  * (never throws) so callers can fall back rather than blow up a page.
  */
+/**
+ * A raw GET that reports what actually happened.
+ *
+ * payPropGet collapses 404, 403, a rate-limit lockout and a genuinely empty
+ * result all to `null`, which is right for production — every caller wants
+ * "no data, carry on" — and useless for finding out which endpoints exist.
+ * This exists for the admin probes and nothing else.
+ *
+ * It goes through the SAME rate-limit gate as everything else. A probe that
+ * bypassed the throttle would trip the 429 lockout that live dashboards share,
+ * so a diagnostic would take the real figures down with it.
+ */
+export interface PayPropRawResponse {
+  status: number;
+  ok: boolean;
+  json: unknown;
+  /** Non-JSON bodies (HTML error pages), truncated. */
+  text: string | null;
+  error: string | null;
+}
+
+export async function payPropRaw(
+  account: PayPropAccountId,
+  path: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<PayPropRawResponse> {
+  const auth = await authHeader(account);
+  if (!auth) {
+    return { status: 0, ok: false, json: null, text: null, error: "no credentials" };
+  }
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  }
+  const url = `${base()}/${path.replace(/^\//, "")}${qs.size ? `?${qs}` : ""}`;
+
+  const out = await enqueue(async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: auth, Accept: "application/json" },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (res.status === 401) tokens.delete(account);
+      if (res.status === 429) lockOut(retryAfterMs(res.headers.get("retry-after")));
+      const body = await res.text();
+      let json: unknown = null;
+      try {
+        json = JSON.parse(body);
+      } catch {
+        /* not JSON — keep the text instead */
+      }
+      return {
+        status: res.status,
+        ok: res.ok,
+        json,
+        text: json == null ? body.slice(0, 400) : null,
+        error: res.ok ? null : `HTTP ${res.status}`,
+      };
+    } catch (e) {
+      return {
+        status: 0,
+        ok: false,
+        json: null,
+        text: null,
+        error: e instanceof Error ? e.message : "request failed",
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  return (
+    out ?? { status: 0, ok: false, json: null, text: null, error: "queue full or throttled" }
+  );
+}
+
 export async function payPropGet<T = Record<string, unknown>>(
   account: PayPropAccountId,
   path: string,
