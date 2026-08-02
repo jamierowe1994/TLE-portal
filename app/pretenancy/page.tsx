@@ -1066,6 +1066,9 @@ function DealWorkspace({
   const [effective, setEffective] = useState(deal.effectiveStatusKey);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // The checklist drops out of the Outstanding tile rather than living on the
+  // page. It is a thing you go and do, not a thing you read.
+  const [checklistOpen, setChecklistOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -1320,7 +1323,8 @@ function DealWorkspace({
              and the documents count from the reference need a business-wide
              REX pull and a Propoly documents GET that does not exist, so they
              are absent rather than shown empty. */}
-        <div className="grid grid-cols-2 gap-3 px-5 pt-4 sm:px-8 lg:grid-cols-4">
+        <div className="relative px-5 pt-4 sm:px-8">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {(() => {
             const days =
               deal.app.startDate != null
@@ -1344,6 +1348,9 @@ function DealWorkspace({
               value: string;
               note?: string;
               alert?: boolean;
+              /** Present = the tile is a button, not a readout. */
+              onClick?: () => void;
+              open?: boolean;
             }> = [
               {
                 icon: "calendar",
@@ -1365,6 +1372,8 @@ function DealWorkspace({
                 value: String(outstanding),
                 note: outstanding === 0 ? "All done" : `of ${CHECKLIST_ITEMS.length} steps`,
                 alert: outstanding > 0 && days != null && days <= 7,
+                onClick: () => setChecklistOpen((v) => !v),
+                open: checklistOpen,
               },
               {
                 icon: "trend-up",
@@ -1379,25 +1388,130 @@ function DealWorkspace({
                 note: fmtDate(deal.app.dateReceived) ?? undefined,
               },
             ];
-            return tiles.map((t) => (
-              <div key={t.label} className="rounded-2xl border border-line px-4 py-3">
-                <div className="flex items-center gap-2 text-muted">
-                  <DoodleIcon name={t.icon} size={15} />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide">
-                    {t.label}
-                  </span>
-                </div>
-                <p
-                  className={`mt-1.5 truncate text-[17px] font-semibold ${
-                    t.alert ? "text-accent" : "text-ink"
+            return tiles.map((t) => {
+              const body = (
+                <>
+                  <div className="flex items-center gap-2 text-muted">
+                    <DoodleIcon name={t.icon} size={15} />
+                    <span className="text-[10px] font-semibold uppercase tracking-wide">
+                      {t.label}
+                    </span>
+                    {t.onClick ? (
+                      <svg
+                        className={`ml-auto h-3.5 w-3.5 transition-transform duration-200 ${t.open ? "rotate-180" : ""}`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    ) : null}
+                  </div>
+                  <p
+                    className={`mt-1.5 truncate text-left text-[17px] font-semibold ${
+                      t.alert ? "text-accent" : "text-ink"
+                    }`}
+                  >
+                    {t.value}
+                  </p>
+                  {t.note ? (
+                    <p className="text-left text-[11px] text-muted">{t.note}</p>
+                  ) : null}
+                </>
+              );
+              if (!t.onClick) {
+                return (
+                  <div key={t.label} className="rounded-2xl border border-line px-4 py-3">
+                    {body}
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={t.label}
+                  type="button"
+                  onClick={t.onClick}
+                  aria-expanded={t.open}
+                  title="Show the pre-tenancy checklist"
+                  className={`btn-press block w-full rounded-2xl border px-4 py-3 text-left transition ${
+                    t.open ? "border-black/30" : "border-line hover:border-black/25"
                   }`}
                 >
-                  {t.value}
-                </p>
-                {t.note ? <p className="text-[11px] text-muted">{t.note}</p> : null}
-              </div>
-            ));
+                  {body}
+                </button>
+              );
+            });
           })()}
+        </div>
+
+        {/* ---- the checklist, dropped out of the Outstanding tile ----
+             It used to sit across the foot of the panel, which read as
+             somewhere to put it rather than somewhere it belonged. It hangs
+             off the tile that reports the count instead: the number tells you
+             there is work, clicking it shows you what.
+
+             Absolutely positioned, so opening it never reflows the columns
+             underneath — the panel keeps the fit it has. */}
+        {checklistOpen ? (
+          <>
+            <div className="fixed inset-0 z-20" onClick={() => setChecklistOpen(false)} />
+            <div className="menu-pop absolute inset-x-5 top-full z-30 mt-2 rounded-2xl border border-line bg-page p-4 shadow-xl sm:inset-x-8">
+              <div className="mb-3 flex items-center gap-2">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  Pre-tenancy checklist
+                </h3>
+                <span className="text-[11px] text-muted">
+                  {checklistDone}/{CHECKLIST_ITEMS.length} done
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setChecklistOpen(false)}
+                  aria-label="Close the checklist"
+                  className="ml-auto rounded-full p-1 text-muted transition hover:text-ink"
+                >
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+              <div className="grid gap-x-6 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+                {CHECKLIST_ITEMS.map((item) => {
+                  const tick = meta?.checklist[item.key];
+                  return (
+                    <label
+                      key={item.key}
+                      className="flex cursor-pointer select-none items-start gap-2.5 rounded-lg px-1.5 py-1.5 transition hover:bg-black/[0.03]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={tick?.done ?? false}
+                        disabled={busy || meta == null}
+                        onChange={(e) =>
+                          void postMeta({ checklist: { key: item.key, done: e.target.checked } })
+                        }
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-line accent-[#E31F36]"
+                      />
+                      <span className="min-w-0 text-[12.5px] leading-5">
+                        <span className={tick?.done ? "text-muted line-through" : ""}>
+                          {item.label}
+                        </span>
+                        {tick?.done ? (
+                          <span className="ml-1.5 whitespace-nowrap text-[10px] text-muted">
+                            {tick.by.split(" ")[0]} · {fmtDate(tick.at)}
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : null}
         </div>
 
         {/* ---- three working columns ---- */}
@@ -1633,57 +1747,6 @@ function DealWorkspace({
           </div>
         </div>
 
-        {/* ---- the checklist, across the foot ----
-             It was crammed two-up into a narrow column. Nine ticks laid out
-             across the full width of the panel is one strip about as tall as a
-             single card, and it reads as what it is: the run of things that
-             have to happen, in order, left to right.
-
-             flex-wrap rather than nine fixed columns — nine equal tracks at
-             this width would put "Agreement signed by all parties" on three
-             lines while "Deposit registered" sat on one. Flowing means the
-             long labels take the room they need and the strip finds its own
-             height, which is one line on a wide window and two on a laptop. */}
-        <div className="card card-flat shrink-0 px-5 py-3.5">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-            <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Pre-tenancy checklist
-              <span className="ml-2 font-normal normal-case">
-                {checklistDone}/{CHECKLIST_ITEMS.length}
-              </span>
-            </h3>
-            {CHECKLIST_ITEMS.map((item) => {
-              const tick = meta?.checklist[item.key];
-              return (
-                <label
-                  key={item.key}
-                  title={
-                    tick?.done ? `${tick.by} · ${fmtDate(tick.at)}` : "Not done yet"
-                  }
-                  className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-1 py-0.5 transition hover:bg-page"
-                >
-                  <input
-                    type="checkbox"
-                    checked={tick?.done ?? false}
-                    disabled={busy || meta == null}
-                    onChange={(e) =>
-                      void postMeta({ checklist: { key: item.key, done: e.target.checked } })
-                    }
-                    className="h-4 w-4 shrink-0 rounded border-line accent-[#E31F36]"
-                  />
-                  {/* Who ticked it and when moves to the tooltip. Inline, it
-                      doubled the width of every completed item and made the
-                      strip jump about as boxes were ticked. */}
-                  <span
-                    className={`text-[12.5px] leading-5 ${tick?.done ? "text-muted line-through" : ""}`}
-                  >
-                    {item.label}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
       </div>
       </div>
     </div>
