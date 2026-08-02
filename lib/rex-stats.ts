@@ -2244,6 +2244,82 @@ export function matchListingPhoto(
   return best ?? bucket[0];
 }
 
+/* --------------------------- contacts on a listing ------------------------ */
+
+export interface ListingContact {
+  id: string;
+  name: string;
+  /** REX's relationship label — "Landlord", "Tenant", "Listing Owner"… */
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+const contactsCache = new Map<string, { at: number; data: ListingContact[] }>();
+const CONTACTS_TTL_MS = 5 * 60_000;
+
+/**
+ * The people attached to one listing — landlord, tenant, whoever REX has
+ * related to it. Comes off `related.contact_reln_listing`, which only
+ * `Listings/read` returns (search rows do not carry it), so this is ONE call
+ * per listing and is only ever made for a drawer someone has opened.
+ *
+ * Best-effort: an empty array means "we could not read them", never "there
+ * are none" — the caller must say so.
+ */
+export async function getListingContacts(listingId: string): Promise<ListingContact[]> {
+  if (!rexConfigured() || !listingId) return [];
+  const cached = contactsCache.get(listingId);
+  if (cached && Date.now() - cached.at < CONTACTS_TTL_MS) return cached.data;
+
+  const res = await rexCall("Listings", "read", { id: listingId }).catch(() => null);
+  if (!res || !res.ok) return [];
+  const related = ((res.result as Record<string, unknown>)?.related ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const rows = Array.isArray(related.contact_reln_listing)
+    ? (related.contact_reln_listing as Array<Record<string, unknown>>)
+    : [];
+
+  const str = (v: unknown) => {
+    const t = String(v ?? "").trim();
+    return t ? t : null;
+  };
+  const out: ListingContact[] = [];
+  for (const r of rows) {
+    const contact = (r.contact ?? {}) as Record<string, unknown>;
+    const name =
+      str(contact.name) ??
+      [str(contact.first_name), str(contact.last_name)].filter(Boolean).join(" ");
+    if (!name) continue;
+    const phones = Array.isArray(contact.phone_numbers)
+      ? (contact.phone_numbers as Array<Record<string, unknown>>)
+      : [];
+    const emails = Array.isArray(contact.email_addresses)
+      ? (contact.email_addresses as Array<Record<string, unknown>>)
+      : [];
+    out.push({
+      id: String(contact.id ?? ""),
+      name,
+      role:
+        str((r.reln_type as Record<string, unknown> | undefined)?.text) ??
+        str(r.reln_type) ??
+        null,
+      email:
+        str(contact.email_address) ??
+        str(emails[0]?.email_address) ??
+        str(emails[0]?.value),
+      phone:
+        str(contact.phone_number) ??
+        str(phones[0]?.phone_number) ??
+        str(phones[0]?.value),
+    });
+  }
+  contactsCache.set(listingId, { at: Date.now(), data: out });
+  return out;
+}
+
 /* --------------------------- documents in REX ---------------------------- */
 
 /**

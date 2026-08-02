@@ -178,6 +178,176 @@ function ComplianceTile({
 
 /* -------------------------------- drawer -------------------------------- */
 
+/** 30 days before expiry, or today if that has already gone by. */
+function remindOn(expiry: string | null): string | null {
+  if (!expiry) return null;
+  const t = new Date(expiry).getTime();
+  if (!Number.isFinite(t)) return null;
+  const thirtyBefore = new Date(t - 30 * 86_400_000);
+  const today = new Date();
+  today.setHours(9, 0, 0, 0);
+  return (thirtyBefore > today ? thirtyBefore : today).toISOString();
+}
+
+/** Minimal .ics so the reminder can live in a real calendar too. */
+function downloadIcs(title: string, when: string, note: string) {
+  const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const start = new Date(when);
+  const body = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//TLE OS//Compliance//EN",
+    "BEGIN:VEVENT",
+    `UID:${Date.now()}@tle-os`,
+    `DTSTAMP:${stamp(new Date())}`,
+    `DTSTART:${stamp(start)}`,
+    `DTEND:${stamp(new Date(start.getTime() + 30 * 60_000))}`,
+    `SUMMARY:${title.replace(/[\n,;]/g, " ")}`,
+    `DESCRIPTION:${note.replace(/[\n,;]/g, " ")}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const url = URL.createObjectURL(new Blob([body], { type: "text/calendar" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.ics`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ReminderButton({
+  property,
+  item,
+}: {
+  property: PropertyCompliance;
+  item: ComplianceItem;
+}) {
+  const when = remindOn(item.expiry);
+  const [state, setState] = useState<"idle" | "saving" | "done">("idle");
+
+  // Nothing to remind about without a date — and inventing one would be
+  // worse than the button not being there.
+  if (!when) return null;
+
+  async function set() {
+    if (state !== "idle") return;
+    setState("saving");
+    const title = `${item.label} — ${property.name}`;
+    try {
+      const res = await fetch("/api/my/todos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          note: `${item.label} expires ${item.expiry} — ${property.name}`,
+          dueAt: when,
+          property: property.name,
+          platform: "REX",
+        }),
+      });
+      if (!res.ok) throw new Error();
+      downloadIcs(title, when!, `${item.label} expires ${item.expiry}. ${property.name}, ${property.locality}.`);
+      setState("done");
+    } catch {
+      setState("idle");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={set}
+      disabled={state !== "idle"}
+      title={`Remind me on ${new Date(when).toLocaleDateString("en-GB")}`}
+      className="btn-press shrink-0 self-start rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-muted transition hover:border-black/25 hover:text-ink disabled:opacity-60"
+    >
+      {state === "done" ? "Reminder set" : state === "saving" ? "Setting…" : "Set reminder"}
+    </button>
+  );
+}
+
+/** Landlord and tenant on the property, read from REX when the drawer opens. */
+function ContactsCard({ p }: { p: PropertyCompliance }) {
+  const [contacts, setContacts] = useState<
+    Array<{ id: string; name: string; role: string | null; email: string | null; phone: string | null }> | null
+  >(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/my/property-contacts?listingId=${encodeURIComponent(p.listingId)}`, {
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((d: { contacts?: typeof contacts }) => {
+        if (live) setContacts(d.contacts ?? []);
+      })
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [p.listingId]);
+
+  const pick = (re: RegExp) => contacts?.find((c) => re.test(c.role ?? ""));
+  const landlord = pick(/landlord|owner|vendor/i);
+  const tenant = pick(/tenant|purchaser/i);
+
+  const line = (
+    who: { name: string; email: string | null; phone: string | null } | undefined,
+    label: string
+  ) =>
+    who ? (
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</p>
+          <p className="truncate text-[13px] font-medium text-ink">{who.name}</p>
+        </div>
+        {who.email ? (
+          <a
+            href={`mailto:${who.email}?subject=${encodeURIComponent(`${p.name} — compliance`)}`}
+            className="btn-press shrink-0 rounded-full border border-line px-3 py-1 text-[11px] font-semibold transition hover:border-black/25"
+          >
+            Message {label.toLowerCase()}
+          </a>
+        ) : null}
+      </div>
+    ) : null;
+
+  return (
+    <div className="card card-flat p-5 sm:p-6">
+      <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+        <DoodleIcon name="call" size={17} className="text-accent" />
+        Contacts
+      </h3>
+      <div className="mt-4 space-y-3">
+        {contacts === null && !failed ? (
+          <p className="text-[12px] text-muted">Reading contacts from REX…</p>
+        ) : landlord || tenant ? (
+          <>
+            {line(landlord, "Landlord")}
+            {line(tenant, "Tenant")}
+          </>
+        ) : (
+          // Never "this property has no landlord" — we only know we could not
+          // find one on the REX record.
+          <p className="text-[12px] text-muted">
+            No landlord or tenant is related to this listing in REX
+            {failed ? " (and the lookup failed)" : ""} — open it in REX to add
+            them.
+          </p>
+        )}
+        <a
+          href={rexListingUrl(p.listingId, "rental")}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block text-[11px] font-semibold text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+        >
+          Open contacts in REX ↗
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) {
   // Which panel is opened out; null = the resting arrangement.
   type Expanded = null | "indate" | "docs" | "notes";
@@ -219,7 +389,7 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
     <SplitDrawer onClose={onClose} hideClose>
       <DrawerPanel
         className="relative shrink-0 grow-0 p-5 sm:p-7"
-        style={{ width: "min(70rem, calc(100vw - 2rem))" }}
+        style={{ width: "min(74rem, calc(100vw - 2rem))" }}
       >
         <button
           onClick={onClose}
@@ -289,7 +459,7 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
           </div>
         </div>
 
-        <div className="mt-6 grid items-stretch gap-5 lg:grid-cols-[1fr_1fr]">
+        <div className="mt-6 grid items-stretch gap-5 lg:grid-cols-[1fr_1.08fr]">
           {/* ================= left: what needs doing ================= */}
           <div className="card p-5 sm:p-6">
             <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
@@ -342,6 +512,12 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                         <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
                       ) : null}
                     </div>
+                    {/* Set a reminder against the certificate itself. It lands
+                        on the agent's own To-dos 30 days before expiry (today
+                        if that date has already passed — a reminder for last
+                        month helps nobody), and downloads an .ics so it can
+                        live in their real calendar too. */}
+                    <ReminderButton property={p} item={i} />
                   </div>
                 ))}
               </div>
@@ -380,8 +556,11 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
             </p>
           </div>
 
-          {/* ============ right: the panels that open over each other ============ */}
-          <div className="flex flex-col">
+          {/* ============ right: contacts, then the panels ============ */}
+          <div className="flex flex-col gap-5">
+            {/* Same slot Applications puts Tenant details in, so moving
+                between the two tabs doesn't move the furniture. */}
+            <ContactsCard p={p} />
             {/* ---- the summary cards, while nothing is opened out ---- */}
             <CollapsePanel
               open={expanded === null}
