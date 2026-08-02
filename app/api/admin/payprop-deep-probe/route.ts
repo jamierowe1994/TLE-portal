@@ -118,6 +118,172 @@ function keyPaths(node: unknown, prefix = "", out = new Set<string>()): Set<stri
   return out;
 }
 
+/* ------------------------------- census mode ------------------------------- */
+
+/** Walk one endpoint to exhaustion, reporting whether the cap cut it short. */
+async function walkAll(
+  account: PayPropAccountId,
+  path: string,
+  maxPages: number
+): Promise<{ rows: Array<Record<string, unknown>>; pages: number; truncated: boolean }> {
+  const rows: Array<Record<string, unknown>> = [];
+  let pages = 0;
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await payPropRaw(account, path, { rows: 25, page });
+    if (!res.ok) break;
+    pages++;
+    const batch = rowsOf(res.json);
+    rows.push(...batch);
+    if (batch.length < 25) return { rows, pages, truncated: false };
+  }
+  // Ending on a full page at the cap means there was more. Say so — a silent
+  // cap reads as "covered everything" when it didn't.
+  return { rows, pages, truncated: pages === maxPages };
+}
+
+const RLP_PROTECTED = /protected\s+with\s+rlp/i;
+const RLP_WITHOUT = /without\s+rlp/i;
+
+async function runCensus(accounts: PayPropAccountId[]) {
+  const perAccount: Record<string, unknown> = {};
+
+  for (const account of accounts) {
+    // ---- every property, so "unmentioned" is a real bucket ----
+    const props = await walkAll(account, "export/properties", 40);
+    const propName = new Map<string, string>();
+    for (const p of props.rows) {
+      const id = String(p.id ?? "");
+      if (id) propName.set(id, String(p.property_name ?? ""));
+    }
+
+    // ---- RLP per property, from payment-instruction descriptions ----
+    // Instructions carry a real property.id, so this join is exact — no
+    // address matching anywhere.
+    const pays = await walkAll(account, "export/payments", 100);
+    const rlpEvidence = new Map<
+      string,
+      { protected: string[]; without: string[] }
+    >();
+    for (const row of pays.rows) {
+      const pid = String(
+        (row.property as Record<string, unknown> | undefined)?.id ?? ""
+      );
+      if (!pid) continue;
+      const texts = [row.description, row.beneficiary_reference]
+        .map((v) => String(v ?? ""))
+        .filter(Boolean);
+      for (const t of texts) {
+        const hitP = RLP_PROTECTED.test(t);
+        const hitW = RLP_WITHOUT.test(t);
+        if (!hitP && !hitW) continue;
+        const e = rlpEvidence.get(pid) ?? { protected: [], without: [] };
+        const note =
+          t.slice(0, 120) + (row.enabled === false ? " [instruction DISABLED]" : "");
+        if (hitP && e.protected.length < 3) e.protected.push(note);
+        if (hitW && e.without.length < 3) e.without.push(note);
+        rlpEvidence.set(pid, e);
+      }
+    }
+    const rlpProtected: Array<{ id: string; name: string; evidence: string }> = [];
+    const rlpWithout: Array<{ id: string; name: string; evidence: string }> = [];
+    const rlpContradictory: Array<{ id: string; name: string; evidence: string[] }> = [];
+    for (const [pid, e] of rlpEvidence) {
+      const name = propName.get(pid) ?? "(not in export/properties)";
+      if (e.protected.length && e.without.length) {
+        rlpContradictory.push({ id: pid, name, evidence: [...e.protected, ...e.without] });
+      } else if (e.protected.length) {
+        rlpProtected.push({ id: pid, name, evidence: e.protected[0] });
+      } else {
+        rlpWithout.push({ id: pid, name, evidence: e.without[0] });
+      }
+    }
+
+    // ---- tenancy dates + deposit ids, from export/tenants ----
+    const tens = await walkAll(account, "export/tenants", 80);
+    let tenancies = 0;
+    let withStart = 0;
+    let withEnd = 0;
+    let withDeposit = 0;
+    let endingSoonCount = 0;
+    let endedInPast = 0;
+    const depositIds = new Set<string>();
+    const statusTally = new Map<string, number>();
+    const endingSoon: Array<{ property: string; endDate: string }> = [];
+    const today = new Date().toISOString().slice(0, 10);
+    const in90 = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+    for (const t of tens.rows) {
+      const status = String(t.status ?? "(blank)");
+      statusTally.set(status, (statusTally.get(status) ?? 0) + 1);
+      const properties = Array.isArray(t.properties) ? t.properties : [];
+      for (const pr of properties as Array<Record<string, unknown>>) {
+        const tn = (pr.tenant ?? {}) as Record<string, unknown>;
+        tenancies++;
+        const start = String(tn.start_date ?? "");
+        const end = String(tn.end_date ?? "");
+        const dep = String(tn.deposit_id ?? "");
+        if (start) withStart++;
+        if (end) withEnd++;
+        if (dep) {
+          withDeposit++;
+          depositIds.add(dep);
+        }
+        if (end && end >= today && end <= in90) {
+          endingSoonCount++;
+          if (endingSoon.length < 50) {
+            endingSoon.push({ property: String(pr.property_name ?? ""), endDate: end });
+          }
+        }
+        if (end && end < today) endedInPast++;
+      }
+    }
+
+    perAccount[payPropLabel(account)] = {
+      walked: {
+        properties: { rows: props.rows.length, pages: props.pages, truncated: props.truncated },
+        paymentInstructions: { rows: pays.rows.length, pages: pays.pages, truncated: pays.truncated },
+        tenants: { rows: tens.rows.length, pages: tens.pages, truncated: tens.truncated },
+      },
+      rlp: {
+        // The whole point: coverage, not sightings. unmentioned is properties
+        // whose instructions never say either way — silence, not "no cover".
+        protected: rlpProtected.length,
+        without: rlpWithout.length,
+        contradictory: rlpContradictory,
+        unmentioned: Math.max(0, propName.size - rlpEvidence.size),
+        protectedList: rlpProtected.slice(0, 300),
+        withoutList: rlpWithout.slice(0, 300),
+      },
+      tenancies: {
+        tenantRows: tens.rows.length,
+        tenancies,
+        withStartDate: withStart,
+        withEndDate: withEnd,
+        withDepositId: withDeposit,
+        distinctDepositIds: depositIds.size,
+        endingWithin90Days: endingSoonCount,
+        endedInThePast: endedInPast,
+        statusValues: Object.fromEntries(statusTally),
+        endingSoonSample: endingSoon,
+      },
+    };
+  }
+
+  return {
+    configured: true,
+    mode: "census",
+    purpose:
+      "Turn the discovery run's sightings into whole-book coverage: RLP (PLC) status " +
+      "per property from payment-instruction descriptions, and tenancy dates + " +
+      "deposit ids per tenancy from export/tenants.",
+    caveats: [
+      "RLP classification is from free text staff typed into payment instructions. Contradictory entries (both wordings on one property) are listed in full rather than resolved.",
+      "unmentioned means the instructions say nothing either way — it is NOT evidence of no cover.",
+      "Any truncated:true means a walk hit its page cap and the numbers under it are floors, not totals.",
+    ],
+    accounts: perAccount,
+  };
+}
+
 export async function GET(req: NextRequest) {
   const adminId = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   const admin = adminId ? await findById(adminId) : null;
@@ -141,6 +307,16 @@ export async function GET(req: NextRequest) {
   // PayProp clamps rows to 25 whatever you ask for, so depth = pages.
   const pages = Math.min(Math.max(Number(q.get("pages") ?? 2), 1), 8);
   const full = q.get("full") === "1";
+
+  // ?census=1 — the follow-up mode. The discovery run found RLP written BOTH
+  // ways in export/payments descriptions ("Protected with RLP" / "Without
+  // RLP") and per-tenancy dates + deposit_id in export/tenants. Hits in a
+  // 50-row sample are a lead; this walks the whole book and turns them into
+  // coverage numbers — the difference between "we saw it" and "we can build
+  // on it". ~80 throttled calls per agency, allow a minute or two.
+  if (q.get("census") === "1") {
+    return NextResponse.json(await runCensus(accounts));
+  }
 
   const perAccount: Record<string, unknown> = {};
 
