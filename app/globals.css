@@ -122,6 +122,14 @@ h5 {
 /* The handwritten face, for anything that isn't a heading by tag */
 .hand { font-family: var(--font-heading); }
 
+/* The handwritten face UNCONDITIONALLY, ignoring the surface and the switcher.
+   For the few places it is the brand rather than a typographic choice — the
+   TLE OS wordmark on the sign-in screen, which sits outside .type-agent and
+   would otherwise come out in Montserrat like the rest of that page. */
+.written {
+  font-family: var(--font-shantell), var(--font-montserrat), system-ui, sans-serif;
+}
+
 /* Figures always line up */
 .tnum { font-variant-numeric: tabular-nums; }
 
