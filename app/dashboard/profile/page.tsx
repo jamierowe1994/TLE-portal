@@ -151,7 +151,7 @@ export default function ProfilePage() {
   if (!user) return null; // layout guard is redirecting
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="mx-auto max-w-5xl space-y-5">
       <div className="pt-2">
         <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>
           Profile
@@ -159,8 +159,13 @@ export default function ProfilePage() {
         <p className="mt-2.5 text-[13px] text-muted">{user.email}</p>
       </div>
 
+      {/* Two columns: what's ABOUT the agent (details, compliance) takes the
+          wide left; the account plumbing (admin links, password, sign out)
+          stacks on the right. Single column again below lg. */}
+      <div className="grid items-start gap-5 lg:grid-cols-3">
+      <div className="space-y-5 lg:col-span-2">
       {/* Details */}
-      <section className="card space-y-4 p-5">
+      <section className="card card-flat space-y-4 p-5">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
           Your details
         </h2>
@@ -258,9 +263,11 @@ export default function ProfilePage() {
 
       {/* Their own compliance certificates */}
       <AgentCompliancePanel />
+      </div>
 
+      <div className="space-y-5">
       {/* Admin-managed links */}
-      <section className="card space-y-3 p-5">
+      <section className="card card-flat space-y-3 p-5">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
             Linked stats profile
@@ -282,7 +289,7 @@ export default function ProfilePage() {
       </section>
 
       {/* Change password */}
-      <section className="card space-y-3 p-5">
+      <section className="card card-flat space-y-3 p-5">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
           Change password
         </h2>
@@ -317,7 +324,7 @@ export default function ProfilePage() {
       </section>
 
       {/* Sign out */}
-      <section className="card flex items-center justify-between p-5">
+      <section className="card card-flat flex items-center justify-between p-5">
         <div>
           <div className="text-[13px] font-semibold">Sign out</div>
           <div className="text-[12px] text-muted">
@@ -331,6 +338,8 @@ export default function ProfilePage() {
           Sign out
         </button>
       </section>
+      </div>
+      </div>
     </div>
   );
 }

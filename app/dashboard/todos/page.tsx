@@ -695,7 +695,7 @@ export default function TodosPage() {
       // (grid-template-rows 1fr → 0fr); the card padding lives on the inner
       // wrapper so it shrinks away with everything else.
       <li
-        className={`group card relative grid min-h-0 cursor-pointer grid-rows-[1fr] overflow-hidden text-left transition hover:border-black/20 ${
+        className={`group card card-flat relative grid min-h-0 cursor-pointer grid-rows-[1fr] overflow-hidden text-left transition hover:border-black/20 ${
           party ? "done-collapse" : ""
         }`}
         onClick={() => !party && startEdit(t)}

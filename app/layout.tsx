@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Montserrat, Shantell_Sans } from "next/font/google";
 import "./globals.css";
+import MobileGate from "@/components/MobileGate";
 
 const montserrat = Montserrat({
   subsets: ["latin"],
@@ -33,7 +34,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${montserrat.variable} ${shantell.variable} ${inter.variable}`}>
-      <body>{children}</body>
+      <body>
+        <MobileGate />
+        {children}
+      </body>
     </html>
   );
 }

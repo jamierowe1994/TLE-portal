@@ -13,7 +13,7 @@ import { PLATFORMS } from "@/lib/platforms";
 
 const CHIP_LABEL: Record<string, string> = { training: "Training" };
 const LAUNCHER = PLATFORMS.map((a) => ({ name: CHIP_LABEL[a.id] ?? a.name, url: a.url }));
-const CHIP_COLS = 2;
+const CHIP_COLS = 1;
 const CHIP_ROWS = Math.ceil(LAUNCHER.length / CHIP_COLS);
 
 export default function TleOsChips({
@@ -26,14 +26,14 @@ export default function TleOsChips({
   line?: string;
 }) {
   return (
-    // Two columns, not one: at eight apps a single stack is taller than a rail
-    // has left, and this box is overflow-hidden, so the bottom chips would be
-    // silently clipped rather than scroll.
-    <div className="grid grid-cols-2 gap-1.5 pb-2">
+    // One chip per line (was two-up). The full stack is taller than the rail
+    // sometimes has left, so the RAIL scrolls it rather than this box hiding
+    // it — both rails that mount this are overflow-y-auto.
+    <div className="grid grid-cols-1 gap-1.5 pb-2">
       {LAUNCHER.map((c, i) => {
         const tilt = [-7, 6, -5, 8, -6, 5, -8, 4][i % 8];
         const delay = [0, 70, 35, 105, 55, 120, 20, 90][i % 8];
-        const travel = (CHIP_ROWS - Math.floor(i / CHIP_COLS)) * 38 + 24;
+        const travel = (CHIP_ROWS - i) * 34 + 24;
         // truncate does double duty: it ellipsises the long names and, by
         // clipping overflow, stops one widening its grid track past the rail.
         const cls = `${closing ? "chip-fall" : "chip-pop"} block min-w-0 truncate rounded-lg border ${line} bg-white/70 px-2.5 py-1.5 text-[12.5px] font-medium`;

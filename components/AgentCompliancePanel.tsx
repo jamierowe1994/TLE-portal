@@ -96,7 +96,7 @@ export default function AgentCompliancePanel() {
   }
 
   return (
-    <section className="card space-y-4 p-5">
+    <section className="card card-flat space-y-4 p-5">
       <div>
         <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted">
           <DoodleIcon name="shield" size={15} className="text-accent" />
