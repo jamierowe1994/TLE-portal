@@ -85,9 +85,14 @@ const money = (v: unknown) => {
 };
 
 /** Address tokens worth matching on: house numbers and real street words. */
+// Generic street words carry no identifying information — "Charles Grinling
+// Walk" matched "2 Amis Walk" on WALK alone. The first list was too short.
 const NOISE = new Set([
   "FLAT", "ROOM", "APARTMENT", "THE", "AND", "ROAD", "STREET", "LANE",
   "AVENUE", "CLOSE", "DRIVE", "COURT", "HOUSE", "WAY", "PLACE", "GARDENS",
+  "WALK", "CRESCENT", "GREEN", "PARK", "TERRACE", "GROVE", "FIELDS",
+  "SQUARE", "BRIDGE", "HILL", "RISE", "MEWS", "VIEW", "BANK", "VALE",
+  "RENT", "MONTHLY", "ANNUAL", "LANDLORD", "REGISTRATION", "SERVICE",
 ]);
 function tokens(s: string): { numbers: string[]; words: string[] } {
   const u = s.toUpperCase();
@@ -268,7 +273,12 @@ export async function GET(req: NextRequest) {
       } | null = null;
       for (const p of pool) {
         if (!p.text) continue;
-        const words = w.tokens.words.filter((word) => p.text.includes(word));
+        // Whole words only. Plain includes() matched "MOOR" inside
+        // "RUSHMOOR", which is how "52 Moor Street" came back tied to
+        // "Rent - 77 Rushmoor" four times over.
+        const words = w.tokens.words.filter((word) =>
+          new RegExp(`\\b${word}\\b`).test(p.text)
+        );
         if (words.length === 0) continue; // no street name → not a candidate
         let score = words.length * 3;
         for (const n of w.tokens.numbers) if (p.text.includes(n)) score += 1;
