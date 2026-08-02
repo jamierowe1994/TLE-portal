@@ -247,8 +247,44 @@ function toApplication(d: Record<string, unknown>, statusKey: string): AgentAppl
       // property_type next to it, which was populated on 3 of 10 and only ever
       // said "flat". Backs the "Standing order set up" checklist tick.
       standingOrderRef: str(d.standing_order_reference) ?? null,
+      // extra_clauses_details carries a verbatim Flatfair "DEPOSIT
+      // REPLACEMENT" clause on ~44% of deals (probe, 2 Aug 2026). On those
+      // deals deposit_pence is a liability cap, not cash to register — so the
+      // flag matters more than the figure.
+      // Tightened after review: a clause merely MENTIONING deposit
+      // replacement must not flag the deal. Either the Flatfair name appears,
+      // or the clause IS the deposit-replacement clause (heading position).
+      depositReplacement: (Array.isArray(d.extra_clauses_details)
+        ? (d.extra_clauses_details as unknown[])
+        : []
+      ).some((c) => {
+        const t = String(c ?? "");
+        return /flatfair/i.test(t) || /^\s*deposit\s+replacement\b/i.test(t);
+      }),
+      landlord: firstParty(d.landlord_details),
+      guarantors: partyList(d.guarantors_details),
     },
   };
+}
+
+/** {uuid,name,email,phone} rows arrive as an array OR a bare object. */
+function partyList(
+  v: unknown
+): Array<{ name: string | null; email: string | null; phone: string | null }> {
+  const rows = Array.isArray(v) ? v : v && typeof v === "object" ? [v] : [];
+  return (rows as Array<Record<string, unknown>>)
+    .map((r) => ({
+      name: str(r.name) ?? null,
+      email: str(r.email) ?? null,
+      phone: str(r.phone) ?? null,
+    }))
+    .filter((p) => p.name || p.email || p.phone);
+}
+
+function firstParty(
+  v: unknown
+): { name: string | null; email: string | null; phone: string | null } | null {
+  return partyList(v)[0] ?? null;
 }
 
 let dealsInflight: Promise<CachedDeal[] | null> | null = null;
@@ -256,7 +292,7 @@ let dealsInflight: Promise<CachedDeal[] | null> | null = null;
 async function fetchAllDeals(): Promise<CachedDeal[] | null> {
   if (dealsCache && Date.now() - dealsCache.at < DEALS_TTL_MS) return dealsCache.deals;
   if (!dealsCache) {
-    const snap = await loadSnapshot<CachedDeal[]>("deals");
+    const snap = await loadSnapshot<CachedDeal[]>("deals_v2");
     if (snap) {
       dealsCache = { at: snap.savedAt, deals: snap.data };
       if (Date.now() - snap.savedAt < DEALS_TTL_MS) return dealsCache.deals;
@@ -315,7 +351,7 @@ async function runDealsFetch(): Promise<CachedDeal[] | null> {
   });
 
   dealsCache = { at: Date.now(), deals };
-  void saveSnapshot("deals", deals);
+  void saveSnapshot("deals_v2", deals);
   return deals;
 }
 

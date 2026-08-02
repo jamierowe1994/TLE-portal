@@ -44,11 +44,26 @@ const STATE_DOT: Record<ComplianceState, string> = {
   "not-required": "bg-gray-300",
 };
 
+/** Dot colour for an item — a source conflict shows amber whatever the state,
+ *  because "two systems disagree" is a needs-a-look, not a green light. */
+function dotFor(i: ComplianceItem): string {
+  // A conflict raises severity to amber but must never LOWER it — an expired
+  // certificate with a conflicting listing date is still expired (review find).
+  if (i.state === "expired") return STATE_DOT.expired;
+  return i.conflictingFieldExpiry ? STATE_DOT.expiring : STATE_DOT[i.state];
+}
+
 function stateLabel(i: ComplianceItem): string {
   // A date REX gave us but nobody can read is its own problem, and it outranks
   // whatever state we fell back to — say what's actually wrong.
   if (i.dateUnparsed) {
     return `Expiry date on file can't be read${i.expiry ? ` — "${i.expiry}"` : ""}`;
+  }
+  // The two sources disagreeing outranks either date being shown alone —
+  // this is the exact discrepancy blocking automated EPC reminders, so it is
+  // surfaced as the problem it is rather than one date winning quietly.
+  if (i.conflictingFieldExpiry) {
+    return `Record says ${i.expiry ?? "?"}, the listing says ${i.conflictingFieldExpiry} — needs a look`;
   }
   switch (i.state) {
     case "expired":
@@ -64,7 +79,9 @@ function stateLabel(i: ComplianceItem): string {
     case "not-required":
       return "Not required";
     default:
-      return i.expiry ? `Valid to ${i.expiry}` : i.issued ? `Recorded ${i.issued}` : "Recorded";
+      return `${i.expiry ? `Valid to ${i.expiry}` : i.issued ? `Recorded ${i.issued}` : "Recorded"}${
+        i.source === "listing-field" ? " (from the listing)" : ""
+      }`;
   }
 }
 
@@ -133,7 +150,7 @@ function ComplianceTile({
               <span
                 key={i.type}
                 title={`${i.label} — ${stateLabel(i)}`}
-                className={`h-1.5 w-1.5 rounded-full ${STATE_DOT[i.state]}`}
+                className={`h-1.5 w-1.5 rounded-full ${dotFor(i)}`}
               />
             ))
           ) : p.checked ? (
@@ -311,7 +328,7 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                     key={i.type}
                     className={`flex items-start gap-3 rounded-xl border p-4 ${STATE_STYLE[i.state]}`}
                   >
-                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotFor(i)}`} />
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-medium text-ink">{i.label}</p>
                       <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
@@ -465,7 +482,7 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
                         title={i.notes ?? stateLabel(i)}
                         className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
                       >
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotFor(i)}`} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[12px] font-medium text-ink">
                             {i.label}

@@ -3,9 +3,15 @@ import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { isPreTenancyEmail } from "@/lib/brand";
 import { findById } from "@/lib/users-store";
 import { getAllPropolyDeals, getPropolyMoveInForecast } from "@/lib/propoly-deals";
-import { getBusinessPhotoIndex, matchListingPhoto } from "@/lib/rex-stats";
+import {
+  getBusinessPhotoIndex,
+  matchListingConfident,
+  matchListingPhoto,
+} from "@/lib/rex-stats";
 import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
 import { getPortfolioBook, propertyKey } from "@/lib/payprop-portfolio";
+import { getTenancyRegister } from "@/lib/payprop-tenancy";
+import { getTobRegister, type TobStatus } from "@/lib/rex-esign";
 import { PORTAL_STAGES, portalStageOf } from "@/lib/propoly-stages";
 import type { DealPortalOverlay } from "@/lib/types";
 
@@ -39,6 +45,15 @@ export interface PreTenancyDeal {
    * this address key and disagree. It is never a guess.
    */
   serviceLevel: string | null;
+  /** RLP (the business says PLC) from PayProp payment instructions. null =
+   *  not recorded either way — silence, never "no cover". */
+  rlp: { status: "protected" | "without"; evidence: string } | null;
+  /** The live tenancy PayProp holds for this address — deposit reference and
+   *  actual start date. null = no unambiguous match, not "no tenancy". */
+  tenancy: { startDate: string | null; depositId: string | null } | null;
+  /** Landlord Terms-of-Business signing state from REX's DocuSign log, via
+   *  the matched listing. null = no envelope found for the listing. */
+  tobStatus: TobStatus | null;
 }
 
 export async function GET(req: NextRequest) {
@@ -56,6 +71,10 @@ export async function GET(req: NextRequest) {
   // Cached an hour and non-blocking by design — it serves what it has and
   // refreshes behind. Started here so it overlaps Propoly like the photos do.
   const bookWork = getPortfolioBook().catch(() => null);
+  // Same serve-stale contract as the book: these return instantly from cache
+  // and refresh behind. A null register costs badges, never the board.
+  const registerWork = getTenancyRegister().catch(() => null);
+  const tobWork = getTobRegister().catch(() => null);
 
   const [deals, forecast] = await Promise.all([
     getAllPropolyDeals().catch(() => null),
@@ -88,6 +107,8 @@ export async function GET(req: NextRequest) {
   // it overlaps the Propoly fetch; by here it is usually already done.
   const photos = await photosWork;
   const book = await bookWork;
+  const register = await registerWork;
+  const tob = await tobWork;
 
   const out: PreTenancyDeal[] = deals.map((d) => {
     const entry = overlays.get(d.app.id);
@@ -105,8 +126,41 @@ export async function GET(req: NextRequest) {
     // PayProp id. Keys where two properties disagree were dropped upstream, so
     // a hit here is unambiguous or it is absent.
     const key = propertyKey(d.app.propertyName);
+    const rlpHit = key ? register?.rlpByKey[key] : undefined;
+    // The PayProp tenancy at this address is usually the SITTING tenant, not
+    // this deal's — attaching it unqualified made "DEPOSIT HELD" claim a
+    // deposit the new deal doesn't have yet (review find). Attach only when
+    // the tenancy start sits within 60 days of the deal's move-in, i.e. it
+    // plausibly IS this deal, registered after completion.
+    const tenancyRaw = key ? register?.tenancyByKey[key] : undefined;
+    const withinWindow =
+      tenancyRaw?.startDate != null &&
+      d.app.startDate != null &&
+      Math.abs(
+        (new Date(tenancyRaw.startDate).getTime() -
+          new Date(d.app.startDate).getTime()) /
+          86_400_000
+      ) <= 60;
+    const tenancyHit = withinWindow ? tenancyRaw : undefined;
+    // ToB rides the CONFIDENT matcher, not the photo one — the photo match
+    // deliberately falls back to "same postcode, best guess", which is fine
+    // for a picture and wrong for a signing status (review find).
+    const confident = photos
+      ? matchListingConfident(photos, d.app.propertyName, d.app.locality)
+      : null;
     return {
       serviceLevel: (key && book?.serviceLevelByKey[key]) || null,
+      // disabledOnly evidence is excluded outright: the census found two
+      // properties whose only RLP wording sits on a switched-off instruction,
+      // and a dead instruction is not a statement about cover.
+      rlp:
+        rlpHit && !rlpHit.disabledOnly
+          ? { status: rlpHit.status, evidence: rlpHit.evidence }
+          : null,
+      tenancy: tenancyHit
+        ? { startDate: tenancyHit.startDate, depositId: tenancyHit.depositId }
+        : null,
+      tobStatus: (confident?.listingId && tob?.[confident.listingId]) || null,
       app: match
         ? { ...d.app, image: match.image, images: match.images, listingId: match.listingId }
         : d.app,

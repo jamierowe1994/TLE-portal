@@ -6,8 +6,9 @@ import {
   setChecklistItem,
   setStageOverride,
   setUnarchived,
+  setDepositScheme,
 } from "@/lib/deal-store";
-import { CHECKLIST_ITEMS, PORTAL_STAGE_BY_KEY } from "@/lib/propoly-stages";
+import { CHECKLIST_ITEMS, DEPOSIT_SCHEMES, PORTAL_STAGE_BY_KEY } from "@/lib/propoly-stages";
 
 // Pre-tenancy actions on one deal — Kirstie (or an admin) only:
 //   POST { stage: "references" }        move the deal's displayed stage
@@ -31,7 +32,12 @@ export async function POST(
     );
   }
 
-  let body: { stage?: unknown; checklist?: unknown; unarchived?: unknown };
+  let body: {
+    stage?: unknown;
+    checklist?: unknown;
+    unarchived?: unknown;
+    depositScheme?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -72,7 +78,35 @@ export async function POST(
       { id: access.user.id, name: byName, role: access.role },
       on ? "took the deal out of the archive" : "returned the deal to the archive"
     );
-    return NextResponse.json({ meta });
+    // Every branch returns the SAME shape. The client falls back to the RAW
+    // Propoly status when effectiveStatusKey is missing, and raw statuses are
+    // not portal stage keys — the review caught the depositScheme branch
+    // making board cards vanish that way, and this branch had the same bug.
+    return NextResponse.json({
+      meta,
+      statusKey: access.deal.statusKey,
+      effectiveStatusKey: effectivePortalStage(access.deal.statusKey, meta),
+    });
+  }
+
+  if ("depositScheme" in body) {
+    const scheme = body.depositScheme;
+    if (scheme !== null && (typeof scheme !== "string" || !DEPOSIT_SCHEMES.includes(scheme))) {
+      return NextResponse.json({ error: "Unknown deposit scheme." }, { status: 400 });
+    }
+    const meta = await setDepositScheme(id, scheme as string | null);
+    await logSystemEvent(
+      id,
+      { id: access.user.id, name: byName, role: access.role },
+      scheme === null
+        ? "cleared the deposit scheme"
+        : `recorded the deposit as held with ${scheme}`
+    );
+    return NextResponse.json({
+      meta,
+      statusKey: access.deal.statusKey,
+      effectiveStatusKey: effectivePortalStage(access.deal.statusKey, meta),
+    });
   }
 
   if (body.checklist && typeof body.checklist === "object") {

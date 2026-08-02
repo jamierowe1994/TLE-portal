@@ -924,6 +924,21 @@ export interface ComplianceItem {
    * possible answer, a certificate passing on a date nobody could parse.
    */
   dateUnparsed?: boolean;
+  /**
+   * Where the item came from. Absent = a ComplianceEntry, the normal case.
+   * "listing-field" = synthesised from the listing's own epc_expiry_date
+   * because no EPC ComplianceEntry existed — 74.8% of rentals carry the field
+   * (census 2 Aug 2026) while ComplianceEntries has the known REX discrepancy,
+   * so the field fills the gap rather than leaving "missing".
+   */
+  source?: "listing-field";
+  /**
+   * Both sources exist and DISAGREE on the expiry date. The ComplianceEntry
+   * stays authoritative; this carries the listing field's date so the page can
+   * say "the listing says 2031-04-02" and someone can fix whichever is wrong —
+   * the exact discrepancy that blocks automated EPC reminders today.
+   */
+  conflictingFieldExpiry?: string | null;
 }
 
 export interface PropertyCompliance {
@@ -949,6 +964,72 @@ export interface PropertyCompliance {
 }
 
 const EXPIRING_DAYS = 60;
+
+/**
+ * Fold the listing's own EPC fields into a property's compliance items.
+ *
+ * Precedence is deliberate: a ComplianceEntry EPC always wins, because that is
+ * the record staff maintain. The listing field only (a) fills a hole where no
+ * entry exists, or (b) annotates an entry whose date it contradicts. It never
+ * silently overrides.
+ */
+function reconcileEpcField(
+  items: ComplianceItem[],
+  epcExpiry: string | null,
+  epcNotRequired: boolean
+): ComplianceItem[] {
+  // Guard the census-found garbage: one live listing expires in "3033", and a
+  // handful predate 2000. Out-of-range = no field, not a far-future pass.
+  const year = Number((epcExpiry ?? "").slice(0, 4));
+  const fieldExpiry =
+    epcExpiry && year >= 2000 && year <= 2100 ? epcExpiry : null;
+
+  const entry = items.find((i) => i.type === "epc");
+  if (entry) {
+    if (
+      fieldExpiry &&
+      entry.expiry &&
+      !entry.dateUnparsed &&
+      entry.expiry.slice(0, 10) !== fieldExpiry.slice(0, 10)
+    ) {
+      return items.map((i) =>
+        i.type === "epc" ? { ...i, conflictingFieldExpiry: fieldExpiry } : i
+      );
+    }
+    return items;
+  }
+
+  if (!fieldExpiry && !epcNotRequired) return items;
+  // NaN comparisons are all false, so an unreadable date would slide through
+  // days<0 / days<=60 to "valid" — the exact failure complianceStateOf guards
+  // against for ComplianceEntries, reintroduced here until the review caught
+  // it. Unparseable = missing + dateUnparsed, so a human looks.
+  const t = fieldExpiry ? new Date(fieldExpiry).getTime() : NaN;
+  const unparsed = fieldExpiry != null && !Number.isFinite(t);
+  const days = Number.isFinite(t) ? Math.round((t - Date.now()) / 86_400_000) : null;
+  const state: ComplianceState = epcNotRequired
+    ? "not-required"
+    : days == null
+      ? "missing"
+      : days < 0
+        ? "expired"
+        : days <= EXPIRING_DAYS
+          ? "expiring"
+          : "valid";
+  return [
+    ...items,
+    {
+      type: "epc",
+      label: "EPC",
+      state,
+      issued: null,
+      expiry: fieldExpiry,
+      notes: null,
+      source: "listing-field" as const,
+      ...(unparsed ? { dateUnparsed: true } : {}),
+    },
+  ].sort((a, b) => a.label.localeCompare(b.label));
+}
 
 export function complianceNeedsWork(s: ComplianceState): boolean {
   return s === "expired" || s === "expiring" || s === "missing";
@@ -1197,17 +1278,25 @@ export async function getAgentCompliance(
     const { byParent, unchecked, unmappedByParent } = await fetchComplianceByParent(ids);
 
     const out = listings.map((l) => {
-      const items = dedupeComplianceItems([
-        ...(byParent.get(l.propertyId) ?? []),
-        ...(byParent.get(l.id) ?? []),
-      ]).sort((a, b) => a.label.localeCompare(b.label));
+      const items = reconcileEpcField(
+        dedupeComplianceItems([
+          ...(byParent.get(l.propertyId) ?? []),
+          ...(byParent.get(l.id) ?? []),
+        ]).sort((a, b) => a.label.localeCompare(b.label)),
+        l.epcExpiry,
+        l.epcNotRequired
+      );
       return {
         listingId: l.id,
         name: l.name,
         locality: l.locality,
         image: l.image,
         items,
-        outstanding: items.filter((i) => complianceNeedsWork(i.state)).length,
+        // A conflicted EPC counts as outstanding even when both dates are in
+        // the future — two sources disagreeing IS the work item.
+        outstanding: items.filter(
+          (i) => complianceNeedsWork(i.state) || i.conflictingFieldExpiry
+        ).length,
         // Either parent coming back short makes the whole property untrusted —
         // the missing rows could be on either record.
         checked: !unchecked.has(l.propertyId) && !unchecked.has(l.id),
@@ -1502,10 +1591,14 @@ export async function getAgentPortfolioProperties(
     const { byParent, unchecked, unmappedByParent } = await fetchComplianceByParent(ids);
 
     const out: PortfolioProperty[] = listings.map(({ base: l, sinceISO }) => {
-      const items = dedupeComplianceItems([
-        ...(byParent.get(l.propertyId) ?? []),
-        ...(byParent.get(l.id) ?? []),
-      ]).sort((a, b) => a.label.localeCompare(b.label));
+      const items = reconcileEpcField(
+        dedupeComplianceItems([
+          ...(byParent.get(l.propertyId) ?? []),
+          ...(byParent.get(l.id) ?? []),
+        ]).sort((a, b) => a.label.localeCompare(b.label)),
+        l.epcExpiry,
+        l.epcNotRequired
+      );
 
       // Soonest dated renewal, overdue first — expired certs are the most
       // urgent "renewal due", not a separate category.
@@ -1530,7 +1623,11 @@ export async function getAgentPortfolioProperties(
         epcRating: l.epcRating,
         epcNotRequired: l.epcNotRequired,
         items,
-        outstanding: items.filter((i) => complianceNeedsWork(i.state)).length,
+        // A conflicted EPC counts as outstanding even when both dates are in
+        // the future — two sources disagreeing IS the work item.
+        outstanding: items.filter(
+          (i) => complianceNeedsWork(i.state) || i.conflictingFieldExpiry
+        ).length,
         nextRenewal: next ? { label: next.label, expiry: String(next.expiry) } : null,
         checked: !unchecked.has(l.propertyId) && !unchecked.has(l.id),
         unmapped: [
@@ -1606,6 +1703,16 @@ export interface AgentApplication {
     /** Propoly's standing order reference. Present means one has been set up
      *  there — evidence for the checklist item, not a substitute for it. */
     standingOrderRef?: string | null;
+    /** The deal's extra clauses include a Flatfair "deposit replacement"
+     *  clause — the tenant pays NO cash deposit, so the deposit figure above
+     *  is a liability cap, not money to register with a scheme. ~44% of
+     *  sampled deals (2 Aug 2026). */
+    depositReplacement?: boolean;
+    /** The landlord on the deal — populated on 99% of deals and thrown away
+     *  until now. Kirstie has never had a landlord contact on the file. */
+    landlord?: { name: string | null; email: string | null; phone: string | null } | null;
+    /** Guarantors, where the deal has them (~31%). */
+    guarantors?: Array<{ name: string | null; email: string | null; phone: string | null }>;
   };
   /** Portal overlay: pre-tenancy notes/stage-moves/checklist (lib/deal-store). */
   portal?: import("@/lib/types").DealPortalOverlay;
@@ -2071,6 +2178,40 @@ export async function getAgentPhotoIndex(rexUserId: string): Promise<PhotoIndex>
   for (const l of listings ?? []) add(l.name, l.locality, l.id, l.image, l.images);
   for (const p of portfolio ?? []) add(p.name, p.locality, p.listingId, p.image, p.images);
   return index;
+}
+
+/**
+ * Evidence-grade match: null unless the address really pins ONE property.
+ * matchListingPhoto below deliberately falls back to "same postcode, best
+ * guess" because a wrong photo is cosmetic — but the review caught that
+ * fallback carrying a ToB signing status onto the wrong property, which is
+ * not. This variant returns a match only when the postcode bucket holds a
+ * single property, or the tokens score >= 3 (a house number plus a street
+ * word, or three street words) — never the zero-evidence fallback.
+ */
+export function matchListingConfident(
+  index: PhotoIndex,
+  name: string,
+  locality: string
+): ListingPhotoMatch | null {
+  const pc = postcodeOf(name, locality);
+  if (!pc) return null;
+  const bucket = index.get(pc);
+  if (!bucket?.length) return null;
+  if (bucket.length === 1) return bucket[0];
+  const { numbers, words } = tokensOf(name);
+  let best: IndexedProperty | null = null;
+  let bestScore = 0;
+  for (const cand of bucket) {
+    let score = 0;
+    for (const n of numbers) if (cand.numbers.has(n)) score += 2;
+    for (const w of words) if (cand.words.has(w)) score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = cand;
+    }
+  }
+  return bestScore >= 3 ? best : null;
 }
 
 /** Best property in the index for one address, or null if nothing convinces. */

@@ -24,6 +24,7 @@ import { BRAND } from "@/lib/brand";
 import { formatGBP } from "@/lib/format";
 import {
   CHECKLIST_ITEMS,
+  DEPOSIT_SCHEMES,
   PROPOLY_APP_URL,
   PORTAL_STAGES,
   PORTAL_STAGE_BY_KEY,
@@ -56,6 +57,12 @@ interface BoardDeal {
   /** "Fully managed" | "Let only" | "Rent collect", from PayProp. null when
    *  PayProp has no unambiguous match — an absence, never a guess. */
   serviceLevel?: string | null;
+  /** PLC/RLP from PayProp instructions. null = not recorded, never "no". */
+  rlp?: { status: "protected" | "without"; evidence: string } | null;
+  /** Live PayProp tenancy for this address (deposit ref + actual start). */
+  tenancy?: { startDate: string | null; depositId: string | null } | null;
+  /** Landlord ToB signing state from REX's DocuSign log. */
+  tobStatus?: { status: string; sentAt: string | null; completedAt: string | null } | null;
 }
 
 interface BoardSummary {
@@ -1154,7 +1161,10 @@ function DealWorkspace({
         error?: string;
       };
       if (!res.ok || !d.meta) throw new Error(d.error ?? "That didn't save.");
-      applyMeta(d.meta, d.effectiveStatusKey ?? deal.statusKey);
+      // Fall back to the panel's CURRENT effective stage, never the raw
+      // Propoly status — raw statuses are not portal stage keys, and pushing
+      // one into the board made the card vanish from every column (review).
+      applyMeta(d.meta, d.effectiveStatusKey ?? effective);
       void fetchNotes(); // pick up the auto-logged activity line
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "That didn't save.");
@@ -1234,6 +1244,68 @@ function DealWorkspace({
                 <span className="rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted">
                   {(p?.service ?? deal.serviceLevel ?? "").toUpperCase()}
                 </span>
+              ) : null}
+              {/* PLC (RLP) from PayProp's instructions, exact-join or absent.
+                  No pill at all when it isn't recorded — an empty state here
+                  must not read as "no cover". */}
+              {deal.rlp ? (
+                <span
+                  title={deal.rlp.evidence}
+                  className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
+                    deal.rlp.status === "protected"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-line bg-page text-muted"
+                  }`}
+                >
+                  {deal.rlp.status === "protected" ? "PLC PROTECTED" : "NO PLC"}
+                </span>
+              ) : null}
+              {/* A deposit registered in PayProp against this property's live
+                  tenancy — its ledger reference in the tooltip. */}
+              {deal.tenancy?.depositId ? (
+                <span
+                  title={`PayProp deposit ${deal.tenancy.depositId}${
+                    deal.tenancy.startDate ? ` · tenancy from ${deal.tenancy.startDate}` : ""
+                  }`}
+                  className="rounded-full border border-line bg-page px-2 py-0.5 text-[9px] font-semibold text-muted"
+                >
+                  DEPOSIT HELD
+                </span>
+              ) : null}
+              {/* Landlord Terms of Business, from REX's DocuSign log.
+                  Three-way on the known vocabulary: completed is green,
+                  sent/partially_signed amber, and anything else — failed,
+                  voided, statuses REX invents later — gets its own
+                  needs-a-look pill rather than masquerading as "sent"
+                  (review find). */}
+              {deal.tobStatus ? (
+                deal.tobStatus.status === "completed" ? (
+                  <span
+                    title={
+                      fmtDate(deal.tobStatus.completedAt)
+                        ? `Signed ${fmtDate(deal.tobStatus.completedAt)}`
+                        : "Signed"
+                    }
+                    className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold text-emerald-700"
+                  >
+                    TOB SIGNED
+                  </span>
+                ) : deal.tobStatus.status === "sent" ||
+                  deal.tobStatus.status === "partially_signed" ? (
+                  <span
+                    title="Sent, not yet signed"
+                    className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700"
+                  >
+                    TOB SENT
+                  </span>
+                ) : (
+                  <span
+                    title={`DocuSign envelope status: ${deal.tobStatus.status} — needs a look`}
+                    className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[9px] font-semibold text-red-700"
+                  >
+                    TOB — CHECK
+                  </span>
+                )
               ) : null}
             </div>
             <h2 className="mt-1.5 truncate text-[19px] font-semibold leading-snug">
@@ -1539,7 +1611,27 @@ function DealWorkspace({
                   side by side in half the width, the longer dates collided. */}
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
                 <NumberRow label="Rent / month" value={deal.app.offer != null ? formatGBP(deal.app.offer) : "—"} big />
-                <NumberRow label="Deposit" value={p?.deposit != null ? formatGBP(p.deposit) : "—"} />
+                <NumberRow
+                  label="Deposit"
+                  // A Flatfair deal takes NO cash deposit — the Propoly figure
+                  // is a liability cap, and showing it as money to collect is
+                  // how someone chases a deposit that does not exist. But the
+                  // clause flag is a regex guess, so Kirstie's own scheme
+                  // entry OUTRANKS it in both directions (review find).
+                  value={
+                    meta?.depositScheme?.startsWith("Flatfair")
+                      ? "Flatfair"
+                      : meta?.depositScheme
+                        ? p?.deposit != null
+                          ? formatGBP(p.deposit)
+                          : "—"
+                        : p?.depositReplacement
+                          ? "Flatfair"
+                          : p?.deposit != null
+                            ? formatGBP(p.deposit)
+                            : "—"
+                  }
+                />
                 <NumberRow label="Holding fee" value={p?.holdingFee != null ? formatGBP(p.holdingFee) : "—"} />
                 <NumberRow
                   label="Move-in date"
@@ -1549,6 +1641,36 @@ function DealWorkspace({
                 <NumberRow label="Deal received" value={fmtDate(deal.app.dateReceived) ?? "—"} />
                 {deal.app.hasPets ? <NumberRow label="Pets" value="Yes" /> : null}
               </dl>
+
+              {/* Which scheme holds the deposit. The portal IS the register —
+                  no upstream system records this (probed 2 Aug 2026), which is
+                  why it's an input rather than a readout. Ruled like every
+                  other input on the surface. */}
+              <div className="mt-3 border-t border-line pt-2.5">
+                <label className="flex items-center gap-2">
+                  <span className="shrink-0 text-[11px] text-muted">Deposit scheme</span>
+                  <select
+                    value={meta?.depositScheme ?? ""}
+                    disabled={busy || meta == null}
+                    onChange={(e) =>
+                      void postMeta({ depositScheme: e.target.value || null })
+                    }
+                    className="min-w-0 flex-1 border-0 border-b-[1.5px] border-ink/25 bg-transparent px-1 py-1 text-[12.5px] text-ink outline-none transition focus:border-ink/70 disabled:opacity-50"
+                  >
+                    <option value="">Not recorded</option>
+                    {DEPOSIT_SCHEMES.map((sch) => (
+                      <option key={sch} value={sch}>
+                        {sch}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {p?.depositReplacement && !meta?.depositScheme ? (
+                  <p className="mt-1 text-[11px] text-muted">
+                    Propoly&apos;s clauses say Flatfair — no cash deposit to register.
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             {deal.app.image ? (
@@ -1738,6 +1860,34 @@ function DealWorkspace({
                 </a>
               ) : null}
             </div>
+
+            {/* The landlord. Propoly has carried this on 99% of deals the
+                whole time and the portal threw it away — Kirstie has never
+                had a landlord contact on the file. */}
+            {p?.landlord ? (
+              <div className="card card-flat shrink-0 p-5">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  Landlord
+                </h3>
+                <p className="mt-2 text-[13px] font-medium">{p.landlord.name ?? "—"}</p>
+                {p.landlord.email ? (
+                  <a
+                    href={`mailto:${p.landlord.email}`}
+                    className="block truncate text-[12px] text-muted hover:text-ink"
+                  >
+                    {p.landlord.email}
+                  </a>
+                ) : null}
+                {p.landlord.phone ? (
+                  <a
+                    href={`tel:${p.landlord.phone}`}
+                    className="block text-[12px] text-muted hover:text-ink"
+                  >
+                    {p.landlord.phone}
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {/* -- the working tabs: activity, emails, private notes, tasks -- */}

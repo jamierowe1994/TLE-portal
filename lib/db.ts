@@ -117,6 +117,11 @@ ALTER TABLE deal_notes ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'note
 -- exception needs persisting — otherwise every deal would need writing to the
 -- moment it aged past the threshold.
 ALTER TABLE deal_meta ADD COLUMN IF NOT EXISTS unarchived_at TIMESTAMPTZ;
+-- Which scheme holds the deposit. NO system records this (probe 2 Aug 2026:
+-- Propoly's deposit_schemes is a bare vocabulary, REX bond fields are 10/534,
+-- PayProp knows a deposit EXISTS but not where) — so the portal is the
+-- register, filled in by the pre-tenancy team per deal.
+ALTER TABLE deal_meta ADD COLUMN IF NOT EXISTS deposit_scheme TEXT;
 
 -- Property notes (lib/property-notes-store.ts): the conversation log on a
 -- property drawer — agents and the pre-tenancy team leaving each other notes

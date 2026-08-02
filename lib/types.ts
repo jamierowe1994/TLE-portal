@@ -170,6 +170,9 @@ export interface DealMeta {
   stageBy: string | null;
   stageAt: string | null;
   checklist: Record<string, ChecklistTick>; // key = CHECKLIST_ITEMS key
+  /** Which scheme holds the deposit (from DEPOSIT_SCHEMES) — the portal IS
+   *  the register for this; no upstream system records it. */
+  depositScheme?: string | null;
   updatedAt: string;
 }
 

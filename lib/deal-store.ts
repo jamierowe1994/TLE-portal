@@ -102,6 +102,7 @@ interface MetaRow extends Record<string, unknown> {
   stage_by: string | null;
   stage_at: string | Date | null;
   checklist: Record<string, ChecklistTick> | null;
+  deposit_scheme?: string | null;
   updated_at: string | Date;
 }
 
@@ -113,6 +114,7 @@ function rowToMeta(r: MetaRow): DealMeta {
     stageBy: r.stage_by,
     stageAt: r.stage_at ? new Date(r.stage_at).toISOString() : null,
     checklist: r.checklist && typeof r.checklist === "object" ? r.checklist : {},
+    depositScheme: r.deposit_scheme ?? null,
     unarchivedAt: r.unarchived_at ? new Date(r.unarchived_at).toISOString() : null,
     updatedAt: new Date(r.updated_at).toISOString(),
   };
@@ -126,6 +128,7 @@ function emptyMeta(dealId: string): DealMeta {
     stageBy: null,
     stageAt: null,
     checklist: {},
+    depositScheme: null,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -329,11 +332,11 @@ async function saveMeta(meta: DealMeta): Promise<void> {
   meta.updatedAt = new Date().toISOString();
   if (hasDb()) {
     await q(
-      `INSERT INTO deal_meta (deal_id, stage_override, stage_based_on, stage_by, stage_at, checklist, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO deal_meta (deal_id, stage_override, stage_based_on, stage_by, stage_at, checklist, deposit_scheme, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (deal_id) DO UPDATE SET
          stage_override = $2, stage_based_on = $3, stage_by = $4,
-         stage_at = $5, checklist = $6, updated_at = $7`,
+         stage_at = $5, checklist = $6, deposit_scheme = $7, updated_at = $8`,
       [
         meta.dealId,
         meta.stageOverride,
@@ -341,6 +344,7 @@ async function saveMeta(meta: DealMeta): Promise<void> {
         meta.stageBy,
         meta.stageAt,
         JSON.stringify(meta.checklist),
+        meta.depositScheme ?? null,
         meta.updatedAt,
       ]
     );
@@ -412,6 +416,28 @@ export async function setChecklistItem(
  * the threshold would mean a table that grows with time rather than with what
  * anyone actually did.
  */
+export async function setDepositScheme(
+  dealId: string,
+  scheme: string | null
+): Promise<DealMeta> {
+  // Targeted upsert, NOT read-modify-write through saveMeta: the portal is
+  // the only register of the scheme, and the full-row upsert let a checklist
+  // tick started from a stale meta object silently revert it (review find).
+  if (hasDb()) {
+    await q(
+      `INSERT INTO deal_meta (deal_id, deposit_scheme, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (deal_id) DO UPDATE SET deposit_scheme = EXCLUDED.deposit_scheme, updated_at = NOW()`,
+      [dealId, scheme]
+    );
+    return getMeta(dealId);
+  }
+  const meta = await getMeta(dealId);
+  meta.depositScheme = scheme;
+  await saveMeta(meta);
+  return meta;
+}
+
 export async function setUnarchived(dealId: string, on: boolean): Promise<DealMeta> {
   if (!hasDb()) return emptyMeta(dealId);
   await q(

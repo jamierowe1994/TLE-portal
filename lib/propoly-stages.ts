@@ -135,3 +135,22 @@ export function normaliseServiceLevel(raw: string | null | undefined): string | 
   if (s.includes("tenant find") || s.includes("let only")) return "Let only";
   return null; // an unrecognised label is not guessed at
 }
+
+/**
+ * Where a cash deposit can be held. Propoly's own vocabulary (its
+ * configuration endpoint lists exactly the six scheme variants) plus the two
+ * real-world states the probe found: deposits held by the landlord (a REX
+ * bond_deposit_type value staff have used) and Flatfair, where there is no
+ * cash deposit at all. The PORTAL is the register for this — no upstream
+ * system records which scheme holds a given deposit (probed 2 Aug 2026).
+ */
+export const DEPOSIT_SCHEMES: string[] = [
+  "TDS Custodial",
+  "TDS Insured",
+  "DPS Custodial",
+  "DPS Insured",
+  "My Deposits Custodial",
+  "My Deposits Insured",
+  "Held by landlord",
+  "Flatfair (no cash deposit)",
+];
