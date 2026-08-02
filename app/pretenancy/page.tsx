@@ -549,7 +549,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
     <main className="type-admin flex min-h-screen flex-col bg-page">
       {/* ---- header ---- */}
       <header className="sticky top-0 z-30 border-b border-line bg-page/90 backdrop-blur">
-        <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="flex items-center gap-3 px-5 py-4 sm:px-8">
           <WorkspaceSwitcher user={user} current="pretenancy" size={28} />
 
           <div className="ml-auto flex items-center gap-3">
@@ -576,76 +576,15 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
         ) : null}
         {error ? <div className="card p-6 text-sm text-muted">{error}</div> : null}
 
-        {/* ---- everything below the header rule: the figures and filters
-             first, then the stage rail with the deals beside it ---- */}
-        <div className="mt-5 flex min-h-0 flex-1 flex-col border-t border-line pt-5">
-          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            {deals ? (
-              <div className="flex items-center gap-6">
-                <MiniStat label="In progression" value={activeCount} />
-                <MiniStat label="Moved in this month" value={summary?.completedMtd ?? "—"} />
-                <MiniStat label="No date" value={undatedCount} />
-              </div>
-            ) : null}
-            {/* tiles ↔ kanban flick toggle */}
-            {deals ? (
-              <div className="flex items-center rounded-xl border border-line p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setView("tiles")}
-                  title="Tile view"
-                  className={`btn-press flex h-8 w-8 items-center justify-center rounded-lg transition ${
-                    view === "tiles" ? "bg-page text-ink shadow-sm" : "text-muted hover:text-ink"
-                  }`}
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-                    <rect x={3} y={3} width={7} height={7} rx={1.5} />
-                    <rect x={14} y={3} width={7} height={7} rx={1.5} />
-                    <rect x={3} y={14} width={7} height={7} rx={1.5} />
-                    <rect x={14} y={14} width={7} height={7} rx={1.5} />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView("kanban")}
-                  title="Board view"
-                  className={`btn-press flex h-8 w-8 items-center justify-center rounded-lg transition ${
-                    view === "kanban" ? "bg-page text-ink shadow-sm" : "text-muted hover:text-ink"
-                  }`}
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-                    <rect x={3} y={4} width={5} height={16} rx={1.5} />
-                    <rect x={9.5} y={4} width={5} height={11} rx={1.5} />
-                    <rect x={16} y={4} width={5} height={14} rx={1.5} />
-                  </svg>
-                </button>
-              </div>
-            ) : null}
-            <div className="flex items-center gap-2">
-              <input
-                type="search"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search property, tenant or agent…"
-                className="w-52 rounded-xl border border-line bg-transparent px-3.5 py-2 text-[13px] outline-none transition focus:border-black/30"
-              />
-              <select
-                value={agent}
-                onChange={(e) => setAgent(e.target.value)}
-                className="rounded-xl border border-line bg-transparent px-3 py-2 text-[13px] outline-none"
-              >
-                <option value="all">All agents</option>
-                {agents.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          </div>
-          <div className="flex min-h-0 flex-1 gap-5">
+        {/* ---- the stage rail down the left, the board beside it ----
+             The title and the filters now sit OVER the deals rather than over
+             the rail, so the rail reads as one uninterrupted column from the
+             header rule to TLE OS. The short rule that used to run above the
+             filters went with them: the header already draws a full-width
+             line, and a second one stopping short of the edge reads as a
+             mistake rather than a divider. */}
+        <div className="flex min-h-0 flex-1 flex-col pt-4">
+          <div className="flex min-h-0 flex-1 gap-6">
         {/* ---- stage rail: the 8 stages stacked; Slipped/All/Cancelled
              tucked behind a three-dot menu at the foot ---- */}
         {deals && view === "tiles" ? (
@@ -675,9 +614,11 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                   }`}
                 >
                   {/* No chip behind the icon — the doodle carries itself, and
-                      at this size a tinted square just boxes it in. Accent red
-                      so a stage is recognisable at a glance. */}
-                  <span className="relative shrink-0 text-accent">
+                      at this size a tinted square just boxes it in. Ink, not
+                      accent: eight red doodles down one edge fight the page,
+                      and red now means "needs a look" (the movement dot) and
+                      nothing else. */}
+                  <span className="relative shrink-0 text-ink">
                     <StageIcon stageKey={t.key} size={26} />
                     <MovementDot kind={t.movement} className="absolute -right-1 -top-1 ring-2 ring-page" />
                   </span>
@@ -695,9 +636,8 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                 className="enter enter-up flex w-[236px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line pr-4"
                 style={enterAt(80)}
               >
-                <h1 className="written mb-3 px-1 text-[24px] leading-none text-ink">
-                  Pre-tenancy pipeline
-                </h1>
+                {/* The title lives over the deals now, not here — the rail is
+                    stages and nothing else, top to bottom. */}
                 {stageTabs.map((t) => (
                   <TabButton key={t.key} t={t} />
                 ))}
@@ -722,7 +662,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
                         tleOpen ? "text-ink" : "text-muted hover:text-ink"
                       }`}
                     >
-                      <span className="shrink-0 text-accent">
+                      <span className="shrink-0 text-ink">
                         <DoodleIcon name="grid" size={24} />
                       </span>
                       <span className="flex-1">TLE OS</span>
@@ -824,7 +764,83 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
           })()
         ) : null}
 
-        {/* ---- the deals, with the figures and filters over them ---- */}
+        {/* ---- the board column: title left, figures and filters hard right,
+             deals underneath ----
+             It wraps BOTH views, not just tiles. Kanban has no rail, and the
+             last time these controls lived inside the tiles branch the view
+             toggle vanished the moment you switched to kanban, leaving no way
+             back. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="mb-5 flex shrink-0 flex-wrap items-center justify-between gap-x-8 gap-y-4">
+            <h1 className="written shrink-0 text-[27px] leading-none text-ink">
+              Pre-tenancy pipeline
+            </h1>
+            <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
+              {deals ? (
+                <div className="flex items-center gap-6">
+                  <MiniStat label="In progression" value={activeCount} />
+                  <MiniStat label="Moved in this month" value={summary?.completedMtd ?? "—"} />
+                  <MiniStat label="No date" value={undatedCount} />
+                </div>
+              ) : null}
+              {/* tiles ↔ kanban flick toggle */}
+              {deals ? (
+                <div className="flex items-center rounded-xl border border-line p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setView("tiles")}
+                    title="Tile view"
+                    className={`btn-press flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                      view === "tiles" ? "bg-page text-ink shadow-sm" : "text-muted hover:text-ink"
+                    }`}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                      <rect x={3} y={3} width={7} height={7} rx={1.5} />
+                      <rect x={14} y={3} width={7} height={7} rx={1.5} />
+                      <rect x={3} y={14} width={7} height={7} rx={1.5} />
+                      <rect x={14} y={14} width={7} height={7} rx={1.5} />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView("kanban")}
+                    title="Board view"
+                    className={`btn-press flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                      view === "kanban" ? "bg-page text-ink shadow-sm" : "text-muted hover:text-ink"
+                    }`}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                      <rect x={3} y={4} width={5} height={16} rx={1.5} />
+                      <rect x={9.5} y={4} width={5} height={11} rx={1.5} />
+                      <rect x={16} y={4} width={5} height={14} rx={1.5} />
+                    </svg>
+                  </button>
+                </div>
+              ) : null}
+              <div className="flex items-center gap-2">
+                <input
+                  type="search"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search property, tenant or agent…"
+                  className="w-52 rounded-xl border border-line bg-transparent px-3.5 py-2 text-[13px] outline-none transition focus:border-black/30"
+                />
+                <select
+                  value={agent}
+                  onChange={(e) => setAgent(e.target.value)}
+                  className="rounded-xl border border-line bg-transparent px-3 py-2 text-[13px] outline-none"
+                >
+                  <option value="all">All agents</option>
+                  {agents.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
         {view === "tiles" ? (
           <section className="enter enter-up min-h-0 min-w-0 flex-1 overflow-y-auto pb-8 pl-1" style={enterAt(120)}>
             {deals == null && !error ? (
@@ -879,6 +895,7 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
             </div>
           </section>
         )}
+        </div>
           </div>
         </div>
       </div>
@@ -965,8 +982,13 @@ function Board({ user, onSignOut }: { user: UserProfile; onSignOut: () => void }
 function MiniStat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="text-right">
-      <div className="stat-value text-[18px] leading-5">{value}</div>
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</div>
+      {/* Handwritten, to answer the title across the row. Only the figure:
+          handwriting at 10px uppercase is a smudge, so the label stays in
+          Montserrat where it can still be read. */}
+      <div className="written tnum text-[27px] leading-none text-ink">{value}</div>
+      <div className="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+        {label}
+      </div>
     </div>
   );
 }
@@ -1212,15 +1234,30 @@ function DealWorkspace({
               {deal.agentName ? ` · ${deal.agentName}` : ""}
             </p>
           </div>
+          {/* The two systems this deal actually lives in, side by side and
+              outlined rather than filled — the same treatment as everything
+              else on the page. REX only appears when the deal carries a
+              listing id; without one there is nothing to open, and a button
+              that goes nowhere is worse than no button. */}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <a
               href={PROPOLY_APP_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-press hidden rounded-lg border border-line bg-card px-3.5 py-2 text-[12px] font-semibold sm:block"
+              className="btn-press hidden rounded-lg border border-line bg-transparent px-3.5 py-2 text-[12px] font-semibold transition hover:border-black/30 sm:block"
             >
               Open in Propoly ↗
             </a>
+            {deal.app.listingId ? (
+              <a
+                href={rexListingUrl(deal.app.listingId, "rental")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-press hidden rounded-lg border border-line bg-transparent px-3.5 py-2 text-[12px] font-semibold transition hover:border-black/30 sm:block"
+              >
+                Open in REX ↗
+              </a>
+            ) : null}
             <button
               onClick={onClose}
               aria-label="Close"
@@ -1402,16 +1439,9 @@ function DealWorkspace({
                     {deal.app.propertyName}
                   </p>
                   <p className="text-[12px] text-muted">{deal.app.locality}</p>
-                  {deal.app.listingId ? (
-                    <a
-                      href={rexListingUrl(deal.app.listingId, "rental")}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 inline-block text-[11px] font-semibold text-muted underline-offset-4 hover:text-ink hover:underline"
-                    >
-                      Open in REX ↗
-                    </a>
-                  ) : null}
+                  {/* The REX link moved up to the panel header, next to
+                      Propoly. Buried down here it was the only way out to REX
+                      and it only existed when the property had a photo. */}
                 </div>
               </div>
             ) : null}
@@ -1673,7 +1703,10 @@ function WorkTabs({
   ];
 
   return (
-    <div className="card flex min-h-0 flex-1 flex-col">
+    // Outline only, like every other panel in the file. It was the last white
+    // box on a page-coloured surface, which made it read as a different kind
+    // of thing from the panels stacked beside it.
+    <div className="card card-flat flex min-h-0 flex-1 flex-col">
       <div className="flex border-b border-line px-2 pt-1.5">
         {tabs.map((t) => (
           <button
@@ -1711,7 +1744,9 @@ function WorkTabs({
           <EmailsTab deal={deal} onOpenMailbox={onOpenMailbox} />
         ) : tab === "notes" ? (
           <>
-            <p className="rounded-lg bg-page px-3 py-1.5 text-[11px] text-muted">
+            {/* Was a bg-page pill sitting on a bg-page panel — an invisible
+                box. Just the line now. */}
+            <p className="px-1 pb-2 text-[11px] text-muted">
               Personal notes — nobody else can see these, not even the agent.
             </p>
             <div className="min-h-0 flex-1">
