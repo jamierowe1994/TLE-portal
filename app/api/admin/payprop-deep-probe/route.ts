@@ -413,6 +413,10 @@ export async function GET(req: NextRequest) {
 
       endpoints[path] = {
         rowsSampled: rows.length,
+        // meta/me's rows are the SCOPE STRINGS themselves — the one payload
+        // where the verbatim values matter more than the shape, because they
+        // go word-for-word into the permissions email to PayProp.
+        ...(path === "meta/me" ? { raw: rows } : {}),
         keyPaths: [...keyPaths(rows)].sort(),
         population: Object.fromEntries(
           Object.entries(population).sort((a, b) => b[1] - a[1])
