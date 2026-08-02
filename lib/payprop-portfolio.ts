@@ -91,6 +91,8 @@ export interface AgentBook {
   propertyIds: string[];
   /** Address-derived keys, for reports that carry no id (see propertyKey). */
   propertyKeys: string[];
+  /** This agent's own split by service level, e.g. { "Fully managed": 12 }. */
+  serviceLevels: Record<string, number>;
   accounts: PayPropAccountId[];
 }
 
@@ -115,6 +117,27 @@ export interface PortfolioBook {
   tenanted: number;
   /** Counts per PayProp service level, e.g. Fully Managed vs Let Only. */
   byServiceLevel: Array<{ level: string; properties: number; rentRoll: number }>;
+  /**
+   * Service level PER PROPERTY, by PayProp id. This is the only trustworthy
+   * answer anywhere in the estate to "what did this landlord actually buy" —
+   * REX has a field for it (lettings_service_type) and it is null on all 919
+   * rental listings, and property_type is populated on 3 properties in 10 and
+   * always says "flat". Measured 2 Aug 2026: 562 properties, 4 blank.
+   */
+  serviceLevelById: Record<string, string>;
+  /**
+   * The same, by address key, for the reports that carry no id.
+   *
+   * propertyKey is DELIBERATELY loose and collides for the same house number
+   * and street in two towns. A collision here is not cosmetic: if this ever
+   * drives who gets chased for a gas certificate, a wrong answer means either
+   * hassling a landlord about a property you handed back, or not chasing one
+   * you are responsible for. So a key whose properties DISAGREE is not
+   * guessed at — it is omitted here and listed in serviceLevelAmbiguous.
+   */
+  serviceLevelByKey: Record<string, string>;
+  /** Address keys where two properties disagree, so no answer is given. */
+  serviceLevelAmbiguous: string[];
   /** E&W and Glasgow are separate agencies — split so both can be shown. */
   byAccount: AccountSlice[];
   /** Keyed by normalised name. */
@@ -173,7 +196,7 @@ export async function getPortfolioBook(): Promise<PortfolioBook | null> {
   // the background job below, so a cold process served nothing until the whole
   // walk finished — the deploy-day slowness.
   if (!cache) {
-    const stored = await readCache<PortfolioBook>("payprop:portfolio:v3").catch(() => null);
+    const stored = await readCache<PortfolioBook>("payprop:portfolio:v4").catch(() => null);
     if (stored) cache = { at: stored.at, data: stored.data };
   }
   if (cache && Date.now() - cache.at < TTL_MS) return cache.data;
@@ -185,7 +208,7 @@ export async function getPortfolioBook(): Promise<PortfolioBook | null> {
         cache = { at: Date.now(), data };
         lastError = null;
         failedAt = 0;
-        await writeCache("payprop:portfolio:v3", data);
+        await writeCache("payprop:portfolio:v4", data);
       } else {
         lastError = "PayProp returned no properties.";
         failedAt = Date.now();
@@ -232,6 +255,11 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
   let vacant = 0;
   let tenanted = 0;
   const levels = new Map<string, { properties: number; rentRoll: number }>();
+  // Per-property service level. `byKey` records every level seen for an
+  // address key so a disagreement can be detected rather than overwritten —
+  // last-write-wins would silently hand back one of two contradictory answers.
+  const levelById: Record<string, string> = {};
+  const levelsByKey = new Map<string, Set<string>>();
   const slices: AccountSlice[] = [];
 
   for (const { account, rows } of perAccount) {
@@ -258,6 +286,22 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
       lv.rentRoll += rent;
       levels.set(level, lv);
 
+      // "Not set" is recorded as an absence, not as a level. Writing it into
+      // the lookups would turn "we don't know" into a confident answer, which
+      // is the failure mode worth avoiding here above all others.
+      if (level !== "Not set") {
+        const idForLevel = text(r.id);
+        if (idForLevel) levelById[idForLevel] = level;
+        const keyForLevel = propertyKey(
+          text(r.property_name) || text(r.address?.first_line)
+        );
+        if (keyForLevel) {
+          const seen = levelsByKey.get(keyForLevel) ?? new Set<string>();
+          seen.add(level);
+          levelsByKey.set(keyForLevel, seen);
+        }
+      }
+
       const raw = text(r.responsible_agent);
       const key = normaliseAgentName(raw);
       if (!key || NON_AGENT.has(key)) {
@@ -273,12 +317,14 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
         propertyNames: [],
         propertyIds: [],
         propertyKeys: [],
+        serviceLevels: {},
         accounts: [],
       });
       if (raw && !book.names.includes(raw)) book.names.push(raw);
       book.properties++;
       book.rentRoll += rent;
       book.activeTenancies += money(r.active_tenancies);
+      book.serviceLevels[level] = (book.serviceLevels[level] ?? 0) + 1;
       const pname = text(r.property_name);
       if (pname) book.propertyNames.push(pname);
       const pid = text(r.id);
@@ -305,6 +351,15 @@ async function computePortfolioBook(): Promise<PortfolioBook | null> {
     byServiceLevel: [...levels.entries()]
       .map(([level, v]) => ({ level, ...v }))
       .sort((a, b) => b.properties - a.properties),
+    serviceLevelById: levelById,
+    // Only keys where every property carrying them agrees. One disagreement
+    // and the key is dropped rather than resolved — see the field comment.
+    serviceLevelByKey: Object.fromEntries(
+      [...levelsByKey].filter(([, v]) => v.size === 1).map(([k, v]) => [k, [...v][0]])
+    ),
+    serviceLevelAmbiguous: [...levelsByKey]
+      .filter(([, v]) => v.size > 1)
+      .map(([k]) => k),
     byAccount: slices,
     byAgent,
     unattributed,
@@ -330,6 +385,7 @@ export async function getAgentBook(displayName: string): Promise<AgentBook | nul
       propertyNames: [],
       propertyIds: [],
       propertyKeys: [],
+      serviceLevels: {},
       accounts: [],
     }
   );

@@ -5,6 +5,7 @@ import { findById } from "@/lib/users-store";
 import { getAllPropolyDeals, getPropolyMoveInForecast } from "@/lib/propoly-deals";
 import { getBusinessPhotoIndex, matchListingPhoto } from "@/lib/rex-stats";
 import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
+import { getPortfolioBook, propertyKey } from "@/lib/payprop-portfolio";
 import { PORTAL_STAGES, portalStageOf } from "@/lib/propoly-stages";
 import type { DealPortalOverlay } from "@/lib/types";
 
@@ -30,6 +31,14 @@ export interface PreTenancyDeal {
   agentName: string | null;
   agentEmail: string | null;
   portal: DealPortalOverlay;
+  /**
+   * What the landlord actually bought — "Fully managed", "Let only",
+   * "Rent collect" — from PayProp, which is the only place in the estate that
+   * records it reliably (562 properties, 4 blank). null means we genuinely do
+   * not know: either PayProp has no matching property, or two properties share
+   * this address key and disagree. It is never a guess.
+   */
+  serviceLevel: string | null;
 }
 
 export async function GET(req: NextRequest) {
@@ -44,6 +53,9 @@ export async function GET(req: NextRequest) {
   // off later just added its time to Propoly's. Timed 2 Aug 2026: Propoly ~1s,
   // the index ~10s cold, and they were running one after the other.
   const photosWork = getBusinessPhotoIndex(PHOTO_DEADLINE_MS).catch(() => null);
+  // Cached an hour and non-blocking by design — it serves what it has and
+  // refreshes behind. Started here so it overlaps Propoly like the photos do.
+  const bookWork = getPortfolioBook().catch(() => null);
 
   const [deals, forecast] = await Promise.all([
     getAllPropolyDeals().catch(() => null),
@@ -75,6 +87,7 @@ export async function GET(req: NextRequest) {
   // without a picture, which is exactly what they do today. Started above so
   // it overlaps the Propoly fetch; by here it is usually already done.
   const photos = await photosWork;
+  const book = await bookWork;
 
   const out: PreTenancyDeal[] = deals.map((d) => {
     const entry = overlays.get(d.app.id);
@@ -88,7 +101,12 @@ export async function GET(req: NextRequest) {
         }
       : { notesCount: 0, lastNote: null, override: null, checklistDone: 0, checklistTotal: 0 };
     const match = photos ? matchListingPhoto(photos, d.app.propertyName, d.app.locality) : null;
+    // Address-keyed, because a Propoly deal holds an address string and no
+    // PayProp id. Keys where two properties disagree were dropped upstream, so
+    // a hit here is unambiguous or it is absent.
+    const key = propertyKey(d.app.propertyName);
     return {
+      serviceLevel: (key && book?.serviceLevelByKey[key]) || null,
       app: match
         ? { ...d.app, image: match.image, images: match.images, listingId: match.listingId }
         : d.app,
@@ -124,6 +142,17 @@ export async function GET(req: NextRequest) {
     undated: active.filter((d) => d.app.startDate == null).length,
     completedMtd: forecast?.completedMtd ?? null,
     forecastByMonth: forecast?.forecastByMonth ?? null,
+    // How often the address join actually lands. PayProp records the service
+    // level on 562 properties with only 4 blank, but that is the PayProp side;
+    // what matters here is how many PROPOLY deals can be tied to one of them,
+    // and that is a different number. Reported rather than assumed — the photo
+    // index looked complete for months on exactly this kind of unmeasured join.
+    serviceLevelCoverage: {
+      known: active.filter((d) => d.serviceLevel != null).length,
+      total: active.length,
+      bookLoaded: book != null,
+      ambiguousKeys: book?.serviceLevelAmbiguous.length ?? null,
+    },
   };
 
   return NextResponse.json({ configured: true, deals: out, summary });

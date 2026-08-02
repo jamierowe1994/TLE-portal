@@ -53,6 +53,9 @@ interface BoardDeal {
   agentName: string | null;
   agentEmail: string | null;
   portal: DealPortalOverlay;
+  /** "Fully managed" | "Let only" | "Rent collect", from PayProp. null when
+   *  PayProp has no unambiguous match — an absence, never a guess. */
+  serviceLevel?: string | null;
 }
 
 interface BoardSummary {
@@ -1561,6 +1564,18 @@ function DealWorkspace({
                     {deal.app.propertyName}
                   </p>
                   <p className="text-[12px] text-muted">{deal.app.locality}</p>
+                  {/* What the landlord actually bought. It decides who owns the
+                      paperwork — chasing a Let Only landlord for a certificate
+                      you handed back is worse than not chasing at all — and
+                      until now nothing in the estate recorded it: REX's own
+                      field is null on all 919 rentals. Shown only when PayProp
+                      gives an unambiguous answer, so a blank means "we don't
+                      know", not "let only". */}
+                  {deal.serviceLevel ? (
+                    <span className="mt-2 inline-block rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                      {deal.serviceLevel}
+                    </span>
+                  ) : null}
                   {/* The REX link moved up to the panel header, next to
                       Propoly. Buried down here it was the only way out to REX
                       and it only existed when the property had a photo. */}
