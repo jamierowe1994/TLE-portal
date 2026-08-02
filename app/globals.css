@@ -946,3 +946,27 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .tick-in { animation: none; }
 }
+
+/* --- Drawer open: zoom out of the card you clicked -----------------------
+   The backdrop fades and blurs in; the panels scale up FROM the point on
+   screen where the card sits (--zoom-x/--zoom-y, set by the opener), so it
+   reads as that tile expanding rather than a dialog appearing over it.
+   Falls back to a centre-origin pop when no origin was supplied. */
+.zoom-backdrop {
+  animation: zoom-backdrop 0.26s ease-out both;
+}
+@keyframes zoom-backdrop {
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to { opacity: 1; }
+}
+.zoom-panel {
+  transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%);
+  animation: zoom-panel 0.34s cubic-bezier(0.22, 1.05, 0.36, 1) both;
+}
+@keyframes zoom-panel {
+  from { opacity: 0; transform: scale(0.86); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zoom-backdrop, .zoom-panel { animation: none; }
+}

@@ -24,6 +24,7 @@ import PhotoCarousel from "@/components/PhotoCarousel";
 import { CHECKLIST_ITEMS, PORTAL_STAGES, PROPOLY_APP_URL } from "@/lib/propoly-stages";
 import type { AgentApplication, ApplicationStage } from "@/lib/rex-stats";
 import type { DealMeta } from "@/lib/types";
+import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
@@ -61,13 +62,13 @@ function ApplicationTile({
 }: {
   a: AgentApplication;
   delay: number;
-  onOpen: () => void;
+  onOpen: (origin: ZoomOrigin) => void;
 }) {
   const lead = a.tenants.find((t) => t.isPrimary) ?? a.tenants[0];
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={(e) => onOpen(zoomOriginFrom(e))}
       className="enter enter-up card btn-press flex min-h-[210px] text-left transition hover:border-black/20"
       style={enterAt(delay)}
     >
@@ -332,7 +333,7 @@ function MessageComposer({
 /** Click-into-a-deal dashboard: where the tenancy is, stage by stage. */
 // One wide window: the property across the top, the stage board on the left,
 // and a right-hand column of panels that expand over each other on demand.
-function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
+function PropolyDrawer({ a, onClose, origin }: { a: AgentApplication; onClose: () => void; origin?: ZoomOrigin }) {
   // Pre-tenancy meta (checklist ticks) arrives with the notes fetch.
   const [meta, setMeta] = useState<DealMeta | null>(null);
   // Which right-hand panel is opened out; null = the resting arrangement.
@@ -371,7 +372,7 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
   );
 
   return (
-    <SplitDrawer onClose={onClose} hideClose>
+    <SplitDrawer onClose={onClose} hideClose origin={origin}>
       <DrawerPanel
         className="relative shrink-0 grow-0 p-5 sm:p-7"
         style={{ width: "min(74rem, calc(100vw - 2rem))" }}
@@ -893,9 +894,9 @@ function PropolyDrawer({ a, onClose }: { a: AgentApplication; onClose: () => voi
 /* -------------------------------- drawer -------------------------------- */
 
 // Two windows: the property and the offer on the left, the people on the right.
-function Drawer({ a, onClose }: { a: AgentApplication; onClose: () => void }) {
+function Drawer({ a, onClose, origin }: { a: AgentApplication; onClose: () => void; origin?: ZoomOrigin }) {
   return (
-    <SplitDrawer onClose={onClose}>
+    <SplitDrawer onClose={onClose} origin={origin}>
       {/* ---- the property & the offer ---- */}
       <DrawerPanel className="p-3 lg:w-[26rem]">
         <PhotoCarousel images={a.image ? [a.image] : []} alt={a.propertyName} />
@@ -996,6 +997,8 @@ export default function ApplicationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<AgentApplication | null>(null);
+  // Where the drawer should grow from — the centre of the tile clicked.
+  const [zoom, setZoom] = useState<ZoomOrigin>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -1181,7 +1184,7 @@ export default function ApplicationsPage() {
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
               {shown.map((a, i) => (
-                <ApplicationTile key={a.id} a={a} delay={200 + i * 50} onOpen={() => setOpen(a)} />
+                <ApplicationTile key={a.id} a={a} delay={200 + i * 50} onOpen={(o) => { setZoom(o); setOpen(a); }} />
               ))}
             </div>
           )}
@@ -1190,9 +1193,9 @@ export default function ApplicationsPage() {
 
       {open ? (
         open.propoly ? (
-          <PropolyDrawer a={open} onClose={() => setOpen(null)} />
+          <PropolyDrawer a={open} origin={zoom} onClose={() => setOpen(null)} />
         ) : (
-          <Drawer a={open} onClose={() => setOpen(null)} />
+          <Drawer a={open} origin={zoom} onClose={() => setOpen(null)} />
         )
       ) : null}
     </div>

@@ -22,7 +22,7 @@ export function DrawerPanel({
 }) {
   return (
     <div
-      className={`modal-pop w-full rounded-2xl bg-page ${className}`}
+      className={`zoom-panel w-full rounded-2xl bg-page ${className}`}
       style={style}
       onClick={(e) => e.stopPropagation()}
     >
@@ -35,11 +35,18 @@ export default function SplitDrawer({
   onClose,
   children,
   hideClose = false,
+  origin,
 }: {
   onClose: () => void;
   children: React.ReactNode;
   /** Drawers with their own action rail supply the close button themselves. */
   hideClose?: boolean;
+  /**
+   * Viewport point the drawer should grow OUT of — the centre of the card that
+   * was clicked. Turns the open into a zoom from that tile instead of a dialog
+   * landing on top of it. Omit and it scales from the middle, as before.
+   */
+  origin?: { x: number; y: number } | null;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -49,8 +56,23 @@ export default function SplitDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-[2px]"
+      // Slightly darker and blurrier than before, so the drawer reads as the
+      // only live thing on screen.
+      className="zoom-backdrop fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-[3px]"
       onClick={onClose}
+      // The origin is expressed as a percentage of the viewport and inherited
+      // by every .zoom-panel inside, so both boxes of a split drawer grow from
+      // the same point.
+      // typeof window guard: client components still run through the server
+      // render, and touching window there is a crash, not a warning.
+      style={
+        origin && typeof window !== "undefined"
+          ? ({
+              "--zoom-x": `${(origin.x / window.innerWidth) * 100}%`,
+              "--zoom-y": `${(origin.y / window.innerHeight) * 100}%`,
+            } as React.CSSProperties)
+          : undefined
+      }
     >
       <div className="flex min-h-full items-center justify-center p-4 py-10 sm:p-10">
         <div className="relative">

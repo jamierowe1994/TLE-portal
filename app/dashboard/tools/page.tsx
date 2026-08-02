@@ -1,129 +1,102 @@
 "use client";
 
-// TLE OS — one place for every system the agent's business runs on. Links for
-// now; the ones marked "Connected" already feed figures into this portal.
+// Tools — the catch-all for things the agent's business needs that aren't a
+// board or a report. This route used to be the platform-links grid; those
+// moved into the TLE OS launcher on the rail when the All Tools button went,
+// which left the route free for what it should have been.
 
-import { PLATFORM_SECTIONS, platformsIn, type Platform } from "@/lib/platforms";
+import Link from "next/link";
+import DoodleIcon from "@/components/DoodleIcon";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
 
-function ExternalIcon() {
-  return (
-    <svg
-      className="h-3.5 w-3.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      viewBox="0 0 24 24"
-      aria-hidden
-    >
-      <path d="M14 5h5v5M19 5l-7 7M18 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V7a1 1 0 011-1h5" />
-    </svg>
-  );
-}
-
-function PlatformCard({ p, delay }: { p: Platform; delay: number }) {
-  // Monochrome chip — the per-platform brand colours were the loudest thing on
-  // the page; ink-on-grey keeps the grid readable and on-theme.
-  const chip = (
-    <span
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black/[0.05] text-[13px] font-semibold text-ink"
-      aria-hidden
-    >
-      {p.name.slice(0, 2).toUpperCase()}
-    </span>
-  );
-
-  const body = (
-    <>
-      <div className="flex items-start gap-3">
-        {chip}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold">{p.name}</span>
-            {p.connected ? (
-              <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-green-700">
-                CONNECTED
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-0.5 text-[12.5px] leading-snug text-muted">{p.blurb}</p>
-        </div>
-      </div>
-      <div className="mt-3 flex items-center gap-1.5 text-[12px] font-medium">
-        {p.url ? (
-          <span className="inline-flex items-center gap-1.5 text-ink">
-            Open <ExternalIcon />
-          </span>
-        ) : (
-          <span className="text-muted">Link coming</span>
-        )}
-      </div>
-    </>
-  );
-
-  if (!p.url) {
-    return (
-      <div className="enter enter-up card card-flat p-5 opacity-70" style={enterAt(delay)}>
-        {body}
-      </div>
-    );
-  }
-  return (
-    <a
-      href={p.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="enter enter-up card card-flat btn-press block p-5 transition hover:border-black/20"
-      style={enterAt(delay)}
-    >
-      {body}
-    </a>
-  );
-}
+const TOOLS: Array<{
+  href: string | null;
+  icon: string;
+  name: string;
+  blurb: string;
+  status?: string;
+}> = [
+  {
+    // First on purpose: it is the one that saves real time every month.
+    // Not linked until it exists — see the note in the commit; the fee basis
+    // is a business rule nobody has written down yet.
+    href: null,
+    icon: "doc",
+    name: "Invoicing",
+    blurb:
+      "Pick a completed deal, check the figures, and produce an invoice in your own business's name — ready for accounts.",
+    status: "Building now",
+  },
+  {
+    href: "/dashboard/forecast",
+    icon: "trend-up",
+    name: "Forecasting",
+    blurb: "Model the months ahead from your own pipeline and pick your targets apart.",
+  },
+  {
+    href: null,
+    icon: "piggy-bank",
+    name: "Profit & loss",
+    blurb: "Your income against your costs, month by month.",
+    status: "Coming next",
+  },
+];
 
 export default function ToolsPage() {
-  let beat = 120;
-
   return (
-    <div className="space-y-8">
-      <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="text-xl font-semibold tracking-tight">TLE OS</h1>
-        <p className="mt-1 max-w-2xl text-[13px] text-muted">
-          Every system your business runs on, in one place. The ones marked{" "}
-          <span className="font-medium text-ink">Connected</span> already feed
-          figures into this portal — the rest open in a new tab for now.
+    <div className="space-y-6">
+      <div className="pt-2">
+        <h1
+          className="tracking-tight"
+          style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}
+        >
+          Tools
+        </h1>
+        <p className="mt-2.5 text-[13px] text-muted">
+          Built for your business, not the agency&apos;s.
         </p>
       </div>
 
-      {PLATFORM_SECTIONS.map((section) => {
-        const items = platformsIn(section.id);
-        return (
-          <section key={section.id}>
-            <div className="enter enter-up mb-3" style={enterAt((beat += 60))}>
-              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                {section.title}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {TOOLS.map((t, i) => {
+          const inner = (
+            <>
+              <span className="text-accent">
+                <DoodleIcon name={t.icon} size={26} />
+              </span>
+              <h2 className="mt-4 text-[17px]" style={{ fontWeight: 500 }}>
+                {t.name}
               </h2>
-              <p className="mt-0.5 text-[12px] text-muted">{section.blurb}</p>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{t.blurb}</p>
+              {t.status ? (
+                <span className="mt-3 inline-block rounded-full border border-line px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  {t.status}
+                </span>
+              ) : null}
+            </>
+          );
+          const shell =
+            "enter enter-up card card-flat block min-h-[190px] p-6 text-left transition";
+          // A tool that isn't built yet is not a link — a dead link that looks
+          // live is worse than an honest "coming next".
+          return t.href ? (
+            <Link
+              key={t.name}
+              href={t.href}
+              className={`${shell} btn-press hover:border-black/25`}
+              style={enterAt(120 + i * 60)}
+            >
+              {inner}
+            </Link>
+          ) : (
+            <div key={t.name} className={`${shell} opacity-60`} style={enterAt(120 + i * 60)}>
+              {inner}
             </div>
-            {items.length === 0 ? (
-              <div className="card card-flat p-5 text-[13px] text-muted">
-                Nothing here yet — this is where your {section.title.toLowerCase()}{" "}
-                will live.
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map((p) => (
-                  <PlatformCard key={p.id} p={p} delay={(beat += 70)} />
-                ))}
-              </div>
-            )}
-          </section>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

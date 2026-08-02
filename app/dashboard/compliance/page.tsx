@@ -10,7 +10,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import DoodleIcon from "@/components/DoodleIcon";
-import CollapsePanel, { PANEL_STAGGER } from "@/components/CollapsePanel";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import PropertyNotes from "@/components/PropertyNotes";
 import PropertyDocuments from "@/components/PropertyDocuments";
@@ -21,6 +20,7 @@ import QuickTabs from "@/components/QuickTabs";
 import Loader from "@/components/Loader";
 import NoPhoto from "@/components/NoPhoto";
 import type { ComplianceItem, ComplianceState, PropertyCompliance } from "@/lib/rex-stats";
+import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
@@ -125,13 +125,13 @@ function ComplianceTile({
 }: {
   p: PropertyCompliance;
   delay: number;
-  onOpen: () => void;
+  onOpen: (origin: ZoomOrigin) => void;
 }) {
   const { text, style } = badge(p);
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={(e) => onOpen(zoomOriginFrom(e))}
       className="enter enter-up card btn-press flex min-h-[210px] text-left transition hover:border-black/20"
       style={enterAt(delay)}
     >
@@ -348,17 +348,14 @@ function ContactsCard({ p }: { p: PropertyCompliance }) {
   );
 }
 
-function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) {
-  // Which panel is opened out; null = the resting arrangement.
-  type Expanded = null | "indate" | "docs" | "notes";
-  const [expanded, setExpanded] = useState<Expanded>(null);
-
+function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => void; origin?: ZoomOrigin }) {
+  // Nothing expands any more: every panel is open at once, so Escape has one
+  // job again.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) =>
-      e.key === "Escape" && (expanded ? setExpanded(null) : onClose());
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [expanded, onClose]);
+  }, [onClose]);
 
   // Only what needs a human gets a full row; everything already in date is
   // real information but not news, so it waits behind its own panel.
@@ -375,18 +372,8 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
   // and no empty list may be worded as "there's nothing there".
   const partial = !p.checked;
 
-  const collapse = (
-    <button
-      type="button"
-      onClick={() => setExpanded(null)}
-      className="btn-press rounded-full border border-line px-3 py-1 text-[12px] font-medium text-muted transition hover:text-ink"
-    >
-      Collapse
-    </button>
-  );
-
   return (
-    <SplitDrawer onClose={onClose} hideClose>
+    <SplitDrawer onClose={onClose} hideClose origin={origin}>
       <DrawerPanel
         className="relative shrink-0 grow-0 p-5 sm:p-7"
         style={{ width: "min(74rem, calc(100vw - 2rem))" }}
@@ -550,6 +537,39 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
               </div>
             )}
 
+            {/* Everything already in date, in the SAME column — this card is
+                the whole compliance picture now (EPC, terms of business, the
+                lot), not just the problems. It used to hide behind a summary
+                tile on the right. */}
+            {settled.length ? (
+              <div className="mt-6 border-t border-line pt-5">
+                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  In date
+                </h4>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {settled.map((i) => (
+                    <div
+                      key={i.type}
+                      title={i.notes ?? stateLabel(i)}
+                      className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                    >
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotFor(i)}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12px] font-medium text-ink">
+                          {i.label}
+                        </span>
+                        <span className="block truncate text-[10px] text-muted">
+                          {stateLabel(i)}
+                          {i.issued ? ` · issued ${i.issued}` : ""}
+                        </span>
+                      </span>
+                      <ReminderButton property={p} item={i} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <p className="mt-5 text-[11px] text-muted">
               Live from REX. Certificates are updated in REX — this is the view,
               not the record.
@@ -561,166 +581,32 @@ function Drawer({ p, onClose }: { p: PropertyCompliance; onClose: () => void }) 
             {/* Same slot Applications puts Tenant details in, so moving
                 between the two tabs doesn't move the furniture. */}
             <ContactsCard p={p} />
-            {/* ---- the summary cards, while nothing is opened out ---- */}
-            <CollapsePanel
-              open={expanded === null}
-              delay={expanded === null ? PANEL_STAGGER : 0}
-            >
-              <div className="grid gap-4 sm:grid-cols-3">
-                <button
-                  type="button"
-                  onClick={() => setExpanded("indate")}
-                  className="card card-lift p-5 text-left"
-                >
-                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
-                    <DoodleIcon name="checklist" size={16} className="text-accent" />
-                    In date
-                  </h3>
-                  {/* The card sitting beside "Couldn't check this one" can't
-                      say "nothing recorded" — that's the reassuring half of a
-                      drawer whose other half has already said we don't know. */}
-                  <p className="mt-2 text-[12px] text-muted">
-                    {settled.length
-                      ? `${settled.length} item${settled.length === 1 ? "" : "s"} ${
-                          partial ? "read so far" : "on file"
-                        }`
-                      : partial
-                        ? "Couldn't check this one"
-                        : "Nothing recorded yet"}
-                  </p>
-                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
-                    View all
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setExpanded("docs")}
-                  className="card card-lift p-5 text-left"
-                >
-                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
-                    <DoodleIcon name="doc" size={16} className="text-accent" />
-                    Documents
-                  </h3>
-                  <p className="mt-2 text-[12px] text-muted">
-                    Certificates and paperwork on file
-                  </p>
-                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
-                    View all
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setExpanded("notes")}
-                  className="card card-lift p-5 text-left"
-                >
-                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
-                    <DoodleIcon name="note" size={16} className="text-accent" />
-                    Notes
-                  </h3>
-                  <p className="mt-2 text-[12px] text-muted">
-                    Anything you or the team have logged
-                  </p>
-                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
-                    View all
-                  </span>
-                </button>
-              </div>
-            </CollapsePanel>
-
-            {/* ---- everything already in date ---- */}
-            <CollapsePanel
-              open={expanded === "indate"}
-              delay={expanded === "indate" ? PANEL_STAGGER : 0}
-              grow={expanded === "indate"}
-            >
-              <div className="card flex h-full flex-col p-5 sm:p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
-                    <DoodleIcon name="checklist" size={17} className="text-accent" />
-                    In date
-                  </h3>
-                  {collapse}
-                </div>
-                {/* Same caveat as the left card, said before the list rather
-                    than after it. */}
-                {partial ? (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">
-                    REX didn&apos;t finish answering for this property
-                    {settled.length
-                      ? ", so this is what we could read — not the full list."
-                      : ", and nothing in-date came back before it stopped. We can't say what's on file here — check it in REX."}
-                  </div>
-                ) : null}
-                {settled.length ? (
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    {settled.map((i) => (
-                      <div
-                        key={i.type}
-                        title={i.notes ?? stateLabel(i)}
-                        className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
-                      >
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotFor(i)}`} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12px] font-medium text-ink">
-                            {i.label}
-                          </span>
-                          <span className="block truncate text-[10px] text-muted">
-                            {stateLabel(i)}
-                            {i.issued ? ` · issued ${i.issued}` : ""}
-                          </span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : partial ? null : (
-                  <p className="mt-4 text-[13px] text-muted">
-                    Nothing on file for this property yet.
-                  </p>
-                )}
-              </div>
-            </CollapsePanel>
-
             {/* ---- documents on file, ours and REX's ---- */}
-            <CollapsePanel
-              open={expanded === "docs"}
-              delay={expanded === "docs" ? PANEL_STAGGER : 0}
-              grow={expanded === "docs"}
-            >
-              <div className="card flex h-full flex-col p-5 sm:p-6">
+            {/* Documents and Notes are the only two panels now, and neither
+                hides behind a summary tile — Notes especially, which is where
+                the agent actually writes. */}
+            <div className="card card-flat flex flex-col p-5 sm:p-6">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
                     <DoodleIcon name="doc" size={17} className="text-accent" />
                     Documents
                   </h3>
-                  {collapse}
                 </div>
-                <div className="mt-4 flex-1">
-                  <PropertyDocuments listingId={p.listingId} />
-                </div>
+              <div className="mt-4 flex-1">
+                <PropertyDocuments listingId={p.listingId} />
               </div>
-            </CollapsePanel>
+            </div>
 
-            {/* ---- notes on the property ---- */}
-            <CollapsePanel
-              open={expanded === "notes"}
-              delay={expanded === "notes" ? PANEL_STAGGER : 0}
-              grow={expanded === "notes"}
-            >
-              <div className="card flex h-full flex-col p-5 sm:p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
-                    <DoodleIcon name="note" size={17} className="text-accent" />
-                    Notes
-                  </h3>
-                  {collapse}
-                </div>
-                <div className="mt-3 flex-1">
-                  <PropertyNotes listingId={p.listingId} name={p.name} />
-                </div>
+            {/* ---- notes: open by default, it is where the agent writes ---- */}
+            <div className="card card-flat flex min-h-[16rem] flex-1 flex-col p-5 sm:p-6">
+              <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                <DoodleIcon name="note" size={17} className="text-accent" />
+                Notes
+              </h3>
+              <div className="mt-3 flex-1">
+                <PropertyNotes listingId={p.listingId} name={p.name} />
               </div>
-            </CollapsePanel>
+            </div>
           </div>
         </div>
 
@@ -749,6 +635,8 @@ export default function CompliancePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<PropertyCompliance | null>(null);
+  // Where the drawer should grow from — the centre of the tile clicked.
+  const [zoom, setZoom] = useState<ZoomOrigin>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("worst");
@@ -985,7 +873,7 @@ export default function CompliancePage() {
                   key={p.listingId}
                   p={p}
                   delay={200 + i * 50}
-                  onOpen={() => setOpen(p)}
+                  onOpen={(o) => { setZoom(o); setOpen(p); }}
                 />
               ))}
             </div>
@@ -993,7 +881,7 @@ export default function CompliancePage() {
         </>
       ) : null}
 
-      {open ? <Drawer p={open} onClose={() => setOpen(null)} /> : null}
+      {open ? <Drawer p={open} origin={zoom} onClose={() => setOpen(null)} /> : null}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import PhotoCarousel from "@/components/PhotoCarousel";
 import NoPhoto from "@/components/NoPhoto";
 import type { AgentListing, ListingDetail } from "@/lib/rex-stats";
 import type { PropertyNote } from "@/lib/property-notes-store";
+import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
@@ -159,14 +160,14 @@ function ListingTile({
 }: {
   l: AgentListing;
   delay: number;
-  onOpen: () => void;
+  onOpen: (origin: ZoomOrigin) => void;
 }) {
   const stage = stageOf(l);
   const attention = epcNeedsWork(epcState(l).state);
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={(e) => onOpen(zoomOriginFrom(e))}
       className="enter enter-up card btn-press flex min-h-[210px] text-left transition hover:border-black/20"
       style={enterAt(delay)}
     >
@@ -219,7 +220,7 @@ function ListingTile({
 // the action rail down the drawer's right edge.
 type PanelId = "activity" | "note" | "contacts" | "chat" | "details" | "files";
 
-function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
+function Drawer({ l, onClose, origin }: { l: AgentListing; onClose: () => void; origin?: ZoomOrigin }) {
   const stage = stageOf(l);
   const epc = epcState(l);
   const [panel, setPanel] = useState<PanelId>("activity");
@@ -391,7 +392,7 @@ function Drawer({ l, onClose }: { l: AgentListing; onClose: () => void }) {
   ];
 
   return (
-    <SplitDrawer onClose={onClose} hideClose>
+    <SplitDrawer onClose={onClose} hideClose origin={origin}>
       <DrawerPanel
         className="relative shrink-0 grow-0 p-5 sm:p-7 lg:pr-24"
         style={{ width: "min(74rem, calc(100vw - 2rem))" }}
@@ -1028,6 +1029,8 @@ export default function ListingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<AgentListing | null>(null);
+  // Where the drawer should grow from — the centre of the tile clicked.
+  const [zoom, setZoom] = useState<ZoomOrigin>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
@@ -1150,14 +1153,14 @@ export default function ListingsPage() {
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
               {shown.map((l, i) => (
-                <ListingTile key={l.id} l={l} delay={200 + i * 50} onOpen={() => setOpen(l)} />
+                <ListingTile key={l.id} l={l} delay={200 + i * 50} onOpen={(o) => { setZoom(o); setOpen(l); }} />
               ))}
             </div>
           )}
         </>
       ) : null}
 
-      {open ? <Drawer l={open} onClose={() => setOpen(null)} /> : null}
+      {open ? <Drawer l={open} origin={zoom} onClose={() => setOpen(null)} /> : null}
     </div>
   );
 }

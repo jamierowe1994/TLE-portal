@@ -23,6 +23,7 @@ import { rexListingUrl } from "@/lib/rex-links";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import type { ComplianceItem, ComplianceState, PortfolioProperty } from "@/lib/rex-stats";
+import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
 
 const enterAt = (ms: number) =>
   ({ "--enter-delay": `${ms}ms` }) as React.CSSProperties;
@@ -122,7 +123,7 @@ function PortfolioTile({
 }: {
   p: PortfolioProperty;
   delay: number;
-  onOpen: () => void;
+  onOpen: (origin: ZoomOrigin) => void;
 }) {
   // "Couldn't check" outranks everything, same as on Compliance: when REX's
   // answer was cut short we know nothing about this property, so both of the
@@ -140,7 +141,7 @@ function PortfolioTile({
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={(e) => onOpen(zoomOriginFrom(e))}
       className="enter enter-up card btn-press flex min-h-[210px] text-left transition hover:border-black/20"
       style={enterAt(delay)}
     >
@@ -202,7 +203,7 @@ function PortfolioTile({
 
 // Two windows: the property (front-of-house) on the left, what needs doing on
 // the right.
-function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
+function Drawer({ p, onClose, origin }: { p: PortfolioProperty; onClose: () => void; origin?: ZoomOrigin }) {
   type Expanded = null | "indate" | "notes";
   const [expanded, setExpanded] = useState<Expanded>(null);
 
@@ -233,10 +234,10 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
   );
 
   return (
-    <SplitDrawer onClose={onClose} hideClose>
+    <SplitDrawer onClose={onClose} hideClose origin={origin}>
       <DrawerPanel
         className="relative shrink-0 grow-0 p-5 sm:p-7"
-        style={{ width: "min(70rem, calc(100vw - 2rem))" }}
+        style={{ width: "min(74rem, calc(100vw - 2rem))" }}
       >
         <button
           onClick={onClose}
@@ -317,7 +318,7 @@ function Drawer({ p, onClose }: { p: PortfolioProperty; onClose: () => void }) {
           </div>
         </div>
 
-        <div className="mt-6 grid items-stretch gap-5 lg:grid-cols-[1fr_1fr]">
+        <div className="mt-6 grid items-stretch gap-5 lg:grid-cols-[1fr_1.08fr]">
           {/* ---- left: what needs doing ---- */}
           <div className="card p-5 sm:p-6">
             <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
@@ -520,6 +521,8 @@ export default function PortfolioPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<PortfolioProperty | null>(null);
+  // Where the drawer should grow from — the centre of the tile clicked.
+  const [zoom, setZoom] = useState<ZoomOrigin>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("default");
@@ -769,7 +772,7 @@ export default function PortfolioPage() {
                   key={p.listingId}
                   p={p}
                   delay={200 + i * 50}
-                  onOpen={() => setOpen(p)}
+                  onOpen={(o) => { setZoom(o); setOpen(p); }}
                 />
               ))}
             </div>
@@ -777,7 +780,7 @@ export default function PortfolioPage() {
         </>
       ) : null}
 
-      {open ? <Drawer p={open} onClose={() => setOpen(null)} /> : null}
+      {open ? <Drawer p={open} origin={zoom} onClose={() => setOpen(null)} /> : null}
     </div>
   );
 }

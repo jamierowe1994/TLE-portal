@@ -27,7 +27,7 @@ const NAV = [
   { href: "/dashboard/compliance", label: "Compliance", icon: "shield" },
   { href: "/dashboard/portfolio", label: "My Portfolio", icon: "suitcase" },
   { href: "/dashboard/ads", label: "My Ads", icon: "megaphone" },
-  { href: "/dashboard/forecast", label: "Forecast", icon: "trend-up" },
+  { href: "/dashboard/tools", label: "Tools", icon: "grid" },
 ];
 
 // Hairlines a shade darker than the grey canvas — the only thing that breaks
