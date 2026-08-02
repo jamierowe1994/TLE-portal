@@ -1184,11 +1184,96 @@ function DealWorkspace({
           </div>
         ) : null}
 
+        {/* ---- the strip: the four things she looks for first ----
+             Only figures that can actually be sourced. The compliance score
+             and the documents count from the reference need a business-wide
+             REX pull and a Propoly documents GET that does not exist, so they
+             are absent rather than shown empty. */}
+        <div className="grid grid-cols-2 gap-3 px-5 pt-4 sm:px-8 lg:grid-cols-4">
+          {(() => {
+            const days =
+              deal.app.startDate != null
+                ? Math.round(
+                    (new Date(deal.app.startDate).getTime() - new Date(today()).getTime()) /
+                      86_400_000
+                  )
+                : null;
+            const outstanding = CHECKLIST_ITEMS.length - checklistDone;
+            const idx = PORTAL_STAGES.findIndex((x) => x.key === effective);
+            const age =
+              deal.app.dateReceived != null
+                ? Math.round(
+                    (new Date(today()).getTime() - new Date(deal.app.dateReceived).getTime()) /
+                      86_400_000
+                  )
+                : null;
+            const tiles: Array<{
+              icon: string;
+              label: string;
+              value: string;
+              note?: string;
+              alert?: boolean;
+            }> = [
+              {
+                icon: "calendar",
+                label: "Move-in date",
+                value: fmtDate(deal.app.startDate) ?? "No date",
+                note:
+                  days == null
+                    ? "Not set yet"
+                    : days < 0
+                      ? `${Math.abs(days)} days ago`
+                      : days === 0
+                        ? "Today"
+                        : `In ${days} days`,
+                alert: days != null && days < 0 && effective !== "move_day",
+              },
+              {
+                icon: "checklist",
+                label: "Outstanding",
+                value: String(outstanding),
+                note: outstanding === 0 ? "All done" : `of ${CHECKLIST_ITEMS.length} steps`,
+                alert: outstanding > 0 && days != null && days <= 7,
+              },
+              {
+                icon: "trend-up",
+                label: "Stage",
+                value: stageLabel(effective),
+                note: idx >= 0 ? `${idx + 1} of ${PORTAL_STAGES.length}` : undefined,
+              },
+              {
+                icon: "clock",
+                label: "Deal age",
+                value: age == null ? "—" : `${age} days`,
+                note: fmtDate(deal.app.dateReceived) ?? undefined,
+              },
+            ];
+            return tiles.map((t) => (
+              <div key={t.label} className="rounded-2xl border border-line px-4 py-3">
+                <div className="flex items-center gap-2 text-muted">
+                  <DoodleIcon name={t.icon} size={15} />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide">
+                    {t.label}
+                  </span>
+                </div>
+                <p
+                  className={`mt-1.5 truncate text-[17px] font-semibold ${
+                    t.alert ? "text-accent" : "text-ink"
+                  }`}
+                >
+                  {t.value}
+                </p>
+                {t.note ? <p className="text-[11px] text-muted">{t.note}</p> : null}
+              </div>
+            ));
+          })()}
+        </div>
+
         {/* ---- three working columns ---- */}
         <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 sm:p-8 lg:grid-cols-12 lg:overflow-hidden">
           {/* -- the deal -- */}
           <div className="min-h-0 space-y-4 lg:col-span-3 lg:overflow-y-auto lg:pr-1">
-            <div className="card p-5">
+            <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 The numbers
               </h3>
@@ -1206,7 +1291,7 @@ function DealWorkspace({
               </dl>
             </div>
 
-            <div className="card p-5">
+            <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 {deal.app.tenants.length === 1
                   ? "Tenant"
@@ -1244,7 +1329,7 @@ function DealWorkspace({
               </div>
             </div>
 
-            <div className="card p-5">
+            <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Agent
               </h3>
@@ -1262,7 +1347,7 @@ function DealWorkspace({
 
           {/* -- progression + checklist -- */}
           <div className="min-h-0 space-y-4 lg:col-span-4 lg:overflow-y-auto lg:pr-1">
-            <div className="card p-5">
+            <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Progression
               </h3>
@@ -1327,7 +1412,7 @@ function DealWorkspace({
               </ol>
             </div>
 
-            <div className="card p-5">
+            <div className="card card-flat p-5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Pre-tenancy checklist
                 <span className="ml-2 font-normal normal-case text-muted">
