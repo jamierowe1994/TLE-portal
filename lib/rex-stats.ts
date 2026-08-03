@@ -1416,6 +1416,57 @@ const complianceCache = new Map<string, { at: number; data: PropertyCompliance[]
  * null on failure so the caller can say so rather than imply all-clear.
  * Short-cached per agent — the join costs several REX round-trips.
  */
+/** Compliance for one property, as Kirstie's board needs it. */
+export interface DealCompliance {
+  /** Worst state across the property, for the chip. */
+  outstanding: number;
+  expired: number;
+  /** Labels of everything not in order, for the tooltip. */
+  problems: string[];
+  /** False when REX's answer was cut short — the board must say so, not imply clear. */
+  checked: boolean;
+}
+
+/**
+ * Compliance for an arbitrary set of REX listings, keyed by listing id.
+ *
+ * Kirstie's board is business-wide and Propoly-sourced, so the agent-scoped
+ * getAgentCompliance can't serve it, and getBusinessCompliance is aggregate
+ * only. This sits between them: a chunked read for exactly the listings on
+ * screen.
+ *
+ * Applies the same required-set pass as everywhere else, so a property missing
+ * a gas certificate reads as outstanding here too — the board is the last place
+ * anyone looks before a tenancy starts, which makes it the most important
+ * place for a gap to be visible.
+ */
+export async function getComplianceForListings(
+  listingIds: string[]
+): Promise<Map<string, DealCompliance>> {
+  const out = new Map<string, DealCompliance>();
+  const ids = [...new Set(listingIds.filter(Boolean).map(String))];
+  if (!rexConfigured() || ids.length === 0) return out;
+
+  const { byParent, unchecked } = await fetchComplianceByParent(ids);
+
+  for (const id of ids) {
+    const checked = !unchecked.has(id);
+    const items = addMissingRequired(byParent.get(id) ?? [], checked);
+    // A property REX never answered for is reported as unchecked with nothing
+    // else filled in — an empty problem list must not be mistaken for "clear".
+    const problems = items.filter(
+      (i) => complianceNeedsWork(i.state) || i.conflictingFieldExpiry
+    );
+    out.set(id, {
+      outstanding: problems.length,
+      expired: problems.filter((i) => i.state === "expired").length,
+      problems: problems.map((i) => i.label),
+      checked,
+    });
+  }
+  return out;
+}
+
 export async function getAgentCompliance(
   rexUserId: string
 ): Promise<PropertyCompliance[] | null> {

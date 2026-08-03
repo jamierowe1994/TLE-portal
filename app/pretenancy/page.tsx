@@ -63,6 +63,12 @@ interface BoardDeal {
   tenancy?: { startDate: string | null; depositId: string | null } | null;
   /** Landlord ToB signing state from REX's DocuSign log. */
   tobStatus?: { status: string; sentAt: string | null; completedAt: string | null } | null;
+  compliance?: {
+    outstanding: number;
+    expired: number;
+    problems: string[];
+    checked: boolean;
+  } | null;
   /** Claim-vs-record verification checks, computed server-side. */
   flags?: Array<{ kind: string; label: string }>;
   /** Scheme detected from the deposit's PayProp payee — a suggestion only. */
@@ -1318,6 +1324,35 @@ function DealWorkspace({
                   voided, statuses REX invents later — gets its own
                   needs-a-look pill rather than masquerading as "sent"
                   (review find). */}
+              {/* Can this property legally be let? Kirstie's board is the last
+                  place anyone looks before a tenancy starts, so a missing gas
+                  certificate belongs HERE, not two pages away. Silent when the
+                  address match wasn't confident or REX didn't finish — a
+                  guessed property's certificates are worse than none. */}
+              {deal.compliance?.checked ? (
+                deal.compliance.outstanding === 0 ? (
+                  <span
+                    title="Every required certificate is on file and in date"
+                    className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold text-emerald-700"
+                  >
+                    COMPLIANT
+                  </span>
+                ) : (
+                  <span
+                    title={deal.compliance.problems.join(", ")}
+                    className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
+                      deal.compliance.expired > 0
+                        ? "border-red-300 bg-red-50 text-red-700"
+                        : "border-amber-300 bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {deal.compliance.expired > 0
+                      ? `${deal.compliance.expired} EXPIRED`
+                      : `${deal.compliance.outstanding} COMPLIANCE`}
+                  </span>
+                )
+              ) : null}
+
               {deal.tobStatus ? (
                 deal.tobStatus.status === "completed" ? (
                   <span

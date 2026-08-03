@@ -7,6 +7,8 @@ import {
   getBusinessPhotoIndex,
   matchListingConfident,
   matchListingPhoto,
+  getComplianceForListings,
+  type DealCompliance,
 } from "@/lib/rex-stats";
 import { effectivePortalStage, getOverlays } from "@/lib/deal-store";
 import { getPortfolioBook, propertyKey } from "@/lib/payprop-portfolio";
@@ -24,10 +26,20 @@ import type { DealPortalOverlay } from "@/lib/types";
 // walk keeps going after this and fills the cache, so a first load that misses
 // the deadline costs one photo-less render and nothing after it.
 const PHOTO_DEADLINE_MS = 2_500;
+// ComplianceEntries is superlinearly slow on large id sets; the board is more
+// useful on time without compliance than late with it.
+const COMPLIANCE_DEADLINE_MS = 4_000;
 
 export interface PreTenancyDeal {
   // AgentApplication fields the board renders, via the same shape the agent sees
   app: import("@/lib/rex-stats").AgentApplication;
+  /**
+   * Whether the property can legally be let. Absent when the deal has no
+   * CONFIDENT listing match — an address we only guessed at must not carry a
+   * compliance verdict, because the wrong property's certificates are worse
+   * than none.
+   */
+  compliance?: DealCompliance | null;
   /** Live RAW Propoly status (start_deal … cancelled). */
   statusKey: string;
   /** Move-in slipped 30+ days and not reactivated — hidden from the stages. */
@@ -120,6 +132,32 @@ export async function GET(req: NextRequest) {
   const book = await bookWork;
   const register = await registerWork;
   const tob = await tobWork;
+
+  // Compliance needs the CONFIDENT listing ids, so resolve those first and do
+  // one chunked read for the whole board rather than a call per deal.
+  //
+  // Deliberately the confident matcher, never the photo one: the photo matcher
+  // falls back to "same postcode, best guess", which is fine for a picture and
+  // dangerous for a compliance verdict — showing another property's expired gas
+  // certificate against this deal is worse than showing nothing.
+  //
+  // Deadlined like the photos. ComplianceEntries is the slowest thing REX does,
+  // and Kirstie's board must render without it rather than hang.
+  const confidentByDeal = new Map<string, string>();
+  if (photos) {
+    for (const d of deals) {
+      const m = matchListingConfident(photos, d.app.propertyName, d.app.locality);
+      if (m?.listingId) confidentByDeal.set(d.app.id, String(m.listingId));
+    }
+  }
+  const compliance = await Promise.race([
+    getComplianceForListings([...confidentByDeal.values()]).catch(
+      () => new Map<string, DealCompliance>()
+    ),
+    new Promise<Map<string, DealCompliance>>((r) =>
+      setTimeout(() => r(new Map()), COMPLIANCE_DEADLINE_MS)
+    ),
+  ]);
 
   const out: PreTenancyDeal[] = deals.map((d) => {
     const entry = overlays.get(d.app.id);
@@ -244,6 +282,9 @@ export async function GET(req: NextRequest) {
         ? { startDate: tenancyHit.startDate, depositId: tenancyHit.depositId }
         : null,
       tobStatus: (confident?.listingId && tob?.[confident.listingId]) || null,
+      compliance: confident?.listingId
+        ? (compliance.get(String(confident.listingId)) ?? null)
+        : null,
       flags,
       // A Flatfair deal has no cash deposit — suggesting a scheme under the
       // "no deposit to register" note was a contradiction on screen (review).
