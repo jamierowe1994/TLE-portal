@@ -940,6 +940,13 @@ export interface ComplianceItem {
    */
   conflictingFieldExpiry?: string | null;
   /**
+   * This row is a GAP we added, not a record REX holds: the property is
+   * expected to carry this certificate and doesn't. There is no entry behind
+   * it, so there is nothing to open and nothing to remind against — the page
+   * has to say "add this", not "renew this".
+   */
+  required?: boolean;
+  /**
    * REX's id for this entry, so the page can link at the document through
    * /api/compliance/document without ever handling the file URL itself.
    */
@@ -982,6 +989,89 @@ export interface PropertyCompliance {
 }
 
 const EXPIRING_DAYS = 60;
+
+/**
+ * What a rented property is expected to hold, so the page can report what ISN'T
+ * there. Until now it could only list records that existed, which meant a
+ * property with no gas safety record at all looked identical to one that didn't
+ * need one.
+ *
+ * The baseline is James's (3 Aug 2026): EPC, gas safety, electrical. His full
+ * written list is in Apple Notes, which macOS won't let this process read — so
+ * these are the stated minimum and are meant to be edited once that list lands.
+ *
+ * Worth knowing when you revisit: smoke and CO alarms are a legal requirement
+ * in ALL rented homes in England (Smoke and Carbon Monoxide Alarm (England)
+ * Regulations 2015, amended 2022), not just HMOs. They are deliberately NOT in
+ * the baseline here because that was not the instruction, and adding them would
+ * put two fresh gaps on ~1,100 properties overnight. That is a policy call, not
+ * a code one.
+ */
+const REQUIRED_BASELINE = ["epc", "gas_safety", "eicr"] as const;
+
+/**
+ * Extra certificates an HMO carries. Derived from the book rather than assumed:
+ * of the 81 properties holding 6+ compliance types, 75 (93%) are HMO-licensed,
+ * and these are the types they hold. Non-HMOs essentially never do.
+ */
+const REQUIRED_HMO_EXTRA = [
+  "smoke_alarms",
+  "co_alarms",
+  "emergency_lighting_fire_exit",
+  "portable_appliance_testing",
+  "legionella_risk_assessment",
+] as const;
+
+const HMO_LICENCE_TYPES = new Set([
+  "mandatory_hmo_license",
+  "additional_hmo_license",
+  "selective_hmo_license",
+]);
+
+/**
+ * Add a "nothing on file" row for each certificate the property ought to have
+ * and doesn't.
+ *
+ * Two deliberate refusals:
+ *
+ *  • Nothing is added when REX's answer was incomplete. "We couldn't read this
+ *    property" must never render as "three certificates are missing" — that is
+ *    a fabricated gap, and it would send someone chasing a landlord for a
+ *    certificate that is sitting in REX.
+ *  • Gas is not demanded of a property that holds an OIL safety record. 106
+ *    properties in the book are oil-heated; insisting on a gas certificate for
+ *    a house with no gas supply is exactly the kind of false alarm that teaches
+ *    people to ignore the page.
+ */
+function addMissingRequired(
+  items: ComplianceItem[],
+  checked: boolean
+): ComplianceItem[] {
+  if (!checked) return items;
+
+  const held = new Set(items.map((i) => i.type));
+  const isHmo = items.some((i) => HMO_LICENCE_TYPES.has(i.type));
+  const oilHeated = held.has("oil_safety");
+
+  const required = [
+    ...REQUIRED_BASELINE,
+    ...(isHmo ? REQUIRED_HMO_EXTRA : []),
+  ].filter((t) => !(t === "gas_safety" && oilHeated));
+
+  const gaps: ComplianceItem[] = required
+    .filter((t) => !held.has(t))
+    .map((t) => ({
+      type: t,
+      label: PROPERTY_COMPLIANCE[t] ?? t,
+      state: "missing" as ComplianceState,
+      issued: null,
+      expiry: null,
+      notes: null,
+      required: true,
+    }));
+
+  return gaps.length ? [...items, ...gaps].sort((a, b) => a.label.localeCompare(b.label)) : items;
+}
 
 /**
  * Fold the listing's own EPC fields into a property's compliance items.
@@ -1347,13 +1437,20 @@ export async function getAgentCompliance(
     const { byParent, unchecked, unmappedByParent } = await fetchComplianceByParent(ids);
 
     const out = listings.map((l) => {
-      const items = reconcileEpcField(
-        dedupeComplianceItems([
-          ...(byParent.get(l.propertyId) ?? []),
-          ...(byParent.get(l.id) ?? []),
-        ]).sort((a, b) => a.label.localeCompare(b.label)),
-        l.epcExpiry,
-        l.epcNotRequired
+      // Computed BEFORE the gap pass, which must not run on a property we only
+      // half-read: "couldn't check" turning into "three missing" is a
+      // fabricated gap someone would go and chase.
+      const checked = !unchecked.has(l.propertyId) && !unchecked.has(l.id);
+      const items = addMissingRequired(
+        reconcileEpcField(
+          dedupeComplianceItems([
+            ...(byParent.get(l.propertyId) ?? []),
+            ...(byParent.get(l.id) ?? []),
+          ]).sort((a, b) => a.label.localeCompare(b.label)),
+          l.epcExpiry,
+          l.epcNotRequired
+        ),
+        checked
       );
       return {
         listingId: l.id,
@@ -1366,9 +1463,7 @@ export async function getAgentCompliance(
         outstanding: items.filter(
           (i) => complianceNeedsWork(i.state) || i.conflictingFieldExpiry
         ).length,
-        // Either parent coming back short makes the whole property untrusted —
-        // the missing rows could be on either record.
-        checked: !unchecked.has(l.propertyId) && !unchecked.has(l.id),
+        checked,
         unmapped: [
           ...new Set([
             ...(unmappedByParent.get(l.propertyId) ?? []),
@@ -1660,13 +1755,17 @@ export async function getAgentPortfolioProperties(
     const { byParent, unchecked, unmappedByParent } = await fetchComplianceByParent(ids);
 
     const out: PortfolioProperty[] = listings.map(({ base: l, sinceISO }) => {
-      const items = reconcileEpcField(
-        dedupeComplianceItems([
-          ...(byParent.get(l.propertyId) ?? []),
-          ...(byParent.get(l.id) ?? []),
-        ]).sort((a, b) => a.label.localeCompare(b.label)),
-        l.epcExpiry,
-        l.epcNotRequired
+      const checked = !unchecked.has(l.propertyId) && !unchecked.has(l.id);
+      const items = addMissingRequired(
+        reconcileEpcField(
+          dedupeComplianceItems([
+            ...(byParent.get(l.propertyId) ?? []),
+            ...(byParent.get(l.id) ?? []),
+          ]).sort((a, b) => a.label.localeCompare(b.label)),
+          l.epcExpiry,
+          l.epcNotRequired
+        ),
+        checked
       );
 
       // Soonest dated renewal, overdue first — expired certs are the most
@@ -1698,7 +1797,7 @@ export async function getAgentPortfolioProperties(
           (i) => complianceNeedsWork(i.state) || i.conflictingFieldExpiry
         ).length,
         nextRenewal: next ? { label: next.label, expiry: String(next.expiry) } : null,
-        checked: !unchecked.has(l.propertyId) && !unchecked.has(l.id),
+        checked,
         unmapped: [
           ...new Set([
             ...(unmappedByParent.get(l.propertyId) ?? []),

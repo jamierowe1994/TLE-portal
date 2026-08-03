@@ -76,7 +76,9 @@ function stateLabel(i: ComplianceItem): string {
       return days != null ? `Expires in ${days} days` : "Expiring";
     }
     case "missing":
-      return "Nothing on file";
+      // A required certificate that has never been recorded reads differently
+      // from one that lapsed — "renew this" vs "this was never here".
+      return i.required ? "Required — nothing on file" : "Nothing on file";
     case "not-required":
       return "Not required";
     default:
@@ -552,7 +554,13 @@ function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => 
                       {i.notes ? (
                         <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
                       ) : null}
-                      <CertificateLink item={i} onOpen={setSheet} />
+                      {i.required ? (
+                        <p className="mt-1 text-[11px] text-muted">
+                          Expected for this property — no record in REX at all.
+                        </p>
+                      ) : (
+                        <CertificateLink item={i} onOpen={setSheet} />
+                      )}
                     </div>
                     {/* Set a reminder against the certificate itself. It lands
                         on the agent's own To-dos 30 days before expiry (today
