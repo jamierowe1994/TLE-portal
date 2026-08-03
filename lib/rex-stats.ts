@@ -1855,6 +1855,31 @@ export interface AgentApplication {
   /** Rent as a % of the applicant's income — REX's own calc. Lower is safer. */
   affordability: number | null;
   dateReceived: string | null;
+  /**
+   * The offer's own timeline, which REX has always held and the portal has
+   * always thrown away. `date_communicated` is on 94% of applications,
+   * `date_accepted` 38%, `date_unsuccessful` 27% — between them they answer
+   * "how long does a deal take, and where does it stick", which nothing else
+   * in the stack can.
+   *
+   * PARTIAL BY NATURE: measured 3 Aug 2026, only ~40% of 2026 Propoly deals
+   * have a REX application behind them, so this covers roughly two deals in
+   * five — the ones where the agent recorded the offer in REX. Anything built
+   * on it has to say so rather than present it as the whole book.
+   */
+  dateCommunicated: string | null;
+  dateAccepted: string | null;
+  dateUnsuccessful: string | null;
+  /** Days from the offer landing to it reaching the landlord. */
+  daysToLandlord: number | null;
+  /** Days from the landlord seeing it to them deciding, either way. */
+  daysToDecision: number | null;
+  /** Tenancy end date — 100% populated, unlike most of this record. */
+  endDate: string | null;
+  /** "fixed_term" | "periodic" | "fixed_periodic". */
+  leaseType: string | null;
+  /** "ast" | "company" | "apt" | … */
+  agreementType: string | null;
   startDate: string | null;
   agreementMonths: number | null;
   occupants: number | null;
@@ -1908,6 +1933,23 @@ function stageOfStatus(id: string): ApplicationStage {
   return "received";
 }
 
+/**
+ * Whole days between two dates, or null if either is missing or unreadable.
+ *
+ * Returns null rather than 0 for a negative span: REX lets these dates be
+ * edited by hand, so "communicated before it was received" happens, and a
+ * clamped 0 would quietly pull an average down. A gap we can't explain is
+ * better left out of the maths than rounded into it.
+ */
+function daysBetween(from: string | null, to: string | null): number | null {
+  if (!from || !to) return null;
+  const a = new Date(from).getTime();
+  const b = new Date(to).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const days = Math.round((b - a) / 86_400_000);
+  return days < 0 ? null : days;
+}
+
 function toApplication(r: Record<string, unknown>): AgentApplication {
   const listing = (r.listing ?? {}) as Record<string, unknown>;
   const property = (listing.property ?? {}) as Record<string, unknown>;
@@ -1948,10 +1990,27 @@ function toApplication(r: Record<string, unknown>): AgentApplication {
     };
   });
 
+  const dateReceived = str(r.date_received);
+  const dateCommunicated = str(r.date_communicated);
+  const dateAccepted = str(r.date_accepted);
+  const dateUnsuccessful = str(r.date_unsuccessful);
+  // Either outcome ends the landlord's clock — an offer turned down took just
+  // as long to decide as one accepted, and counting only the wins would make
+  // the agency look faster than it is.
+  const decidedOn = dateAccepted ?? dateUnsuccessful;
+
   return {
     id: String(r.id ?? ""),
     stage: stageOfStatus(statusId),
     status: label(r.application_status) ?? "Received",
+    dateCommunicated,
+    dateAccepted,
+    dateUnsuccessful,
+    daysToLandlord: daysBetween(dateReceived, dateCommunicated),
+    daysToDecision: daysBetween(dateCommunicated, decidedOn),
+    endDate: str(r.end_date),
+    leaseType: label(r.lease_type),
+    agreementType: label(r.agreement_type),
     propertyName,
     locality,
     image,

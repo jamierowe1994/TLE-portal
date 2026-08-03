@@ -939,6 +939,7 @@ function Drawer({ a, onClose, origin }: { a: AgentApplication; onClose: () => vo
             {a.occupants != null ? <span>{a.occupants} occupant{a.occupants === 1 ? "" : "s"}</span> : null}
             {a.hasPets ? <span>Has pets</span> : null}
             {a.dateReceived ? <span>Received {fmtDate(a.dateReceived)}</span> : null}
+            <Timeline a={a} />
           </div>
         </div>
       </DrawerPanel>
@@ -990,6 +991,31 @@ function Drawer({ a, onClose, origin }: { a: AgentApplication; onClose: () => vo
 }
 
 /* --------------------------------- page --------------------------------- */
+
+/**
+ * How long the offer took to move — REX's own dates, which the portal has held
+ * all along and never shown.
+ *
+ * Only rendered when a leg can actually be measured. Propoly-sourced rows carry
+ * no timeline at all (Propoly starts at "accepted"), and a REX row is often
+ * missing date_accepted, so absent has to read as absent rather than "fast".
+ */
+function Timeline({ a }: { a: AgentApplication }) {
+  const legs: string[] = [];
+  if (a.daysToLandlord != null) {
+    legs.push(
+      a.daysToLandlord === 0
+        ? "to the landlord same day"
+        : `${a.daysToLandlord}d to the landlord`
+    );
+  }
+  if (a.daysToDecision != null) {
+    const verb = a.dateAccepted ? "to accept" : "to decline";
+    legs.push(a.daysToDecision === 0 ? `${verb} same day` : `${a.daysToDecision}d ${verb}`);
+  }
+  if (!legs.length) return null;
+  return <span className="text-muted">{legs.join(" · ")}</span>;
+}
 
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<AgentApplication[] | null>(null);

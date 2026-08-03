@@ -223,6 +223,18 @@ function toApplication(d: Record<string, unknown>, statusKey: string): AgentAppl
     id: String(d.uuid ?? ""),
     stage: info.stage,
     status: info.label,
+    // The offer timeline is a REX concept and Propoly holds no equivalent:
+    // Propoly picks a deal up at "accepted" and knows nothing about how long
+    // the offer sat first. Null rather than 0 so nothing averages these in as
+    // same-day decisions — a deal we can't time must not read as instant.
+    dateCommunicated: null,
+    dateAccepted: null,
+    dateUnsuccessful: null,
+    daysToLandlord: null,
+    daysToDecision: null,
+    endDate: null,
+    leaseType: null,
+    agreementType: null,
     propertyName: name,
     locality,
     image: null, // Propoly has no listing photos
