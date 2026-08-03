@@ -1098,6 +1098,32 @@ function complianceDetailBlock(
  * truthiness reads as "always present" and hid this field for weeks. The url is
  * protocol-relative (`//host/...`).
  */
+/**
+ * REX's internal file URI → a fetchable URL.
+ *
+ * Derived 3 Aug 2026 by comparing `file.uri` against `file.url` on compliance
+ * entries, which carry both:
+ *
+ *   rexlive://3517/compliance_entries/814499/files/x.pdf
+ *     → https://uk-crm.cdns.rexsoftware.com/app/livestore/accounts/3517/…/x.pdf
+ *
+ * This is what makes documents on a LISTING reachable: `documents/search`
+ * returns only a `uri`, never a `url`, so without this mapping the file could
+ * be listed but not opened — which is exactly what the portal used to say.
+ *
+ * `rexpm://` (files that originated in Rex PM) is deliberately NOT derived: it
+ * resolves to a file-proxy URL carrying an `exp`/`sig` signature we cannot
+ * generate. Those only work when REX hands us the signed `url` itself.
+ */
+export function rexUriToUrl(uri: unknown): string | null {
+  if (typeof uri !== "string") return null;
+  const PREFIX = "rexlive://";
+  if (!uri.startsWith(PREFIX)) return null;
+  const rest = uri.slice(PREFIX.length);
+  if (!rest || rest.includes("..")) return null;
+  return `https://uk-crm.cdns.rexsoftware.com/app/livestore/accounts/${rest}`;
+}
+
 export function complianceFileUrl(entry: Record<string, unknown>): string | null {
   const file = entry.file;
   if (!file || typeof file !== "object") return null;

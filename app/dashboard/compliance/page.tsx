@@ -19,6 +19,7 @@ import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
 import Loader from "@/components/Loader";
 import NoPhoto from "@/components/NoPhoto";
+import DocumentSheet, { type SheetDoc } from "@/components/DocumentSheet";
 import type { ComplianceItem, ComplianceState, PropertyCompliance } from "@/lib/rex-stats";
 import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
 
@@ -230,7 +231,13 @@ function downloadIcs(title: string, when: string, note: string) {
  * doesn't sign at all (so the URL would be a permanent, login-free key to a
  * landlord's paperwork).
  */
-function CertificateLink({ item }: { item: ComplianceItem }) {
+function CertificateLink({
+  item,
+  onOpen,
+}: {
+  item: ComplianceItem;
+  onOpen: (d: SheetDoc) => void;
+}) {
   if (!item.entryId) return null;
   if (!item.hasDocument) {
     return (
@@ -240,14 +247,19 @@ function CertificateLink({ item }: { item: ComplianceItem }) {
     );
   }
   return (
-    <a
-      href={`/api/compliance/document?entry=${encodeURIComponent(item.entryId)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="mt-1 inline-block text-[11px] text-ink underline underline-offset-2 hover:opacity-70"
+    <button
+      type="button"
+      onClick={() =>
+        onOpen({
+          src: `/api/compliance/document?entry=${encodeURIComponent(item.entryId!)}`,
+          title: item.label,
+          subtitle: item.expiry ? `Expires ${item.expiry}` : null,
+        })
+      }
+      className="mt-1 text-[11px] text-ink underline underline-offset-2 hover:opacity-70"
     >
       View certificate
-    </a>
+    </button>
   );
 }
 
@@ -385,13 +397,19 @@ function ContactsCard({ p }: { p: PropertyCompliance }) {
 }
 
 function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => void; origin?: ZoomOrigin }) {
+  // The certificate currently open on top of the drawer, if any.
+  const [sheet, setSheet] = useState<SheetDoc | null>(null);
+
   // Nothing expands any more: every panel is open at once, so Escape has one
-  // job again.
+  // job again — except while a document is open over the top, where Escape
+  // belongs to the sheet. Closing both at once would dump the agent back to
+  // the grid when they only wanted to shut the PDF.
   useEffect(() => {
+    if (sheet) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, sheet]);
 
   // Only what needs a human gets a full row; everything already in date is
   // real information but not news, so it waits behind its own panel.
@@ -534,7 +552,7 @@ function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => 
                       {i.notes ? (
                         <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
                       ) : null}
-                      <CertificateLink item={i} />
+                      <CertificateLink item={i} onOpen={setSheet} />
                     </div>
                     {/* Set a reminder against the certificate itself. It lands
                         on the agent's own To-dos 30 days before expiry (today
@@ -608,15 +626,20 @@ function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => 
                         ) : null}
                       </span>
                       {i.entryId && i.hasDocument ? (
-                        <a
-                          href={`/api/compliance/document?entry=${encodeURIComponent(i.entryId)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
                           title="View certificate"
+                          onClick={() =>
+                            setSheet({
+                              src: `/api/compliance/document?entry=${encodeURIComponent(i.entryId!)}`,
+                              title: i.label,
+                              subtitle: i.expiry ? `Expires ${i.expiry}` : null,
+                            })
+                          }
                           className="shrink-0 text-[10px] text-ink underline underline-offset-2 hover:opacity-70"
                         >
                           View
-                        </a>
+                        </button>
                       ) : null}
                       <ReminderButton property={p} item={i} />
                     </div>
@@ -678,6 +701,9 @@ function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => 
           </a>
         </div>
       </DrawerPanel>
+
+      {/* Sits above the drawer so the property stays put behind it. */}
+      <DocumentSheet doc={sheet} onClose={() => setSheet(null)} />
     </SplitDrawer>
   );
 }

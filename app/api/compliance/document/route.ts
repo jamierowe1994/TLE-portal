@@ -3,11 +3,17 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { resolveRexUserId } from "@/lib/agent-link";
 import { rexCall, rexRows } from "@/lib/rex";
-import { getAgentCompliance, complianceFileUrl } from "@/lib/rex-stats";
+import {
+  getAgentCompliance,
+  getAgentListings,
+  complianceFileUrl,
+  rexUriToUrl,
+} from "@/lib/rex-stats";
 
-// Streams a compliance certificate out of REX to the agent it belongs to.
+// Streams a REX file to the agent it belongs to.
 //
-// GET ?entry=<complianceEntryId> → the file bytes
+// GET ?entry=<complianceEntryId>  → a compliance certificate
+// GET ?doc=<documentId>          → a document attached to a listing
 //
 // This exists rather than putting REX's own URL on the page. REX serves these
 // from two hosts, and the second is the reason for the whole route:
@@ -38,6 +44,54 @@ const ALLOWED_TYPES = new Set([
   "image/heic",
 ]);
 
+/** The compliance certificate behind ?entry= — owned by this agent, or null. */
+async function certificateUrl(
+  entryId: string,
+  rexUserId: string | null
+): Promise<{ url: string | null; reachable: boolean }> {
+  // Authorisation. A session alone is not enough: ids are sequential, so
+  // without this any agent could walk the range and read the whole agency's
+  // certificates. Reuse the SAME boundary the compliance page renders from, so
+  // the two can never drift apart — if it isn't on their page, they can't fetch
+  // it. getAgentCompliance is short-cached, so this is usually free.
+  const properties = rexUserId ? await getAgentCompliance(rexUserId) : null;
+  if (properties == null) return { url: null, reachable: false };
+  if (!properties.some((p) => p.items.some((i) => i.entryId === entryId))) {
+    return { url: null, reachable: true };
+  }
+
+  const res = await rexCall("ComplianceEntries", "search", {
+    criteria: [{ name: "id", type: "=", value: entryId }],
+    limit: 1,
+  }).catch(() => null);
+  if (!res || !res.ok) return { url: null, reachable: false };
+  return { url: complianceFileUrl(rexRows(res.result)[0] ?? {}), reachable: true };
+}
+
+/** A file attached to one of this agent's listings behind ?doc=, or null. */
+async function listingDocumentUrl(
+  docId: string,
+  rexUserId: string | null
+): Promise<{ url: string | null; reachable: boolean }> {
+  const res = await rexCall("Documents", "search", {
+    criteria: [{ name: "id", type: "=", value: docId }],
+    limit: 1,
+  }).catch(() => null);
+  if (!res || !res.ok) return { url: null, reachable: false };
+
+  const row = rexRows(res.result)[0];
+  const listingId = row ? String(row.listing_id ?? "") : "";
+  if (!listingId) return { url: null, reachable: true };
+
+  // Same rule as certificates: it has to be on a listing this agent holds.
+  const listings = rexUserId ? await getAgentListings(rexUserId) : null;
+  if (listings == null) return { url: null, reachable: false };
+  if (!listings.some((l) => String(l.id) === listingId)) {
+    return { url: null, reachable: true };
+  }
+  return { url: rexUriToUrl(row?.uri), reachable: true };
+}
+
 export async function GET(req: NextRequest) {
   const userId = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   const user = userId ? await findById(userId) : null;
@@ -46,43 +100,27 @@ export async function GET(req: NextRequest) {
   }
 
   const entryId = req.nextUrl.searchParams.get("entry");
+  const docId = req.nextUrl.searchParams.get("doc");
+  const id = entryId ?? docId;
   // Ids only — this value goes into a REX query, and free text would let a
   // caller shape that query.
-  if (!entryId || !/^\d+$/.test(entryId)) {
-    return NextResponse.json({ error: "Bad entry id" }, { status: 400 });
+  if (!id || !/^\d+$/.test(id)) {
+    return NextResponse.json({ error: "Bad id" }, { status: 400 });
   }
 
-  // Authorisation. A session alone is not enough: entry ids are sequential, so
-  // without this any agent could walk the range and read the whole agency's
-  // certificates. Reuse the SAME boundary the compliance page renders from, so
-  // the two can never drift apart — if it isn't on their page, they can't fetch
-  // it. getAgentCompliance is short-cached, so this is usually free.
   const rexUserId = await resolveRexUserId(user);
-  const properties = rexUserId ? await getAgentCompliance(rexUserId) : null;
-  if (properties == null) {
+  const { url, reachable } = entryId
+    ? await certificateUrl(entryId, rexUserId)
+    : await listingDocumentUrl(id, rexUserId);
+
+  if (!reachable) {
     return NextResponse.json({ error: "Couldn't reach REX" }, { status: 502 });
   }
-  const owned = properties.some((p) =>
-    p.items.some((i) => i.entryId === entryId)
-  );
-  if (!owned) {
-    // Deliberately the same answer as a genuinely absent document: a distinct
-    // 403 would confirm the id exists on somebody else's property.
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const res = await rexCall("ComplianceEntries", "search", {
-    criteria: [{ name: "id", type: "=", value: entryId }],
-    limit: 1,
-  }).catch(() => null);
-  if (!res || !res.ok) {
-    return NextResponse.json({ error: "Couldn't reach REX" }, { status: 502 });
-  }
-
-  const url = complianceFileUrl(rexRows(res.result)[0] ?? {});
   if (!url) {
-    // No document attached — the common case for EPCs and tenant ID checks.
-    return NextResponse.json({ error: "No certificate attached" }, { status: 404 });
+    // Covers three cases on purpose — not yours, no document attached, or a
+    // rexpm:// file we can't sign for. A distinct 403 would confirm an id
+    // exists on somebody else's property.
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const controller = new AbortController();
