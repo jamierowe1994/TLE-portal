@@ -22,7 +22,7 @@ import NoPhoto from "@/components/NoPhoto";
 import SplitDrawer, { DrawerPanel } from "@/components/SplitDrawer";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import { CHECKLIST_ITEMS, PORTAL_STAGES, PROPOLY_APP_URL } from "@/lib/propoly-stages";
-import type { AgentApplication, ApplicationStage } from "@/lib/rex-stats";
+import type { PropertyCompliance, ComplianceItem, AgentApplication, ApplicationStage } from "@/lib/rex-stats";
 import type { DealMeta } from "@/lib/types";
 import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
 
@@ -59,10 +59,12 @@ function ApplicationTile({
   a,
   delay,
   onOpen,
+  compliance,
 }: {
   a: AgentApplication;
   delay: number;
   onOpen: (origin: ZoomOrigin) => void;
+  compliance?: PropertyCompliance;
 }) {
   const lead = a.tenants.find((t) => t.isPrimary) ?? a.tenants[0];
   return (
@@ -85,6 +87,7 @@ function ApplicationTile({
               {a.portal.notesCount}
             </span>
           ) : null}
+          <ComplianceChip p={compliance} />
         </div>
 
         <h3 className="mt-3.5 truncate text-[14px] font-semibold leading-snug">
@@ -1017,6 +1020,54 @@ function Timeline({ a }: { a: AgentApplication }) {
   return <span className="text-muted">{legs.join(" · ")}</span>;
 }
 
+/**
+ * Whether the property behind this deal is actually lettable.
+ *
+ * This is the gate the proposal argues for, in its smallest form: a tenancy
+ * can currently start with a certificate missing and nobody finds out until it
+ * matters. Showing it ON the deal — not two pages away on Compliance — puts it
+ * in front of the person who is about to progress it.
+ *
+ * Silent when we have no compliance for the property. "We couldn't check" must
+ * never render as a green tick, and an agent seeing nothing here should look it
+ * up rather than assume it is fine.
+ */
+function ComplianceChip({ p }: { p: PropertyCompliance | undefined }) {
+  if (!p || !p.checked) return null;
+
+  const bad = (i: ComplianceItem) =>
+    i.state === "expired" || i.state === "expiring" || i.state === "missing";
+  const problems = p.items.filter(bad);
+  if (!problems.length) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        COMPLIANT
+      </span>
+    );
+  }
+
+  // Expired outranks a gap: a lapsed certificate is a live problem, a missing
+  // record might only be a filing one.
+  const expired = problems.filter((i) => i.state === "expired");
+  const red = expired.length > 0;
+  const lead = (expired[0] ?? problems[0]).label;
+  return (
+    <span
+      title={problems.map((i) => i.label).join(", ")}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+        red
+          ? "border-red-200 bg-red-50 text-red-700"
+          : "border-amber-200 bg-amber-50 text-amber-700"
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${red ? "bg-red-500" : "bg-amber-500"}`} />
+      {problems.length === 1 ? lead : `${problems.length} COMPLIANCE ITEMS`}
+      {red ? " — EXPIRED" : ""}
+    </span>
+  );
+}
+
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<AgentApplication[] | null>(null);
   const [linked, setLinked] = useState(true);
@@ -1030,6 +1081,7 @@ export default function ApplicationsPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("default");
   const [fromPropoly, setFromPropoly] = useState(false);
+  const [compliance, setCompliance] = useState<Map<string, PropertyCompliance>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -1051,6 +1103,21 @@ export default function ApplicationsPage() {
       )
       .catch(() => !cancelled && setError("Couldn't load your applications."))
       .finally(() => !cancelled && setLoading(false));
+
+    // Compliance rides alongside rather than blocking: a deal is still worth
+    // showing if REX won't answer about certificates, and the chip simply
+    // doesn't render. Never let a compliance failure empty the pipeline.
+    fetch("/api/my/compliance", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { properties?: PropertyCompliance[] }) => {
+        if (cancelled) return;
+        const byListing = new Map<string, PropertyCompliance>();
+        for (const p of d.properties ?? []) byListing.set(String(p.listingId), p);
+        setCompliance(byListing);
+      })
+      .catch(() => {
+        /* leave the map empty — the chip just won't show */
+      });
     return () => {
       cancelled = true;
     };
@@ -1210,7 +1277,13 @@ export default function ApplicationsPage() {
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 2xl:grid-cols-3">
               {shown.map((a, i) => (
-                <ApplicationTile key={a.id} a={a} delay={200 + i * 50} onOpen={(o) => { setZoom(o); setOpen(a); }} />
+                <ApplicationTile
+                  key={a.id}
+                  a={a}
+                  delay={200 + i * 50}
+                  onOpen={(o) => { setZoom(o); setOpen(a); }}
+                  compliance={a.listingId ? compliance.get(String(a.listingId)) : undefined}
+                />
               ))}
             </div>
           )}

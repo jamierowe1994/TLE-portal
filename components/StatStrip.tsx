@@ -13,8 +13,9 @@ export interface StatStripItem {
   label: string;
   /** A small coloured dot after the label — for "and some need attention". */
   dot?: "amber" | "red" | "green" | "blue";
-  /** Tint the icon (compliance rate reads better in green). */
-  tone?: "ink" | "green" | "red";
+  /** Tint the icon (compliance rate reads better in green). Amber is for
+   *  "needs attention but nobody got it wrong" — a backlog, not a failure. */
+  tone?: "ink" | "green" | "red" | "amber";
 }
 
 const DOT: Record<string, string> = {
@@ -28,6 +29,7 @@ const TONE: Record<string, string> = {
   ink: "text-ink",
   green: "text-emerald-600",
   red: "text-accent",
+  amber: "text-amber-600",
 };
 
 export default function StatStrip({ items }: { items: StatStripItem[] }) {

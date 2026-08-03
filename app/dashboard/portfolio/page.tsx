@@ -608,12 +608,41 @@ export default function PortfolioPage() {
   // book nobody had checked — null now, rendered as "—".
   const unchecked = all.filter((p) => !p.checked);
   const checkedProps = all.filter((p) => p.checked);
+  const noRenewalCount = checkedProps.filter((p) => !p.nextRenewal).length;
+
+  // Two different failures, deliberately measured apart.
+  //
+  // A "required" item is a gap we added — a certificate the property ought to
+  // hold and doesn't. Counting those in one blended rate collapsed it to almost
+  // nothing overnight, because gas and EICR are recorded on roughly one
+  // property in seven. That single number then said nothing useful: it couldn't
+  // distinguish an agent letting certificates lapse from a back catalogue
+  // nobody has typed up yet.
+  //
+  //   Up to date — of the certificates that DO exist, how many are in date.
+  //                This is the bit an agent actually controls.
+  //   On file    — how many properties hold everything they're required to.
+  //                This is the backlog, and it is not the agent's doing.
+  const held = (p: PortfolioProperty) => p.items.filter((i) => !i.required);
+  const gapsOn = (p: PortfolioProperty) => p.items.filter((i) => i.required).length;
+
+  const withHeld = checkedProps.filter((p) => held(p).length > 0);
+  const upToDateCount = withHeld.filter((p) =>
+    held(p).every((i) => !needsWork(i.state) && !i.conflictingFieldExpiry)
+  ).length;
+  const upToDateRate = withHeld.length
+    ? Math.round((upToDateCount / withHeld.length) * 100)
+    : null;
+
+  const completeCount = checkedProps.filter((p) => gapsOn(p) === 0).length;
+  const onFileRate = checkedProps.length
+    ? Math.round((completeCount / checkedProps.length) * 100)
+    : null;
+
+  // "All clear" now means genuinely nothing outstanding, gaps included.
   const clearCount = checkedProps.filter(
     (p) => p.items.length > 0 && p.outstanding === 0
   ).length;
-  const noRenewalCount = checkedProps.filter((p) => !p.nextRenewal).length;
-  const withItems = checkedProps.filter((p) => p.items.length > 0).length;
-  const complianceRate = withItems ? Math.round((clearCount / withItems) * 100) : null;
 
   return (
     // Same outline treatment as the rest of the portal.
@@ -716,13 +745,20 @@ export default function PortfolioPage() {
                 { icon: "doc", value: money(rentRoll * 12) ?? "—", label: "Annual rental income" },
                 {
                   icon: "shield",
-                  value: complianceRate == null ? "—" : `${complianceRate}%`,
+                  value: upToDateRate == null ? "—" : `${upToDateRate}%`,
                   label: unchecked.length
-                    ? `Compliance rate — ${unchecked.length} unchecked`
-                    : "Compliance rate",
+                    ? `Certificates in date — ${unchecked.length} unchecked`
+                    : "Certificates in date",
                   // No rate is not a bad rate: neutral ink, never red or green.
-                  tone:
-                    complianceRate == null ? "ink" : complianceRate >= 90 ? "green" : "red",
+                  tone: upToDateRate == null ? "ink" : upToDateRate >= 90 ? "green" : "red",
+                },
+                {
+                  icon: "doc",
+                  value: onFileRate == null ? "—" : `${onFileRate}%`,
+                  label: "Properties with a full set on file",
+                  // Amber, never red: the missing records are a backlog nobody
+                  // scheduled, not something this agent got wrong.
+                  tone: onFileRate == null ? "ink" : onFileRate >= 90 ? "green" : "amber",
                 },
               ]}
             />
