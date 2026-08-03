@@ -20,14 +20,11 @@ const TOOLS: Array<{
 }> = [
   {
     // First on purpose: it is the one that saves real time every month.
-    // Not linked until it exists — see the note in the commit; the fee basis
-    // is a business rule nobody has written down yet.
-    href: null,
+    href: "/dashboard/tools/invoice",
     icon: "doc",
     name: "Invoicing",
     blurb:
       "Pick a completed deal, check the figures, and produce an invoice in your own business's name — ready for accounts.",
-    status: "Building now",
   },
   {
     href: "/dashboard/forecast",

@@ -1302,3 +1302,78 @@ async function computeMoveIns(month: string): Promise<MoveIns | null> {
     })),
   };
 }
+
+/* --------------------------- invoiceable fee lines ------------------------ */
+
+export interface FeeLine {
+  /** Property name as PayProp holds it — what the agent will recognise. */
+  property: string;
+  /** PayProp property id, so the caller can join without re-matching. */
+  propertyId: string;
+  category: string;
+  /** Gross fee PayProp reports (VAT-inclusive, as everywhere else here). */
+  gross: number;
+  /** The same net of VAT, on the accounts sheet's basis (see exVat). */
+  net: number;
+  /** The month the business counts it in — batch transfer date. */
+  settledOn: string;
+}
+
+/**
+ * The fee lines behind one partner's earnings for a month — the same rows the
+ * earnings figure is built from, itemised per property so they can be invoiced
+ * individually.
+ *
+ * Deliberately the SAME source and the same basis as getAgentEarnings (fee
+ * categories only, transfer-date month, exVat for net): an invoice that
+ * disagreed with the earnings card would be the worst possible bug in this
+ * tool, so they cannot drift.
+ */
+export async function getAgentFeeLines(
+  email: string,
+  displayName: string,
+  month: string
+): Promise<FeeLine[] | null> {
+  const { payPropConfigured } = await import("@/lib/payprop");
+  if (!payPropConfigured()) return null;
+  const { ids } = await agentBeneficiaryIds(email, displayName);
+  if (ids.length === 0) return [];
+  const idSet = new Set(ids);
+
+  const [y, m] = month.split("-").map(Number);
+  if (!y || !m) return [];
+  const from = `${y}-${String(m).padStart(2, "0")}-01`;
+  const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+  const pages = await paymentsSettledInRange(from, to);
+  // Property NAMES come from the portfolio book, which already walks
+  // export/properties hourly — no extra PayProp calls for the invoice tool.
+  const { getPortfolioBook } = await import("@/lib/payprop-portfolio");
+  const book = await getPortfolioBook().catch(() => null);
+  const names = new Map<string, string>();
+  for (const agent of Object.values(book?.byAgent ?? {})) {
+    agent.propertyIds.forEach((id, i) => {
+      const nm = agent.propertyNames[i];
+      if (id && nm) names.set(id, nm);
+    });
+  }
+
+  const out: FeeLine[] = [];
+  for (const page of pages) {
+    for (const r of page.rows) {
+      if (!r.b || !idSet.has(r.b)) continue;
+      const category = r.c || "Other";
+      if (!FEE_CATEGORIES.has(category)) continue;
+      out.push({
+        property: names.get(r.p) ?? r.pk ?? "Unnamed property",
+        propertyId: r.p,
+        category,
+        gross: r.a,
+        net: exVat(r.a),
+        settledOn: r.td,
+      });
+    }
+  }
+  // Biggest first: the line someone is looking for is usually the big one.
+  return out.sort((a, b) => b.gross - a.gross);
+}

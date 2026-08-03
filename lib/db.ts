@@ -123,6 +123,24 @@ ALTER TABLE deal_meta ADD COLUMN IF NOT EXISTS unarchived_at TIMESTAMPTZ;
 -- register, filled in by the pre-tenancy team per deal.
 ALTER TABLE deal_meta ADD COLUMN IF NOT EXISTS deposit_scheme TEXT;
 
+-- The agent's OWN business details for invoicing. Their invoices go out in
+-- their name, not the agency's, so none of this can be derived from the TLE
+-- brand — it is asked once and reused. fee_percent is their split of the
+-- management fee (70 by default, editable: some partners are on more, and
+-- nobody has written the real splits down yet).
+CREATE TABLE IF NOT EXISTS invoice_profiles (
+  user_id        TEXT PRIMARY KEY,
+  business_name  TEXT,
+  address        TEXT,
+  email          TEXT,
+  phone          TEXT,
+  vat_number     TEXT,
+  bank_details   TEXT,
+  fee_percent    NUMERIC NOT NULL DEFAULT 70,
+  next_number    INTEGER NOT NULL DEFAULT 1,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Property notes (lib/property-notes-store.ts): the conversation log on a
 -- property drawer — agents and the pre-tenancy team leaving each other notes
 -- against a REX listing id.
