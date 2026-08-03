@@ -1179,7 +1179,11 @@ export default function ApplicationsPage() {
               : "Offers on your properties and where each one is up to. Tap one for the applicant."}
           </p>
         </div>
-        <PageArt name="applications" className="-mt-4 w-[190px] xl:w-[230px]" />
+        {/* Same size and inset as Compliance — this page has the identical
+            filter row, stat strip and tabs underneath, so it had the identical
+            crowding. Two different sizes across two pages that sit next to each
+            other in the nav reads as an oversight. */}
+        <PageArt name="applications" className="-mt-2 mr-6 w-[140px] xl:mr-12 xl:w-[165px]" />
       </div>
 
       {!linked ? (

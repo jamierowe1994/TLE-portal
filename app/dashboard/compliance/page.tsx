@@ -815,7 +815,11 @@ export default function CompliancePage() {
             what needs doing.
           </p>
         </div>
-        <PageArt name="compliance" className="-mt-4 w-[190px] xl:w-[230px]" />
+        {/* Smaller and pulled in from the right edge: at the previous size it
+            sat directly above the filter row and search box, so the two read as
+            one crowded block. The margin buys the controls below their own
+            breathing room without moving them. */}
+        <PageArt name="compliance" className="-mt-2 mr-6 w-[140px] xl:mr-12 xl:w-[165px]" />
       </div>
 
       {!linked ? (
