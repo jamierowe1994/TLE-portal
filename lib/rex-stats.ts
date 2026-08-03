@@ -939,6 +939,24 @@ export interface ComplianceItem {
    * the exact discrepancy that blocks automated EPC reminders today.
    */
   conflictingFieldExpiry?: string | null;
+  /**
+   * REX's id for this entry, so the page can link at the document through
+   * /api/compliance/document without ever handling the file URL itself.
+   */
+  entryId?: string;
+  /**
+   * Is the actual certificate attached, as opposed to merely a record that one
+   * exists? These are very different things and the gap is the point: censused
+   * 3 Aug 2026, EICR / terms of business / proof of ownership are attached ~100%
+   * of the time, gas safety 66%, and EPC and tenant ID checks essentially never.
+   *
+   * The URL itself is deliberately NOT carried. REX serves these from two
+   * hosts: one signs with `exp`+`sig` (2-hour lifetime, so it can't be held in
+   * a durable cache), the other is entirely unsigned — the URL IS the
+   * credential and must never reach a browser. Resolving it server-side per
+   * request, via /api/compliance/document, handles both.
+   */
+  hasDocument?: boolean;
 }
 
 export interface PropertyCompliance {
@@ -1073,12 +1091,29 @@ function complianceDetailBlock(
  * Dates come back as whatever string REX stored; nothing is normalised here, so
  * the caller sees exactly what REX said.
  */
+/**
+ * The attached certificate, if there is one.
+ *
+ * `file` is an OBJECT ({ uri, url }), not a scalar — testing `entry.file` for
+ * truthiness reads as "always present" and hid this field for weeks. The url is
+ * protocol-relative (`//host/...`).
+ */
+export function complianceFileUrl(entry: Record<string, unknown>): string | null {
+  const file = entry.file;
+  if (!file || typeof file !== "object") return null;
+  const raw = (file as Record<string, unknown>).url;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  return raw.startsWith("//") ? `https:${raw}` : raw;
+}
+
 function readComplianceEntry(entry: Record<string, unknown>) {
   const type = String(label(entry.type_id) ?? "");
   const details = (entry.details ?? {}) as Record<string, unknown>;
   const d = complianceDetailBlock(details, type);
   return {
     type,
+    id: entry.id != null ? String(entry.id) : null,
+    hasDocument: complianceFileUrl(entry) != null,
     detailsKeys: Object.keys(details),
     blockKey: complianceDetailKey(details, type),
     expiry: typeof d.expiry_date === "string" && d.expiry_date ? d.expiry_date : null,
@@ -1131,6 +1166,8 @@ function toComplianceItem(entry: Record<string, unknown>): ComplianceItem | null
     expiry: raw.expiry,
     notes: raw.notes,
     ...(unparsed ? { dateUnparsed: true } : {}),
+    ...(raw.id ? { entryId: raw.id } : {}),
+    ...(raw.hasDocument ? { hasDocument: true } : {}),
   };
 }
 
@@ -1233,11 +1270,17 @@ function dedupeComplianceItems(items: ComplianceItem[]): ComplianceItem[] {
   const byType = new Map<string, ComplianceItem>();
   for (const item of items) {
     const seen = byType.get(item.type);
+    const sameUrgency = seen && STATE_URGENCY[item.state] === STATE_URGENCY[seen.state];
+    const sameExpiry = seen && String(item.expiry ?? "") === String(seen.expiry ?? "");
     if (
       !seen ||
       STATE_URGENCY[item.state] > STATE_URGENCY[seen.state] ||
-      (STATE_URGENCY[item.state] === STATE_URGENCY[seen.state] &&
-        String(item.expiry ?? "") > String(seen.expiry ?? ""))
+      (sameUrgency && String(item.expiry ?? "") > String(seen.expiry ?? "")) ||
+      // Identical urgency AND date: prefer whichever actually has the
+      // certificate attached, otherwise the survivor is just whichever REX
+      // happened to return first and the page can report "no certificate"
+      // for a property that has one.
+      (sameUrgency && sameExpiry && !!item.hasDocument && !seen.hasDocument)
     ) {
       byType.set(item.type, item);
     }

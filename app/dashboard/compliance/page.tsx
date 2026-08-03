@@ -215,6 +215,42 @@ function downloadIcs(title: string, when: string, note: string) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * The certificate itself — or an honest note that there isn't one.
+ *
+ * A compliance record existing and the certificate being attached are two
+ * different things, and until now the page only showed the first. Across the
+ * book (censused 3 Aug 2026) electrical, terms of business and proof of
+ * ownership are attached almost always, gas safety about two thirds of the
+ * time, and EPCs essentially never — so "in date" could mean a date somebody
+ * typed with nothing behind it.
+ *
+ * The link points at our own route, never at REX's URL: REX serves these from
+ * one host that signs with an expiry (so the link would rot) and one that
+ * doesn't sign at all (so the URL would be a permanent, login-free key to a
+ * landlord's paperwork).
+ */
+function CertificateLink({ item }: { item: ComplianceItem }) {
+  if (!item.entryId) return null;
+  if (!item.hasDocument) {
+    return (
+      <p className="mt-1 text-[11px] text-muted">
+        No certificate attached — the record exists, the document doesn&apos;t.
+      </p>
+    );
+  }
+  return (
+    <a
+      href={`/api/compliance/document?entry=${encodeURIComponent(item.entryId)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-1 inline-block text-[11px] text-ink underline underline-offset-2 hover:opacity-70"
+    >
+      View certificate
+    </a>
+  );
+}
+
 function ReminderButton({
   property,
   item,
@@ -498,6 +534,7 @@ function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => 
                       {i.notes ? (
                         <p className="mt-1 text-[11px] italic text-muted">{i.notes}</p>
                       ) : null}
+                      <CertificateLink item={i} />
                     </div>
                     {/* Set a reminder against the certificate itself. It lands
                         on the agent's own To-dos 30 days before expiry (today
@@ -562,7 +599,25 @@ function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => 
                           {stateLabel(i)}
                           {i.issued ? ` · issued ${i.issued}` : ""}
                         </span>
+                        {/* In date, but is the certificate actually there?
+                            Worth saying even here — especially here. */}
+                        {i.entryId && !i.hasDocument ? (
+                          <span className="block truncate text-[10px] text-muted">
+                            No certificate attached
+                          </span>
+                        ) : null}
                       </span>
+                      {i.entryId && i.hasDocument ? (
+                        <a
+                          href={`/api/compliance/document?entry=${encodeURIComponent(i.entryId)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="View certificate"
+                          className="shrink-0 text-[10px] text-ink underline underline-offset-2 hover:opacity-70"
+                        >
+                          View
+                        </a>
+                      ) : null}
                       <ReminderButton property={p} item={i} />
                     </div>
                   ))}
