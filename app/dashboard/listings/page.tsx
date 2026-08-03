@@ -18,6 +18,7 @@ import DoodleIcon from "@/components/DoodleIcon";
 import FilterBar from "@/components/FilterBar";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import NoPhoto from "@/components/NoPhoto";
+import HousesScene from "@/components/HousesScene";
 import type { AgentListing, ListingDetail } from "@/lib/rex-stats";
 import type { PropertyNote } from "@/lib/property-notes-store";
 import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
@@ -1091,13 +1092,7 @@ export default function ListingsPage() {
             to and what&rsquo;s next.
           </p>
         </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/illustrations/houses.png"
-          alt=""
-          aria-hidden
-          className="pointer-events-none -mt-6 hidden w-[300px] shrink-0 lg:block xl:w-[380px]"
-        />
+        <HousesScene className="-mt-6 hidden w-[300px] lg:block xl:w-[380px]" />
       </div>
 
       {!linked ? (

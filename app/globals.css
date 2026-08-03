@@ -970,3 +970,73 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .zoom-backdrop, .zoom-panel { animation: none; }
 }
+
+/* ---- birds over the My Properties street scene ------------------------- *
+ * houses.png is a raster, so its three birds were cleared out of the artwork
+ * (houses-still.png) and are redrawn as SVG by HousesScene. The flap is a
+ * ROTATION of two wing paths, not a `d` morph, which browsers don't animate
+ * reliably.
+ *
+ * These live here rather than in styled-jsx on purpose: styled-jsx scopes
+ * @keyframes, so a :global() selector cannot resolve the renamed animation and
+ * the whole thing silently does nothing. It looked correct and ran zero
+ * animations.                                                              */
+.houses-bird {
+  animation: bird-bob calc(var(--beat) * 4) ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+.houses-bird .wing {
+  transform-box: fill-box;
+  /* the shoulder, where both wings meet */
+  transform-origin: 50% 100%;
+  animation: bird-flap var(--beat) ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+/* Mirrored, so the pair beats outward together rather than windmilling. */
+.houses-bird .wing-r {
+  animation-name: bird-flap-r;
+}
+@keyframes bird-flap {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-26deg); }
+}
+@keyframes bird-flap-r {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(26deg); }
+}
+/* Shallow drift — a bird flapping while pinned in place reads as stuck. */
+@keyframes bird-bob {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(var(--drift), -2px, 0); }
+}
+/* Decoration is the first thing that should stop when less motion is asked for. */
+@media (prefers-reduced-motion: reduce) {
+  .houses-bird,
+  .houses-bird .wing { animation: none; }
+}
+
+/* ---- page-header illustrations ---------------------------------------- *
+ * Slow and shallow on purpose. These sit beside a heading on a page someone
+ * opened to do a job, so the motion has to be noticeable only if you look for
+ * it — anything faster reads as a distraction and gets disabled by the user
+ * before it earns its place.                                              */
+.page-art { transform-origin: 50% 85%; }
+.page-art-float { animation: page-art-float 7s ease-in-out infinite; }
+.page-art-sway  { animation: page-art-sway 9s ease-in-out infinite; }
+.page-art-pulse { animation: page-art-pulse 6s ease-in-out infinite; }
+
+@keyframes page-art-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -6px, 0); }
+}
+@keyframes page-art-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(1.2deg); }
+}
+@keyframes page-art-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.02); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-art-float, .page-art-sway, .page-art-pulse { animation: none; }
+}

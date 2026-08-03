@@ -19,6 +19,7 @@ import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
 import Loader from "@/components/Loader";
 import NoPhoto from "@/components/NoPhoto";
+import PageArt from "@/components/PageArt";
 import DocumentSheet, { type SheetDoc } from "@/components/DocumentSheet";
 import type { ComplianceItem, ComplianceState, PropertyCompliance } from "@/lib/rex-stats";
 import { zoomOriginFrom, type ZoomOrigin } from "@/lib/zoom-origin";
@@ -609,47 +610,53 @@ function Drawer({ p, onClose, origin }: { p: PropertyCompliance; onClose: () => 
                 <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
                   In date
                 </h4>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {/* One per row, full width. These were a two-up grid of narrow
+                    chips, which left the actions fighting the label for space —
+                    "Set reminder" wrapped awkwardly and a standard residential
+                    property (three or four rows) looked cramped for no reason.
+                    There is no shortage of width here; the constraint was
+                    self-imposed. */}
+                <div className="mt-3 space-y-2">
                   {settled.map((i) => (
                     <div
                       key={i.type}
                       title={i.notes ?? stateLabel(i)}
-                      className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                      className="flex items-center gap-3 rounded-xl border border-line px-4 py-3"
                     >
-                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotFor(i)}`} />
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${dotFor(i)}`} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12px] font-medium text-ink">
+                        <span className="block truncate text-[13px] font-medium text-ink">
                           {i.label}
                         </span>
-                        <span className="block truncate text-[10px] text-muted">
+                        <span className="mt-0.5 block truncate text-[11px] text-muted">
                           {stateLabel(i)}
                           {i.issued ? ` · issued ${i.issued}` : ""}
+                          {/* In date, but is the certificate actually there?
+                              Worth saying even here — especially here. Folded
+                              onto the meta line rather than a third row, which
+                              made the tall ones taller than the rest. */}
+                          {i.entryId && !i.hasDocument ? " · no certificate attached" : ""}
                         </span>
-                        {/* In date, but is the certificate actually there?
-                            Worth saying even here — especially here. */}
-                        {i.entryId && !i.hasDocument ? (
-                          <span className="block truncate text-[10px] text-muted">
-                            No certificate attached
-                          </span>
-                        ) : null}
                       </span>
-                      {i.entryId && i.hasDocument ? (
-                        <button
-                          type="button"
-                          title="View certificate"
-                          onClick={() =>
-                            setSheet({
-                              src: `/api/compliance/document?entry=${encodeURIComponent(i.entryId!)}`,
-                              title: i.label,
-                              subtitle: i.expiry ? `Expires ${i.expiry}` : null,
-                            })
-                          }
-                          className="shrink-0 text-[10px] text-ink underline underline-offset-2 hover:opacity-70"
-                        >
-                          View
-                        </button>
-                      ) : null}
-                      <ReminderButton property={p} item={i} />
+                      <span className="flex shrink-0 items-center gap-3">
+                        {i.entryId && i.hasDocument ? (
+                          <button
+                            type="button"
+                            title="View certificate"
+                            onClick={() =>
+                              setSheet({
+                                src: `/api/compliance/document?entry=${encodeURIComponent(i.entryId!)}`,
+                                title: i.label,
+                                subtitle: i.expiry ? `Expires ${i.expiry}` : null,
+                              })
+                            }
+                            className="text-[11px] text-ink underline underline-offset-2 hover:opacity-70"
+                          >
+                            View
+                          </button>
+                        ) : null}
+                        <ReminderButton property={p} item={i} />
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -800,12 +807,15 @@ export default function CompliancePage() {
   return (
     // Same outline treatment as the rest of the portal.
     <div className="outline-cards soft-cards space-y-6">
-      <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>Compliance</h1>
-        <p className="mt-1 text-[13px] text-muted">
-          Anything outstanding across your properties, worst first. Tap one to see
-          what needs doing.
-        </p>
+      <div className="enter enter-up flex items-start justify-between gap-6" style={enterAt(60)}>
+        <div className="min-w-0">
+          <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>Compliance</h1>
+          <p className="mt-1 max-w-xl text-[13px] text-muted">
+            Anything outstanding across your properties, worst first. Tap one to see
+            what needs doing.
+          </p>
+        </div>
+        <PageArt name="compliance" className="-mt-4 w-[190px] xl:w-[230px]" />
       </div>
 
       {!linked ? (

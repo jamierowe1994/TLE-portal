@@ -15,6 +15,7 @@ import FilterBar from "@/components/FilterBar";
 import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
 import Loader from "@/components/Loader";
+import PageArt from "@/components/PageArt";
 import { formatGBP } from "@/lib/format";
 import { BRAND } from "@/lib/brand";
 import { DealNotesPanel } from "@/components/DealNotes";
@@ -1169,13 +1170,16 @@ export default function ApplicationsPage() {
 
   return (
     <div className="outline-cards soft-cards space-y-6">
-      <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>Applications</h1>
-        <p className="mt-1 text-[13px] text-muted">
-          {fromPropoly
-            ? "Every tenancy in progress and exactly where it's up to — live from Propoly. Tap one for the full picture."
-            : "Offers on your properties and where each one is up to. Tap one for the applicant."}
-        </p>
+      <div className="enter enter-up flex items-start justify-between gap-6" style={enterAt(60)}>
+        <div className="min-w-0">
+          <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>Applications</h1>
+          <p className="mt-1 max-w-xl text-[13px] text-muted">
+            {fromPropoly
+              ? "Every tenancy in progress and exactly where it's up to — live from Propoly. Tap one for the full picture."
+              : "Offers on your properties and where each one is up to. Tap one for the applicant."}
+          </p>
+        </div>
+        <PageArt name="applications" className="-mt-4 w-[190px] xl:w-[230px]" />
       </div>
 
       {!linked ? (
