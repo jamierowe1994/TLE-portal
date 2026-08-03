@@ -14,6 +14,9 @@ import Link from "next/link";
 import DoodleIcon from "@/components/DoodleIcon";
 import CollapsePanel, { PANEL_STAGGER } from "@/components/CollapsePanel";
 import PropertyNotes from "@/components/PropertyNotes";
+import PageArt from "@/components/PageArt";
+import PropertyDocuments from "@/components/PropertyDocuments";
+import DocumentSheet, { type SheetDoc } from "@/components/DocumentSheet";
 import FilterBar from "@/components/FilterBar";
 import StatStrip from "@/components/StatStrip";
 import QuickTabs from "@/components/QuickTabs";
@@ -49,7 +52,21 @@ const STATE_DOT: Record<ComplianceState, string> = {
   "not-required": "bg-gray-300",
 };
 
+/**
+ * Kept deliberately in step with the Compliance page's version. This one had
+ * drifted: it knew nothing about `required` or `conflictingFieldExpiry`, so a
+ * certificate that had never been recorded read as a bland "Nothing on file",
+ * and a property counted as needing work because its two EPC sources disagreed
+ * gave no hint why — the badge said one renewal due and the row explained
+ * nothing.
+ */
 function stateLabel(i: ComplianceItem): string {
+  if (i.dateUnparsed) {
+    return `Expiry date on file can't be read${i.expiry ? ` — "${i.expiry}"` : ""}`;
+  }
+  if (i.conflictingFieldExpiry) {
+    return `Record says ${i.expiry ?? "?"}, the listing says ${i.conflictingFieldExpiry} — needs a look`;
+  }
   switch (i.state) {
     case "expired":
       return `Expired ${i.expiry ?? ""}`.trim();
@@ -60,12 +77,18 @@ function stateLabel(i: ComplianceItem): string {
       return days != null ? `Expires in ${days} days` : "Expiring";
     }
     case "missing":
-      return "Nothing on file";
+      return i.required ? "Required — nothing on file" : "Nothing on file";
     case "not-required":
       return "Not required";
     default:
       return i.expiry ? `Valid to ${i.expiry}` : "Recorded";
   }
+}
+
+/** Amber for a source conflict, but never LOWER than the real state. */
+function dotFor(i: ComplianceItem): string {
+  if (i.state === "expired") return STATE_DOT.expired;
+  return i.conflictingFieldExpiry ? STATE_DOT.expiring : STATE_DOT[i.state];
 }
 
 function money(n: number | null): string | null {
@@ -170,6 +193,22 @@ function PortfolioTile({
         </p>
 
         <div className="mt-auto flex flex-wrap items-center gap-1 pt-4">
+          {/* A dot per certificate, exactly as Compliance shows it — the shape
+              of the property's compliance before you click in. This page owned
+              the same data and only ever showed the next renewal date, which
+              said nothing about how much was wrong behind it. */}
+          {p.items.length ? (
+            <span className="flex w-full flex-wrap items-center gap-1">
+              {p.items.map((i) => (
+                <span
+                  key={i.type}
+                  title={`${i.label} — ${stateLabel(i)}`}
+                  className={`h-1.5 w-1.5 rounded-full ${dotFor(i)}`}
+                />
+              ))}
+            </span>
+          ) : null}
+
           {renewal ? (
             <span
               className={`truncate text-[11px] ${renewal.urgent ? "font-medium text-amber-700" : "text-muted"}`}
@@ -204,7 +243,12 @@ function PortfolioTile({
 // Two windows: the property (front-of-house) on the left, what needs doing on
 // the right.
 function Drawer({ p, onClose, origin }: { p: PortfolioProperty; onClose: () => void; origin?: ZoomOrigin }) {
-  type Expanded = null | "indate" | "notes";
+  // The certificate open over the drawer, if any — same behaviour as Compliance,
+  // where this already worked. Portfolio could show that a gas certificate had
+  // expired but gave you no way to look at it, which meant leaving the page you
+  // manage the property from to go and read it somewhere else.
+  const [sheet, setSheet] = useState<SheetDoc | null>(null);
+  type Expanded = null | "indate" | "notes" | "documents";
   const [expanded, setExpanded] = useState<Expanded>(null);
 
   useEffect(() => {
@@ -348,6 +392,23 @@ function Drawer({ p, onClose, origin }: { p: PortfolioProperty; onClose: () => v
                       <p className="text-[13px] font-medium text-ink">{i.label}</p>
                       <p className="mt-0.5 text-[12px] text-muted">{stateLabel(i)}</p>
                     </div>
+                    {/* A gap has no record behind it, so there is nothing to
+                        open — only a lapsed certificate can be read. */}
+                    {i.entryId && i.hasDocument ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSheet({
+                            src: `/api/compliance/document?entry=${encodeURIComponent(i.entryId!)}`,
+                            title: i.label,
+                            subtitle: i.expiry ? `Expires ${i.expiry}` : null,
+                          })
+                        }
+                        className="shrink-0 self-center text-[11px] text-ink underline underline-offset-2 hover:opacity-70"
+                      >
+                        View
+                      </button>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -409,6 +470,23 @@ function Drawer({ p, onClose, origin }: { p: PortfolioProperty; onClose: () => v
 
                 <button
                   type="button"
+                  onClick={() => setExpanded("documents")}
+                  className="card card-lift p-5 text-left"
+                >
+                  <h3 className="flex items-center gap-2 text-[14px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="doc" size={16} className="text-accent" />
+                    Documents
+                  </h3>
+                  <p className="mt-2 text-[12px] text-muted">
+                    Everything on file for this property, from REX and the portal
+                  </p>
+                  <span className="mt-3 inline-block text-[12px] font-medium text-ink underline-offset-2 hover:underline">
+                    View all
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setExpanded("notes")}
                   className="card card-lift p-5 text-left"
                 >
@@ -450,21 +528,39 @@ function Drawer({ p, onClose, origin }: { p: PortfolioProperty; onClose: () => v
                   </div>
                 ) : null}
                 {settled.length ? (
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  /* One per row, as on Compliance — the two-up grid left the
+                     label and the View link fighting for the same width. */
+                  <div className="mt-4 space-y-2">
                     {settled.map((i) => (
                       <div
                         key={i.type}
-                        className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2"
+                        className="flex items-center gap-3 rounded-xl border border-line px-4 py-3"
                       >
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[i.state]}`} />
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${dotFor(i)}`} />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12px] font-medium text-ink">
+                          <span className="block truncate text-[13px] font-medium text-ink">
                             {i.label}
                           </span>
-                          <span className="block truncate text-[10px] text-muted">
+                          <span className="mt-0.5 block truncate text-[11px] text-muted">
                             {stateLabel(i)}
+                            {i.entryId && !i.hasDocument ? " · no certificate attached" : ""}
                           </span>
                         </span>
+                        {i.entryId && i.hasDocument ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSheet({
+                                src: `/api/compliance/document?entry=${encodeURIComponent(i.entryId!)}`,
+                                title: i.label,
+                                subtitle: i.expiry ? `Expires ${i.expiry}` : null,
+                              })
+                            }
+                            className="shrink-0 text-[11px] text-ink underline underline-offset-2 hover:opacity-70"
+                          >
+                            View
+                          </button>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -473,6 +569,25 @@ function Drawer({ p, onClose, origin }: { p: PortfolioProperty; onClose: () => v
                     Nothing on file for this property yet.
                   </p>
                 )}
+              </div>
+            </CollapsePanel>
+
+            <CollapsePanel
+              open={expanded === "documents"}
+              delay={expanded === "documents" ? PANEL_STAGGER : 0}
+              grow={expanded === "documents"}
+            >
+              <div className="card flex h-full flex-col p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px]" style={{ fontWeight: 500 }}>
+                    <DoodleIcon name="doc" size={17} className="text-accent" />
+                    Documents
+                  </h3>
+                  {collapse}
+                </div>
+                <div className="mt-4">
+                  <PropertyDocuments listingId={p.listingId} lens="leased" />
+                </div>
               </div>
             </CollapsePanel>
 
@@ -509,8 +624,27 @@ function Drawer({ p, onClose, origin }: { p: PortfolioProperty; onClose: () => v
           </a>
         </div>
       </DrawerPanel>
+
+      {/* Above the drawer, so the property stays put behind the certificate. */}
+      <DocumentSheet doc={sheet} onClose={() => setSheet(null)} />
     </SplitDrawer>
   );
+}
+
+/**
+ * Sort weight for the default view — lower is more urgent.
+ *
+ * Deliberately coarse: within a band the existing order is kept, so two
+ * properties with an expired certificate stay in a stable order rather than
+ * shuffling on every render.
+ */
+function rank(p: PortfolioProperty): number {
+  if (!p.checked) return 0;                                    // unknown is a job
+  if (p.items.some((i) => i.state === "expired")) return 1;     // already illegal
+  if (p.items.some((i) => i.state === "expiring")) return 2;    // about to be
+  if (p.items.some((i) => i.state === "missing")) return 3;     // never recorded
+  if (p.items.length === 0) return 4;                           // nothing on file
+  return 5;                                                     // all in date
 }
 
 /* --------------------------------- page --------------------------------- */
@@ -596,7 +730,15 @@ export default function PortfolioPage() {
         return x.localeCompare(y);
       });
     if (sort === "address") return [...list].sort((a, b) => a.name.localeCompare(b.name));
-    return list;
+    // Default = worst compliance first. This page exists to keep a let book
+    // legal, so the property with an expired certificate has to be the one you
+    // see without scrolling — the previous default was REX's own order, which
+    // is arbitrary from here.
+    //
+    // Unchecked properties sort to the TOP, not the bottom: "we could not read
+    // this one" is a job, and burying it under everything we did read is how it
+    // stays unread.
+    return [...list].sort((a, b) => rank(a) - rank(b));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all, filter, search, sort]);
 
@@ -648,11 +790,16 @@ export default function PortfolioPage() {
     // Same outline treatment as the rest of the portal.
     <div className="outline-cards soft-cards space-y-6">
       <div className="enter enter-up" style={enterAt(60)}>
-        <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>My Portfolio</h1>
-        <p className="mt-1 text-[13px] text-muted">
-          The properties you&apos;ve let and now manage — renewals due, rent roll,
-          and a straight line back to the record in REX.
-        </p>
+        <div className="flex items-start justify-between gap-6">
+          <div className="min-w-0">
+            <h1 className="tracking-tight" style={{ fontSize: "clamp(32px, 3.6vw, 46px)", lineHeight: 1.05, fontWeight: 500 }}>My Portfolio</h1>
+            <p className="mt-1 max-w-xl text-[13px] text-muted">
+              Everything you manage, worst compliance first — certificates,
+              documents, rent and tenancy in one place.
+            </p>
+          </div>
+          <PageArt name="portfolio" className="-mt-2 mr-6 w-[140px] xl:mr-12 xl:w-[165px]" />
+        </div>
       </div>
 
       {!linked ? (
