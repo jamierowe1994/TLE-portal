@@ -15,7 +15,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Bars from "@/components/charts/Bars";
 import type { SeedData, PeriodKpis } from "@/lib/seed-data";
 import type { StatValue } from "@/lib/types";
-import { formatNum } from "@/lib/format";
+import { exVat, formatNum } from "@/lib/format";
+
 
 interface LiveBusiness {
   month: string;
@@ -493,10 +494,12 @@ export default function Overview({ month }: { month: string }) {
   const liveGciPerMoveIn: StatValue | null =
     liveForThisPeriod && liveForThisPeriod.moveIns
       ? {
-          value: Math.round(liveForThisPeriod.combinedGci / liveForThisPeriod.moveIns),
-          display: gbp(liveForThisPeriod.combinedGci / liveForThisPeriod.moveIns),
+          // exc VAT, same basis as the accounts spreadsheet the rest of this
+          // page's history is seeded from — PayProp's wire amounts include it.
+          value: Math.round(exVat(liveForThisPeriod.combinedGci) / liveForThisPeriod.moveIns),
+          display: gbp(exVat(liveForThisPeriod.combinedGci) / liveForThisPeriod.moveIns),
           source: "live-payprop",
-          note: `${gbp(liveForThisPeriod.combinedGci)} commission ÷ ${liveForThisPeriod.moveIns} tenancies starting this month — live from PayProp.`,
+          note: `${gbp(exVat(liveForThisPeriod.combinedGci))} commission exc VAT ÷ ${liveForThisPeriod.moveIns} tenancies starting this month — live from PayProp.`,
         }
       : null;
 

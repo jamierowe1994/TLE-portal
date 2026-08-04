@@ -275,23 +275,11 @@ const FEE_CATEGORIES = new Set([
 // to separate an agent's pass-through from their earnings.
 const NOT_EARNINGS = new Set(["Contractor", "Deposit (Custodial)", "Property account"]);
 
-/**
- * A VAT-inclusive fee, net of VAT — exactly as the accounts spreadsheet does it.
- *
- * NOT `gross / 1.2`. The sheet rounds the VAT and subtracts it, which differs by
- * a penny whenever the third decimal lands on a 5. Checked across all 96
- * populated cells of the Agent Earnings Table: 95 follow this, and every case
- * where the two methods disagree follows this one — Tony Poon's April is
- * 1,033.53 gross, 861.27 on the sheet, and 861.28 by division.
- *
- * A penny is nothing until someone is checking a figure against their own
- * spreadsheet, at which point it is the difference between "correct" and
- * "close".
- */
-export const exVat = (gross: number): number => {
-  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-  return round2(gross - round2(gross / 6));
-};
+// exVat moved to lib/format (client-safe) so the admin tabs can net the live
+// PayProp figures for display; imported back for the earnings maths here and
+// re-exported for this module's existing callers.
+import { exVat } from "@/lib/format";
+export { exVat };
 
 const money = (v: unknown) => {
   const n = parseFloat(String(v ?? ""));

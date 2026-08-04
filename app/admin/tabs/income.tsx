@@ -11,7 +11,8 @@ import Donut from "@/components/charts/Donut";
 import Bars from "@/components/charts/Bars";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { IncomeMonthlyRow, LicenceFeeRow } from "@/lib/seed-types";
-import { formatGBP, formatNum, monthLabel } from "@/lib/format";
+import { exVat, formatGBP, formatNum, monthLabel } from "@/lib/format";
+
 
 /* ------------------------------ table columns ------------------------------ */
 
@@ -164,15 +165,24 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
   const gbp = (n: number) =>
     `£${n.toLocaleString("en-GB", { maximumFractionDigits: 0 })}`;
 
+  /**
+   * Live PayProp amounts arrive INCLUSIVE of VAT; every historical row on this
+   * tab is seeded from the accounts spreadsheet, whose fee columns are all
+   * "exc VAT". The live cards must be netted or the tab disagrees with itself
+   * — which is exactly how July read ~£61.3k here against £51,068 on Susan's
+   * summary: same fees, hers net, ours gross, the gap the VAT to the penny.
+   */
+  const netGbp = (n: number) => gbp(exVat(n));
+
   /** One agency's GCI, or null when it isn't there yet. */
   const accountGci = (l: LiveIncome | null, label: string) => {
     const a = l?.byAccount?.find((x) => x.label === label);
     if (!a) return null;
     return {
-      value: Math.round(a.combinedGci),
-      display: gbp(a.combinedGci),
+      value: Math.round(exVat(a.combinedGci)),
+      display: netGbp(a.combinedGci),
       source: "live-payprop" as const,
-      note: `${gbp(a.agencyIncome)} kept by the agency; the rest paid to partners.`,
+      note: `${netGbp(a.agencyIncome)} exc VAT kept by the agency; the rest paid to partners.`,
     };
   };
 
@@ -195,24 +205,24 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
     const src = "live-payprop" as const;
     switch (which) {
       case "totalGci":
-        return { value: Math.round(prev.combinedGci), display: gbp(prev.combinedGci), source: src, note };
+        return { value: Math.round(exVat(prev.combinedGci)), display: netGbp(prev.combinedGci), source: src, note };
       case "tleNet":
-        return { value: Math.round(prev.agencyIncome), display: gbp(prev.agencyIncome), source: src, note };
+        return { value: Math.round(exVat(prev.agencyIncome)), display: netGbp(prev.agencyIncome), source: src, note };
       case "gciPerAgent":
         if (!agents) return null;
         return {
-          value: Math.round(prev.combinedGci / agents),
-          display: gbp(prev.combinedGci / agents),
+          value: Math.round(exVat(prev.combinedGci) / agents),
+          display: gbp(exVat(prev.combinedGci) / agents),
           source: src,
-          note: `${gbp(prev.combinedGci)} across ${agents} earning partners.`,
+          note: `${netGbp(prev.combinedGci)} exc VAT across ${agents} earning partners.`,
         };
       case "netPerAgent":
         if (!agents) return null;
         return {
-          value: Math.round(prev.agencyIncome / agents),
-          display: gbp(prev.agencyIncome / agents),
+          value: Math.round(exVat(prev.agencyIncome) / agents),
+          display: gbp(exVat(prev.agencyIncome) / agents),
           source: src,
-          note: `${gbp(prev.agencyIncome)} across ${agents} earning partners.`,
+          note: `${netGbp(prev.agencyIncome)} exc VAT across ${agents} earning partners.`,
         };
       case "splitPct": {
         if (!prev.combinedGci) return null;
@@ -364,16 +374,16 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
             stat={
               live
                 ? {
-                    value: Math.round(live.combinedGci),
-                    display: gbp(live.combinedGci),
+                    value: Math.round(exVat(live.combinedGci)),
+                    display: netGbp(live.combinedGci),
                     source: "live-payprop",
-                    note: `Every fee charged this month across both agencies, ${live.paymentCount} payments. TLE's share plus the partners'.`,
+                    note: `Every fee charged this month across both agencies, exc VAT, ${live.paymentCount} payments. TLE's share plus the partners'.`,
                   }
                 : liveGciEst ?? inc.julyMtd.combinedGci
             }
             sub={
               live
-                ? `${gbp(live.agencyIncome)} TLE · ${gbp(live.paidToBeneficiaries)} partners`
+                ? `${netGbp(live.agencyIncome)} TLE · ${netGbp(live.paidToBeneficiaries)} partners, exc VAT`
                 : liveGciEst && liveMoveIns != null
                   ? `${liveMoveIns} live move-ins × £1,200 avg`
                   : undefined

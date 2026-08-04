@@ -97,3 +97,22 @@ export function daysElapsedFraction(month: string): number {
   const daysInMonth = new Date(year, mon, 0).getDate();
   return Math.min(1, Math.max(0, now.getDate() / daysInMonth));
 }
+
+/**
+ * A VAT-inclusive fee, net of VAT — exactly as the accounts spreadsheet does it.
+ *
+ * NOT `gross / 1.2`. The sheet rounds the VAT and subtracts it, which differs by
+ * a penny whenever the third decimal lands on a 5. Checked across all 96
+ * populated cells of the Agent Earnings Table: 95 follow this, and every case
+ * where the two methods disagree follows this one — Tony Poon's April is
+ * 1,033.53 gross, 861.27 on the sheet, and 861.28 by division.
+ *
+ * Lives HERE rather than in payprop-income because the admin tabs are client
+ * components and payprop-income sits behind "server-only" — a display that
+ * can't net a figure is how the Income tab showed July ~£61.3k against the
+ * £51,068 on the accounts summary: same fees, theirs exc VAT, ours inc.
+ */
+export const exVat = (gross: number): number => {
+  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+  return round2(gross - round2(gross / 6));
+};
