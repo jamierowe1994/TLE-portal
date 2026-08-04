@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import { DATA_DIR } from "@/lib/data-dir";
 import { hasDb, q } from "@/lib/db";
+import { normaliseDue } from "@/lib/ics";
 
 // To-do store — the agent's own reminders. Created by hand on the To-dos
 // page or by the TLE Assistant mid-conversation ("remind me to chase the
@@ -18,7 +19,12 @@ export interface Todo {
   id: string;
   userId: string;
   note: string;
-  dueAt: string | null; // ISO datetime or date — display-parsed, not enforced
+  // Validated on write (lib/ics.ts `normaliseDue`) into one of three shapes:
+  // "YYYY-MM-DD" (all day), "YYYY-MM-DDTHH:MM" (local to the agent, stored
+  // naive on purpose — see lib/ics.ts), or an absolute "…Z". It used to be a
+  // free string, which was fine for rendering a chip and useless for building
+  // a calendar event out of.
+  dueAt: string | null;
   platform: string | null;
   property: string | null;
   tenant: string | null;
@@ -129,7 +135,8 @@ export async function createTodo(
     id: crypto.randomUUID(),
     userId,
     note,
-    dueAt: clamp(input.dueAt, MAX_FIELD),
+    dueAt: normaliseDue(input.dueAt), // throws on a non-date; the route 400s
+
     platform: clamp(input.platform, MAX_FIELD),
     property: clamp(input.property, MAX_FIELD),
     tenant: clamp(input.tenant, MAX_FIELD),
@@ -169,7 +176,7 @@ export async function updateTodo(
   const apply = (t: Todo): Todo => ({
     ...t,
     note: patch.note !== undefined ? (clamp(patch.note, MAX_NOTE) ?? t.note) : t.note,
-    dueAt: patch.dueAt !== undefined ? clamp(patch.dueAt, MAX_FIELD) : t.dueAt,
+    dueAt: patch.dueAt !== undefined ? normaliseDue(patch.dueAt) : t.dueAt,
     platform: patch.platform !== undefined ? clamp(patch.platform, MAX_FIELD) : t.platform,
     property: patch.property !== undefined ? clamp(patch.property, MAX_FIELD) : t.property,
     tenant: patch.tenant !== undefined ? clamp(patch.tenant, MAX_FIELD) : t.tenant,

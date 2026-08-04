@@ -68,16 +68,24 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.id !== "string") {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
-  const todo = await updateTodo(gate.user.id, body.id, {
-    note: typeof body.note === "string" ? body.note : undefined,
-    dueAt: body.dueAt === null || typeof body.dueAt === "string" ? (body.dueAt as string | null) : undefined,
-    platform: body.platform === null || typeof body.platform === "string" ? (body.platform as string | null) : undefined,
-    property: body.property === null || typeof body.property === "string" ? (body.property as string | null) : undefined,
-    tenant: body.tenant === null || typeof body.tenant === "string" ? (body.tenant as string | null) : undefined,
-    done: typeof body.done === "boolean" ? body.done : undefined,
-  });
-  if (!todo) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ todo });
+  // updateTodo rejects a dueAt that isn't a date — a 400, not a 500.
+  try {
+    const todo = await updateTodo(gate.user.id, body.id, {
+      note: typeof body.note === "string" ? body.note : undefined,
+      dueAt: body.dueAt === null || typeof body.dueAt === "string" ? (body.dueAt as string | null) : undefined,
+      platform: body.platform === null || typeof body.platform === "string" ? (body.platform as string | null) : undefined,
+      property: body.property === null || typeof body.property === "string" ? (body.property as string | null) : undefined,
+      tenant: body.tenant === null || typeof body.tenant === "string" ? (body.tenant as string | null) : undefined,
+      done: typeof body.done === "boolean" ? body.done : undefined,
+    });
+    if (!todo) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ todo });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Couldn't save that." },
+      { status: 400 }
+    );
+  }
 }
 
 export async function DELETE(req: NextRequest) {

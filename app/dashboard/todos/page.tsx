@@ -473,6 +473,15 @@ export default function TodosPage() {
   const [taskFilter, setTaskFilter] = useState("all");
   const [sortBy, setSortBy] = useState("due");
 
+  // Calendar export. The portal has no scheduler, so it can't email anyone in
+  // eleven months — but a calendar can. The .ics carries its own alarms
+  // (30/14/7/1 days before), so the reminding happens in Outlook or Google.
+  // "Email me a copy" sends NOW with the .ics attached, for adding it from a
+  // phone; it is not a subscription to future emails.
+  const [emailCopy, setEmailCopy] = useState(false);
+  const [calBusy, setCalBusy] = useState<string | null>(null);
+  const [calFlash, setCalFlash] = useState<{ id: string; text: string; bad?: boolean } | null>(null);
+
   const open = useMemo(() => {
     let list = todos.filter((t) => !t.done);
     if (taskFilter !== "all") list = list.filter((t) => bucketOf(t) === taskFilter);
@@ -626,6 +635,62 @@ export default function TodosPage() {
   }
 
   // Change just the date from the tile's chip — saves straight away.
+  /**
+   * Download the to-do as a calendar event, and optionally email a copy.
+   * Fetched as a blob rather than navigated to, so a 400 ("give it a date
+   * first") surfaces as a message instead of downloading the error JSON.
+   */
+  async function addToCalendar(t: Todo) {
+    if (calBusy) return;
+    setCalBusy(t.id);
+    setCalFlash(null);
+    try {
+      const res = await fetch(`/api/my/todos/ics?id=${encodeURIComponent(t.id)}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setCalFlash({ id: t.id, text: body?.error ?? "Couldn't build that event.", bad: true });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${t.note.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "reminder"}.ics`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      if (!emailCopy) {
+        setCalFlash({ id: t.id, text: "Added — open the file to drop it in your calendar." });
+        return;
+      }
+
+      const mail = await fetch("/api/my/todos/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: t.id }),
+      });
+      const mailBody = (await mail.json().catch(() => null)) as
+        | { error?: string; sentTo?: string }
+        | null;
+      if (!mail.ok) {
+        // The download already worked — say so, rather than reading as a total failure.
+        setCalFlash({
+          id: t.id,
+          text: `Downloaded, but the email didn't send. ${mailBody?.error ?? ""}`.trim(),
+          bad: true,
+        });
+        return;
+      }
+      setCalFlash({ id: t.id, text: `Downloaded, and emailed to ${mailBody?.sentTo ?? "you"}.` });
+    } catch {
+      setCalFlash({ id: t.id, text: "Couldn't do that just now.", bad: true });
+    } finally {
+      setCalBusy(null);
+    }
+  }
+
   async function patchDue(t: Todo, dueAt: string) {
     const next = dueAt || null;
     setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, dueAt: next } : x)));
@@ -659,6 +724,43 @@ export default function TodosPage() {
             className="w-full rounded-lg border border-line bg-white px-3 py-2 text-[14px] outline-none transition focus:border-black/25"
           />
           <DetailFields d={editDetails} onChange={(p) => setEditDetails((v) => ({ ...v, ...p }))} />
+
+          {/* Calendar: the reminder lives in Outlook/Google, not here — the
+              portal has nothing running at 6am to send it. */}
+          <div className="rounded-lg border border-line bg-page/60 p-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void addToCalendar(t)}
+                disabled={!editDetails.dueAt || calBusy === t.id}
+                title={editDetails.dueAt ? undefined : "Give it a date first"}
+                className="btn-press inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-1.5 text-[12px] font-semibold text-ink transition hover:border-black/25 disabled:opacity-40"
+              >
+                <DoodleIcon name="calendar" size={13} className="shrink-0 text-muted/70" />
+                {calBusy === t.id ? "Working…" : "Add to calendar"}
+              </button>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={emailCopy}
+                  onChange={(e) => setEmailCopy(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-black"
+                />
+                Email me a copy
+              </label>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-muted">
+              {editDetails.dueAt
+                ? "Reminds you 30, 14, 7 and 1 days before — from your own calendar."
+                : "Set a date above and this becomes a calendar reminder."}
+            </p>
+            {calFlash?.id === t.id ? (
+              <p className={`mt-1.5 text-[11px] ${calFlash.bad ? "text-red-600" : "text-ink"}`}>
+                {calFlash.text}
+              </p>
+            ) : null}
+          </div>
+
           <div className="flex gap-2">
             <button
               type="button"
@@ -750,7 +852,7 @@ export default function TodosPage() {
 
         {/* Mark as done — the only button on the tile; deleting lives behind
             the click-through so nothing goes missing by accident. */}
-        <div className={`mt-auto pt-4 ${party ? "done-liftoff" : ""}`}>
+        <div className={`mt-auto flex flex-wrap items-center gap-2 pt-4 ${party ? "done-liftoff" : ""}`}>
           <button
             type="button"
             onClick={(e) => {
@@ -785,6 +887,29 @@ export default function TodosPage() {
             </span>
             {t.done ? "Done" : party ? "Nice one!" : "Mark as done"}
           </button>
+
+          {/* Quick calendar export — only worth offering once it has a date. */}
+          {t.dueAt && !t.done ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void addToCalendar(t);
+              }}
+              disabled={calBusy === t.id}
+              title="Add to calendar"
+              aria-label={`Add "${t.note}" to calendar`}
+              className="btn-press inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-[12px] font-medium text-muted transition hover:border-black/25 hover:text-ink disabled:opacity-40"
+            >
+              <DoodleIcon name="calendar" size={13} className="shrink-0" />
+              {calBusy === t.id ? "…" : "Calendar"}
+            </button>
+          ) : null}
+          {calFlash?.id === t.id ? (
+            <p className={`basis-full text-[11px] ${calFlash.bad ? "text-red-600" : "text-muted"}`}>
+              {calFlash.text}
+            </p>
+          ) : null}
         </div>
         </div>
         </div>

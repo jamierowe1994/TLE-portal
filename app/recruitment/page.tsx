@@ -281,15 +281,15 @@ function Faq({ q, a }: { q: string; a: string }) {
 }
 
 /**
- * The hero's moving picture. Prefers the Higgsfield loop and falls back to the
- * mono street scene, so the page is never waiting on an asset.
+ * Probe for the Higgsfield loop. Lifted out of the old HeroVisual component
+ * because the TITLE now needs to know whether the video exists — the balloon
+ * in the footage stands in for the O of "OF LETTINGS", so the h1 itself
+ * renders differently with and without it.
  *
- * Drop the video at public/illustrations/hero-loop.mp4 (or .webm) and it takes
- * over on the next load — no code change. Probed with HEAD rather than just
- * rendered, because a <video> with a missing src fails silently and we'd be
- * showing nothing without knowing it.
+ * HEAD + content-type, not just r.ok: Next's dev server answers HEAD for
+ * MISSING files with 200 text/html.
  */
-function HeroVisual() {
+function useHeroLoop(): string | null {
   const [loop, setLoop] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -298,8 +298,6 @@ function HeroVisual() {
         try {
           const r = await fetch(src, { method: "HEAD" });
           const type = r.headers.get("content-type") ?? "";
-          // Next's dev server answers HEAD for MISSING files with 200 text/html
-          // (the 404 page) — the content-type is the only honest signal here.
           if (r.ok && type.startsWith("video/")) {
             if (!cancelled) setLoop(src);
             return;
@@ -313,42 +311,7 @@ function HeroVisual() {
       cancelled = true;
     };
   }, []);
-
-  if (loop) {
-    return (
-      <video
-        src={loop}
-        autoPlay
-        muted
-        loop
-        playsInline
-        aria-hidden
-        // multiply melts a video's WHITE ground into the clay behind it, so
-        // black-on-white line art reads as ink drawn straight onto the canvas.
-        // It cannot rescue a BLACK ground — multiply keeps black, and the
-        // screen blend that removes black would erase the linework with it.
-        // Any future export must be black-on-white (or true alpha).
-        className="pointer-events-none block w-full mix-blend-multiply"
-      />
-    );
-  }
-  // The house style: our own Notioly figure, large, with the clay showing
-  // through its real transparency — no blend needed. Motion deliberately
-  // subtle after the spinning-keys experiment: a slow float and a pulse of
-  // sparkles, not a performance.
-  return (
-    <div className="relative mx-auto w-[86%] lg:w-[64%]">
-      <Scribble name="sparkles" className="page-art-pulse -right-6 top-[6%] h-14 w-14 text-ink/60 sm:h-16 sm:w-16" />
-      <Scribble name="wind" className="-left-8 top-[38%] hidden h-12 w-12 -scale-x-100 text-ink/40 sm:block" />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/illustrations/notioly/png/mailbox-full.png"
-        alt=""
-        aria-hidden
-        className="page-art-float block w-full"
-      />
-    </div>
-  );
+  return loop;
 }
 
 /**
@@ -400,6 +363,7 @@ function HeroSearch() {
 
 export default function RecruitmentPage() {
   const QUIZ = "https://join.thelettingexperts.co.uk/join-us";
+  const loop = useHeroLoop();
 
   return (
     <div className="outline-cards soft-cards min-h-screen bg-page">
@@ -446,22 +410,77 @@ export default function RecruitmentPage() {
               style={{ fontSize: "clamp(40px, 11.4vw, 184px)", lineHeight: 0.85, letterSpacing: "-0.05em" }}
             >
               <span className="block whitespace-nowrap">The Future</span>
-              <span className="block whitespace-nowrap text-right">
-                of <span className="written">Lettings</span>
-              </span>
+              {loop ? (
+                /* The balloon IS the O. All geometry in em so it scales with
+                   the type. Balloon centre sits at (35.9%, 28%) of the frame at
+                   22.6% frame-width diameter — measured from the RENDERED
+                   element, because the first numbers came from a raw-frame scan
+                   that caught the motion streaks and put the balloon a fifth of
+                   an em off its slot. A 3.54em video puts a 0.80em balloon
+                   in the O's gap — sized a shade over the cap height, because
+                   a fine-lined circle needs extra diameter to carry the same
+                   visual mass as the black caps beside it; the lady dangles from the headline
+                   into the canvas. 0.75 speed as asked. Screen readers still
+                   hear "of Lettings". */
+                <span className="relative block whitespace-nowrap text-right">
+                  <span aria-hidden className="relative inline-block h-0" style={{ width: "0.8em" }}>
+                    <video
+                      ref={(el) => {
+                        if (el) el.playbackRate = 0.75;
+                      }}
+                      src={loop}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      aria-hidden
+                      className="pointer-events-none absolute max-w-none mix-blend-multiply"
+                      // brightness clips the export's 254-white to true 255
+                      // before the blend — without it, multiply leaves a 0.4%
+                      // ghost rectangle you can just see against flat clay.
+                      style={{ width: "3.54em", left: "-0.87em", top: "-1.34em", filter: "brightness(1.04)" }}
+                    />
+                  </span>
+                  <span className="sr-only">O</span>f <span className="written">Lettings</span>
+                </span>
+              ) : (
+                <span className="block whitespace-nowrap text-right">
+                  of <span className="written">Lettings</span>
+                </span>
+              )}
             </h1>
 
             {/* NO z-index here: a z-indexed wrapper is a stacking context, and
                 a stacking context ISOLATES mix-blend-mode — the video's multiply
                 would blend against the wrapper's transparency instead of the
                 clay, leaving the white box this exists to remove. */}
-            <div className="relative mx-auto mt-auto w-[min(760px,94%)] lg:-mt-[7vw] lg:w-[min(900px,74%)]">
-              <HeroVisual />
-              {/* moved under the lady, as asked — it was pinned mid-left */}
-              <p className="pointer-events-none mt-1 pb-1 text-center text-[12.5px] tracking-wide text-ink/70">
-                [ For agents with 2+ years in lettings ]
+            {loop ? (
+              /* She hangs from the title, so the slot's only job is the line
+                 beneath her — handwritten, tying the wifi balloon to the pitch. */
+              <p
+                className="written mt-auto pb-2 pl-[6%] text-left text-ink lg:pl-[10%]"
+                style={{ fontSize: "clamp(18px, 2.5vw, 32px)" }}
+              >
+                For agents who are fed up of not being connected.
               </p>
-            </div>
+            ) : (
+              <div className="relative mx-auto mt-auto w-[min(760px,94%)] lg:-mt-[7vw] lg:w-[min(900px,74%)]">
+                <div className="relative mx-auto w-[86%] lg:w-[64%]">
+                  <Scribble name="sparkles" className="page-art-pulse -right-6 top-[6%] h-14 w-14 text-ink/60 sm:h-16 sm:w-16" />
+                  <Scribble name="wind" className="-left-8 top-[38%] hidden h-12 w-12 -scale-x-100 text-ink/40 sm:block" />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/illustrations/notioly/png/mailbox-full.png"
+                    alt=""
+                    aria-hidden
+                    className="page-art-float block w-full"
+                  />
+                </div>
+                <p className="pointer-events-none mt-1 pb-1 text-center text-[12.5px] tracking-wide text-ink/70">
+                  [ For agents with 2+ years in lettings ]
+                </p>
+              </div>
+            )}
 
             {/* right column: the pitch, and the search line across the bottom */}
             <div className="mx-auto mt-8 w-full max-w-[44ch] text-center lg:absolute lg:right-10 lg:top-[56%] lg:mt-0 lg:w-[320px] lg:max-w-none lg:text-left">
