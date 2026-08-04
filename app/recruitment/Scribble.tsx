@@ -23,6 +23,7 @@ const PACK: Record<string, number> = {
   bang: 50, // exclamation mark
   arrow: 62, // curved arrow, pointing up-right
   pop: 64, // two short arrows bursting upward — the corner marks
+  quotes: 27, // two hand-drawn quote curls — rotate 180 for the opener
   smile: 107, // little smiley
   house: 143, // scribbled house
 };

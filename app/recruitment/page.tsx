@@ -424,6 +424,32 @@ export default function RecruitmentPage() {
                    hear "of Lettings". */
                 <span className="relative block whitespace-nowrap text-right">
                   <span aria-hidden className="relative inline-block h-0" style={{ width: "0.8em" }}>
+                    {/* The strapline rides the video's own em grid so it stays
+                        glued just under her trailing shoe at every viewport.
+                        This whole anchor is aria-hidden; the sr-only copy after
+                        the h1 carries the words for assistive tech. */}
+                    {/* Outer span: POSITION, in the h1's own em so it tracks
+                        the video geometry. Inner span: TYPE SIZE. Setting
+                        font-size on the positioned element rescales its own
+                        left/top/width and the whole block shrank onto her —
+                        the em a length resolves against is the element's own
+                        font size, not its parent's. */}
+                    <span className="absolute block" style={{ left: "-0.3em", top: "2.28em", width: "2.4em" }}>
+                      <span
+                        className="written relative block whitespace-normal text-left font-normal normal-case tracking-normal"
+                        style={{ fontSize: "clamp(13px, 0.115em, 26px)", lineHeight: 1.35 }}
+                      >
+                        <Scribble name="quotes" className="-left-[1.2em] -top-[0.45em] h-[1em] w-[1em] rotate-180" />
+                        For agents who are fed up
+                        <br />
+                        of not being connected.
+                        {/* inline anchor so the closing curls hug the full
+                            stop rather than the block's far edge */}
+                        <span className="relative inline-block h-[0.5em] w-[1.1em]">
+                          <Scribble name="quotes" className="left-[0.15em] top-[-0.15em] h-[0.9em] w-[0.9em]" />
+                        </span>
+                      </span>
+                    </span>
                     <video
                       ref={(el) => {
                         if (el) el.playbackRate = 0.75;
@@ -455,14 +481,9 @@ export default function RecruitmentPage() {
                 would blend against the wrapper's transparency instead of the
                 clay, leaving the white box this exists to remove. */}
             {loop ? (
-              /* She hangs from the title, so the slot's only job is the line
-                 beneath her — handwritten, tying the wifi balloon to the pitch. */
-              <p
-                className="written mt-auto pb-2 pl-[6%] text-left text-ink lg:pl-[10%]"
-                style={{ fontSize: "clamp(18px, 2.5vw, 32px)" }}
-              >
-                For agents who are fed up of not being connected.
-              </p>
+              /* The strapline rides inside the title's video anchor now (see
+                 the h1) — in flow there is nothing left to place. */
+              <p className="sr-only">&ldquo;For agents who are fed up of not being connected.&rdquo;</p>
             ) : (
               <div className="relative mx-auto mt-auto w-[min(760px,94%)] lg:-mt-[7vw] lg:w-[min(900px,74%)]">
                 <div className="relative mx-auto w-[86%] lg:w-[64%]">
