@@ -49,6 +49,60 @@ const PERSONAS = [
   },
 ];
 
+/**
+ * The collage strip: black gaps, photos, and the brand tile in Mist pink —
+ * the VEIL reference recoloured to TLE. Stock stand-ins for now; swap each
+ * `src` for the real team photos as James supplies them. Every tile falls
+ * back to a flat pink panel if its image dies, so a dead URL can never
+ * render as a broken-image glyph.
+ */
+const COLLAGE: Array<
+  | { kind: "photo"; src: string; alt: string; span?: string; caption?: [string, string, string] }
+  | { kind: "brand"; span?: string }
+> = [
+  {
+    kind: "photo",
+    src: "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=900&q=75&fit=crop",
+    alt: "Handing over the keys",
+    span: "row-span-2",
+    caption: ["Experts in", "lettings", "not just listings"],
+  },
+  {
+    kind: "photo",
+    src: "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=900&q=75&fit=crop",
+    alt: "A managed home",
+  },
+  {
+    kind: "photo",
+    src: "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=900&q=75&fit=crop",
+    alt: "Working your own hours",
+  },
+  {
+    kind: "photo",
+    src: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=900&q=75&fit=crop",
+    alt: "A let property",
+    span: "row-span-2",
+    caption: ["Experts", "not just", "agents"],
+  },
+  { kind: "brand", span: "col-span-2" },
+  {
+    kind: "photo",
+    src: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&q=75&fit=crop",
+    alt: "On the doorstep",
+    span: "col-span-2",
+  },
+  {
+    kind: "photo",
+    src: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=900&q=75&fit=crop",
+    alt: "The next instruction",
+  },
+  {
+    kind: "photo",
+    src: "https://images.unsplash.com/photo-1556911220-bff31c812dba?w=900&q=75&fit=crop",
+    alt: "Home, managed",
+  },
+];
+
 const GIVE = [
   {
     icon: "rocket",
@@ -431,7 +485,7 @@ export default function RecruitmentPage() {
                 guessed. */}
             <h1
               className="mt-8 text-left font-black uppercase text-ink sm:mt-10"
-              style={{ fontSize: "clamp(40px, 11.4vw, 184px)", lineHeight: 0.85, letterSpacing: "-0.05em" }}
+              style={{ fontSize: "clamp(40px, min(11.4vw, 18vh), 184px)", lineHeight: 0.85, letterSpacing: "-0.05em" }}
             >
               <span className="block whitespace-nowrap">The Future</span>
               {loop ? (
@@ -448,32 +502,6 @@ export default function RecruitmentPage() {
                    hear "of Lettings". */
                 <span className="relative block whitespace-nowrap text-right">
                   <span aria-hidden className="relative inline-block h-0" style={{ width: "0.8em" }}>
-                    {/* The strapline rides the video's own em grid so it stays
-                        glued just under her trailing shoe at every viewport.
-                        This whole anchor is aria-hidden; the sr-only copy after
-                        the h1 carries the words for assistive tech. */}
-                    {/* Outer span: POSITION, in the h1's own em so it tracks
-                        the video geometry. Inner span: TYPE SIZE. Setting
-                        font-size on the positioned element rescales its own
-                        left/top/width and the whole block shrank onto her —
-                        the em a length resolves against is the element's own
-                        font size, not its parent's. */}
-                    <span className="absolute block" style={{ left: "-0.85em", top: "2.28em", width: "2.4em" }}>
-                      <span
-                        className="written relative block whitespace-normal text-left font-normal normal-case tracking-normal"
-                        style={{ fontSize: "clamp(13px, 0.115em, 26px)", lineHeight: 1.35 }}
-                      >
-                        <Scribble name="quotes" className="-left-[1.2em] -top-[0.45em] h-[1em] w-[1em] rotate-180" />
-                        For agents who are fed up
-                        <br />
-                        of not being connected.
-                        {/* inline anchor so the closing curls hug the full
-                            stop rather than the block's far edge */}
-                        <span className="relative inline-block h-[0.5em] w-[1.1em]">
-                          <Scribble name="quotes" className="left-[0.15em] top-[-0.15em] h-[0.9em] w-[0.9em]" />
-                        </span>
-                      </span>
-                    </span>
                     <video
                       ref={(el) => {
                         if (el) el.playbackRate = 0.75;
@@ -504,11 +532,7 @@ export default function RecruitmentPage() {
                 a stacking context ISOLATES mix-blend-mode — the video's multiply
                 would blend against the wrapper's transparency instead of the
                 clay, leaving the white box this exists to remove. */}
-            {loop ? (
-              /* The strapline rides inside the title's video anchor now (see
-                 the h1) — in flow there is nothing left to place. */
-              <p className="sr-only">&ldquo;For agents who are fed up of not being connected.&rdquo;</p>
-            ) : (
+            {loop ? null : (
               <div className="relative mx-auto mt-auto w-[min(760px,94%)] lg:-mt-[7vw] lg:w-[min(900px,74%)]">
                 <div className="relative mx-auto w-[86%] lg:w-[64%]">
                   <Scribble name="sparkles" className="page-art-pulse -right-6 top-[6%] h-14 w-14 text-ink/60 sm:h-16 sm:w-16" />
@@ -550,7 +574,7 @@ export default function RecruitmentPage() {
       {/* Pulled up over the collapse's tail (-20vh): by the time the curtain
           is a stripe this section is already climbing the viewport — no dead
           eggshell between the hero and the people it's for. */}
-      <section id="who" className="relative z-10 -mt-[20vh] scroll-mt-6 px-6 pb-24 pt-4">
+      <section id="who" className="relative z-10 -mt-[34vh] scroll-mt-6 px-6 pb-24 pt-4">
         <Scribble name="swoosh" className="right-[4%] top-[9%] hidden h-24 w-24 xl:block" />
         <div className="mx-auto max-w-[1180px]">
           <Reveal>
@@ -594,6 +618,64 @@ export default function RecruitmentPage() {
               </p>
             </div>
           </Reveal>
+        </div>
+      </section>
+
+      {/* ---------------- the collage ---------------- */}
+      {/* The VEIL board, recoloured: near-black ground, thin black gaps, warm
+          photos, and the brand tile in Mist. The captions are the brand PDF's
+          own slogans ("Experts in…", "Experts not just…"), because a collage
+          with invented taglines would need sign-off this one doesn't. */}
+      {/* Inset from the page edges so the eggshell flows around it — this is
+          a section, not a takeover. The black frame's own padding equals the
+          internal gap exactly (12px everywhere), so the border reads as one
+          consistent grout line right to the outer edge. */}
+      <section className="px-5 py-10 sm:px-8">
+        <div className="mx-auto max-w-[1280px] bg-[#141414] p-3">
+          <div className="grid auto-rows-[170px] grid-cols-2 gap-3 sm:auto-rows-[200px] md:grid-cols-4">
+          {COLLAGE.map((tile, i) =>
+            tile.kind === "brand" ? (
+              <div
+                key={i}
+                className={`relative flex items-center justify-center overflow-hidden bg-[#FFE4DF] ${tile.span ?? ""}`}
+              >
+                <Scribble name="wind" className="left-3 top-3 h-10 w-10 text-ink/20" />
+                <p className="written text-center text-[clamp(26px,3.4vw,44px)] leading-[0.95] text-ink">
+                  The
+                  <br />
+                  Letting
+                  <br />
+                  Experts
+                </p>
+                <Scribble name="sparkles" className="bottom-3 right-3 h-10 w-10 text-ink/20" />
+              </div>
+            ) : (
+              <figure key={i} className={`relative overflow-hidden bg-[#FFE4DF] ${tile.span ?? ""}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={tile.src}
+                  alt={tile.alt}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  onError={(e) => {
+                    // a dead stock URL becomes a flat pink tile, never a broken glyph
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+                {tile.caption ? (
+                  <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-5 pt-14">
+                    <p className="text-[clamp(20px,2.2vw,30px)] font-extrabold uppercase leading-[1.02] text-white">
+                      {tile.caption[0]}
+                      <br />
+                      <span className="text-[#FFE4DF]">{tile.caption[1]}</span>
+                    </p>
+                    <p className="mt-1 text-[12px] text-white/80">{tile.caption[2]}</p>
+                  </figcaption>
+                ) : null}
+              </figure>
+            )
+          )}
+          </div>
         </div>
       </section>
 
