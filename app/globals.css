@@ -1040,3 +1040,18 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .page-art-float, .page-art-sway, .page-art-pulse { animation: none; }
 }
+
+/* ---- recruitment page: hand-drawn marks ------------------------------- *
+ * The lasso in the hero draws itself once on load. Everything else on this
+ * page is static — a page full of self-drawing biro would be a fairground.  */
+.doodle-draw {
+  stroke-dasharray: 620;
+  stroke-dashoffset: 620;
+  animation: doodle-draw 1.1s cubic-bezier(0.65, 0, 0.35, 1) 0.35s forwards;
+}
+.doodle-draw-2 { animation-delay: 0.85s; animation-duration: 0.8s; }
+@keyframes doodle-draw { to { stroke-dashoffset: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .doodle-draw { animation: none; stroke-dashoffset: 0; }
+}
