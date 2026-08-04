@@ -67,11 +67,19 @@ function Gull({ b, i }: { b: Bird; i: number }) {
   );
 }
 
-export default function HousesScene({ className = "" }: { className?: string }) {
+export default function HousesScene({
+  className = "",
+  // The recruitment page runs the mono plate: its hero is monochrome-plus-clay
+  // and the red house would be the one thing on the canvas breaking the rule.
+  src = "/illustrations/houses-still.png",
+}: {
+  className?: string;
+  src?: string;
+}) {
   return (
     <div className={`pointer-events-none relative shrink-0 ${className}`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/illustrations/houses-still.png" alt="" aria-hidden className="block w-full" />
+      <img src={src} alt="" aria-hidden className="block w-full" />
       {BIRDS.map((b, i) => (
         <Gull key={i} b={b} i={i} />
       ))}

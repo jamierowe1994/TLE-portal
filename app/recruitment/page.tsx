@@ -280,6 +280,51 @@ function Faq({ q, a }: { q: string; a: string }) {
   );
 }
 
+/**
+ * The search line at the foot of the hero — an underline, not a box, matching
+ * the reference. It searches THIS page: the query is matched against a small
+ * keyword index plus the FAQ copy, and the page scrolls to the best answer.
+ * No backend, nothing pretending to be a document search that isn't — when
+ * nothing matches it goes to the FAQs, which is where an unanswerable question
+ * belongs.
+ */
+function HeroSearch() {
+  const [q, setQ] = useState("");
+
+  const go = (e: React.FormEvent) => {
+    e.preventDefault();
+    const t = q.trim().toLowerCase();
+    if (!t) return; // an empty search scrolling the page is a jump scare, not help
+    const INDEX: Array<[RegExp, string]> = [
+      [/earn|money|salary|income|commission|fee|pay/, "earn"],
+      [/train|coach|support|tool|tech|crm|market|lead|blueprint/, "give"],
+      [/step|process|join|start|how|quiz|onboard/, "how"],
+      [/susan|founder|who runs|director/, "founder"],
+    ];
+    const hit =
+      INDEX.find(([re]) => re.test(t))?.[1] ??
+      (FAQS.some(([fq, fa]) => (fq + " " + fa).toLowerCase().includes(t)) ? "faqs" : "faqs");
+    document.getElementById(hit)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <form onSubmit={go} className="mt-5 flex items-end gap-3">
+      <label className="min-w-0 flex-1">
+        <span className="sr-only">Search this page</span>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="What do you want to know?"
+          className="w-full border-b border-ink/50 bg-transparent pb-1.5 text-[13.5px] text-ink placeholder:text-ink/50 focus:border-ink focus:outline-none"
+        />
+      </label>
+      <button type="submit" className="cta cta-dark shrink-0 rounded-none px-4 py-2 text-[12.5px] font-semibold">
+        Search
+      </button>
+    </form>
+  );
+}
+
 /* ---------------------------------- page --------------------------------- */
 
 export default function RecruitmentPage() {
@@ -288,64 +333,64 @@ export default function RecruitmentPage() {
   return (
     <div className="outline-cards soft-cards min-h-screen bg-page">
       {/* ---------------- nav ---------------- */}
-      {/* ---------------- hero: full-screen Mist canvas ---------------- */}
-      {/* The pink is the canvas now, not the frame: one square-cornered Mist
-          block filling the viewport to the corners, with the page's eggshell
-          showing only as a thin padding gutter around it. Nav sits on the pink.
-          Mist x Expert Red is an approved brand colourway, so the red display
-          word and the red CTA are on-book here, not improvised. */}
-      <section className="p-3 sm:p-4">
-        <div className="relative flex flex-col overflow-hidden bg-[#DE968F]" style={{ minHeight: "calc(100vh - 32px)" }}>
-          {/* nav, on the canvas */}
-          <div className="flex items-start justify-between px-5 pt-5 sm:px-8">
-            <span className="written text-[15px] leading-[0.95] tracking-tight text-[#3B3B3C] sm:text-[17px]">
-              The
-              <br />
-              Letting
-              <br />
-              Experts
-            </span>
-            <a href={QUIZ} className="cta cta-dark rounded-full px-4 py-2 text-[13px] font-medium">
-              Suitability quiz
-            </a>
-          </div>
+      {/* ---------------- hero ---------------- */}
+      {/* Nav lives OUTSIDE the clay now, on the page's own eggshell, with room
+          to breathe — the clay is a full-width rectangle below it, running to
+          the bottom corners with only the padding gutter. Monochrome-plus-clay
+          is the whole premise: black type, black linework, and the Warm Clay
+          (#DE968F) shining through. The red returns further down the page. */}
+      <section className="flex flex-col px-5 pb-5 sm:px-8 sm:pb-8" style={{ minHeight: "100vh" }}>
+        {/* nav, on the page background */}
+        <div className="flex items-center justify-between px-1 py-6 sm:px-2 sm:py-8">
+          <span className="written text-[15px] leading-[0.95] tracking-tight text-ink sm:text-[17px]">
+            The
+            <br />
+            Letting
+            <br />
+            Experts
+          </span>
+          {/* A square box, as asked — the one deliberately un-rounded element
+              on a site of pills and rounded cards, which is what makes it read
+              as a button-you-press rather than another chip. */}
+          <a href={QUIZ} className="cta cta-dark rounded-none px-5 py-2.5 text-[13px] font-semibold">
+            Join Now
+          </a>
+        </div>
 
+        {/* the clay rectangle */}
+        <div className="relative flex flex-1 flex-col overflow-hidden bg-[#DE968F]">
           <div className="relative flex flex-1 flex-col px-4 pb-8 sm:px-8">
             <h1
-              className="mt-4 text-center font-extrabold uppercase leading-[0.86] tracking-[-0.02em] text-[#F1F1F1] sm:mt-6"
+              className="mt-12 text-center font-extrabold uppercase leading-[0.86] tracking-[-0.02em] text-ink sm:mt-16"
               style={{ fontSize: "clamp(44px, 10.4vw, 158px)" }}
             >
               The Future
               <br />
-              of <span className="accent-text">Lettings</span>
+              of Lettings
             </h1>
 
-            {/* The moving illustration — the birds genuinely flap (the same
-                lifted-out-of-the-raster trick My Properties uses), so the
-                scene is alive without a video or a GIF anywhere. Anchored to
-                the foot of the canvas so the ground line sits on the bottom
-                edge, and centre-left so the About column has clear air. */}
-            <div className="relative z-10 mx-auto mt-auto w-[min(640px,82%)] pt-6 lg:mx-0 lg:ml-[19%] lg:w-[min(580px,52%)]">
-              <HousesScene className="w-full" />
+            {/* The moving illustration — mono plate, birds still flapping.
+                Sized UP: this is the feature, not a vignette. Swaps for the
+                Higgsfield character when it lands. */}
+            <div className="relative z-10 mx-auto mt-auto w-[min(720px,92%)] pt-6 lg:mx-0 lg:ml-[7%] lg:w-[min(700px,62%)]">
+              <HousesScene src="/illustrations/houses-mono.png" className="w-full" />
             </div>
 
             {/* left bracket label + down arrow, reference-style */}
-            <div className="pointer-events-none absolute bottom-8 left-7 hidden w-[190px] lg:block">
-              <p className="text-[12.5px] tracking-wide text-[#3B3B3C]/70">[ For agents with 2+ years in lettings ]</p>
-              <Scribble name="arrow" className="hero-arrow relative mt-4 block h-10 w-10 rotate-[130deg] text-[#3B3B3C]" />
+            <div className="pointer-events-none absolute left-7 top-[47%] hidden w-[190px] lg:block">
+              <p className="text-[12.5px] tracking-wide text-ink/70">[ For agents with 2+ years in lettings ]</p>
+              <Scribble name="arrow" className="hero-arrow relative mt-4 block h-10 w-10 rotate-[130deg] text-ink" />
             </div>
 
-            {/* right column: the pitch and the way in */}
-            <div className="mx-auto mt-8 max-w-[44ch] text-center lg:absolute lg:bottom-8 lg:right-8 lg:mt-0 lg:w-[300px] lg:max-w-none lg:text-left">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#F1F1F1]">About</p>
-              <p className="mt-2 text-[13.5px] leading-relaxed text-[#3B3B3C]/90">
+            {/* right column: the pitch, and the search line across the bottom */}
+            <div className="mx-auto mt-8 w-full max-w-[44ch] text-center lg:absolute lg:bottom-8 lg:right-8 lg:mt-0 lg:w-[320px] lg:max-w-none lg:text-left">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink">About</p>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-ink/80">
                 You already know how to let and manage property. This is the model
                 that lets you do it for yourself — your own business, with the
                 tools, training and support team behind you.
               </p>
-              <a href={QUIZ} className="cta cta-dark mt-4 inline-block w-full rounded-xl px-6 py-3 text-center text-[14px] font-semibold lg:w-auto">
-                Suitability quiz
-              </a>
+              <HeroSearch />
             </div>
           </div>
         </div>
@@ -367,7 +412,7 @@ export default function RecruitmentPage() {
           straight to "who it's for", which asks the reader to place themselves
           in a category before they have been given a reason to care. Money and
           the thing standing between them and it come first. */}
-      <section id="earn" className="relative px-6 py-24">
+      <section id="earn" className="relative scroll-mt-6 px-6 py-24">
         <Scribble name="swoosh" className="right-[4%] top-[9%] hidden h-24 w-24 xl:block" />
         <div className="mx-auto max-w-[1180px]">
           <Reveal>
@@ -472,7 +517,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- what you get ---------------- */}
-      <section className="border-y border-line bg-card px-6 py-24">
+      <section id="give" className="scroll-mt-6 border-y border-line bg-card px-6 py-24">
         <Reveal>
         <SectionHead
           kicker="What we give you"
@@ -515,7 +560,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- the ten steps ---------------- */}
-      <section id="how" className="border-y border-line bg-card px-6 py-24">
+      <section id="how" className="scroll-mt-6 border-y border-line bg-card px-6 py-24">
         <Reveal>
         <SectionHead
           kicker="How it works"
@@ -542,7 +587,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- Susan ---------------- */}
-      <section className="relative px-6 py-24">
+      <section id="founder" className="relative scroll-mt-6 px-6 py-24">
         <div className="mx-auto grid max-w-[1180px] items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="relative">
             <Scribble name="sparkles" className="-left-4 -top-5 hidden h-14 w-14 lg:block" />
@@ -609,7 +654,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- faqs ---------------- */}
-      <section className="border-y border-line bg-card px-6 py-24">
+      <section id="faqs" className="scroll-mt-6 border-y border-line bg-card px-6 py-24">
         <Reveal>
         <SectionHead
           kicker="Still not sure?"
