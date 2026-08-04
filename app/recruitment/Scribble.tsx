@@ -31,9 +31,11 @@ const PACK: Record<string, number> = {
 export default function Scribble({
   name,
   className = "",
+  style,
 }: {
   name: keyof typeof PACK;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   const n = PACK[name];
   if (!n) return null;
@@ -43,6 +45,7 @@ export default function Scribble({
       aria-hidden
       className={`pointer-events-none absolute ${className}`}
       style={{
+        ...style,
         backgroundColor: "currentColor",
         maskImage: url,
         WebkitMaskImage: url,

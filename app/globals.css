@@ -1095,3 +1095,35 @@ body.presenting .source-badge[class*="border"] {
   50%      { transform: rotate(130deg) translateX(8px); }
 }
 @media (prefers-reduced-motion: reduce) { .hero-arrow { animation: none; } }
+
+/* ---- recruitment: the heading that writes itself ------------------------ *
+ * Lines reveal left-to-right under a clip-path as though a pen were crossing
+ * them; the underline strokes in AFTERWARDS — the pen going back to
+ * underscore "own". Everything waits for .in-view, added by an
+ * IntersectionObserver the first time the heading is actually looked at.   */
+.write-on-scroll .write-line {
+  clip-path: inset(-20% 103% -20% -3%);
+}
+.write-on-scroll.in-view .write-line-1 {
+  animation: hand-write 1.05s cubic-bezier(0.5, 0.05, 0.5, 0.95) 0.1s forwards;
+}
+.write-on-scroll.in-view .write-line-2 {
+  animation: hand-write 0.85s cubic-bezier(0.5, 0.05, 0.5, 0.95) 1.2s forwards;
+}
+@keyframes hand-write {
+  to { clip-path: inset(-20% -3% -20% -3%); }
+}
+.write-on-scroll .own-underline path {
+  stroke-dasharray: 260;
+  stroke-dashoffset: 260;
+}
+.write-on-scroll.in-view .own-underline path {
+  animation: own-underscore 0.55s ease-out 2.15s forwards;
+}
+@keyframes own-underscore {
+  to { stroke-dashoffset: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .write-on-scroll .write-line { clip-path: none; animation: none; }
+  .write-on-scroll .own-underline path { stroke-dashoffset: 0; animation: none; }
+}

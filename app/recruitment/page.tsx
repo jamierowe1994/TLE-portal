@@ -62,13 +62,12 @@ type BentoTile = {
   title: string;
   body?: string;
   span: string;
-  /** big tiles let the words share the frame with the art */
-  overlay?: boolean;
 };
 const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
   {
     art: "/illustrations/notioly/accomplishment.svg",
     title: "Training & accountability",
+    body: "A step-by-step Success Blueprint, and a coach who holds you to it.",
     span: "",
   },
   {
@@ -76,11 +75,11 @@ const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
     title: "Industry-leading tools",
     body: "A CRM built for self-employed agents, lead gen, and platforms that cut the admin.",
     span: "col-span-2",
-    overlay: true,
   },
   {
     art: "/illustrations/notioly/checklist.svg",
     title: "Legislation, handled",
+    body: "Training that keeps you current and your portfolio compliant.",
     span: "",
   },
   {
@@ -88,7 +87,6 @@ const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
     title: "No postcode restrictions",
     body: "Any property, any location, any price range. No carve-ups, no territories.",
     span: "row-span-2",
-    overlay: true,
   },
   { title: "Everything you need to be dangerous", centre: true, span: "col-span-2 row-span-2" },
   {
@@ -96,23 +94,23 @@ const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
     title: "Marketing, done with you",
     body: "A dedicated team building assets you personalise — for your brand, not ours.",
     span: "row-span-2",
-    overlay: true,
   },
   {
     art: "/illustrations/notioly/reminder.svg",
     title: "Compliance support team",
     body: "Pre-tenancy, move-ins and rent collection handled, so you do the income work.",
     span: "col-span-2",
-    overlay: true,
   },
   {
     art: "/illustrations/notioly/png/social-acceptance.png",
     title: "Your own success coach",
+    body: "One person whose whole job is your success — admin to pipeline.",
     span: "",
   },
   {
     art: "/illustrations/notioly/piggy-bank.svg",
     title: "Portfolio building",
+    body: "The blueprint for a management book that pays you every month.",
     span: "",
   },
 ];
@@ -406,6 +404,40 @@ export default function RecruitmentPage() {
   const loop = useHeroLoop();
   const { runwayRef, boxRef, navRef, enabled: collapse } = useCollapseOnScroll();
 
+  // Which bento tile is hot, and where the outside arrow should sit.
+  const bentoWrapRef = useRef<HTMLDivElement | null>(null);
+  const [hot, setHot] = useState<number | null>(null);
+  const [hotPos, setHotPos] = useState<{ top: number; side: "l" | "r" } | null>(null);
+  const pointAt = (i: number, el: HTMLElement) => {
+    setHot(i);
+    const wrap = bentoWrapRef.current;
+    if (!wrap) return;
+    const r = el.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    setHotPos({
+      top: r.top - w.top + r.height / 2,
+      side: (r.left + r.right) / 2 < (w.left + w.right) / 2 ? "l" : "r",
+    });
+  };
+
+  // The handwriting entrance fires once, when the heading scrolls into view.
+  const writeRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = writeRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          el.classList.add("in-view");
+          io.disconnect();
+        }
+      },
+      { threshold: 0.5 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
   return (
     <div className="outline-cards soft-cards min-h-screen bg-page">
       {/* ---------------- nav ---------------- */}
@@ -597,48 +629,71 @@ export default function RecruitmentPage() {
           grout line to the outer edge. Rows are viewport-scaled so the whole
           board reads at roughly three-quarters of a screen. */}
       <section id="give" className="scroll-mt-6 px-5 py-10 sm:px-8">
-        <div className="mx-auto max-w-[1280px] bg-[#141414] p-3">
-          <div className="grid auto-rows-[clamp(130px,17vh,190px)] grid-cols-2 gap-3 md:grid-cols-4">
-            {BENTO.map((tile, i) =>
-              "centre" in tile ? (
-                <div
-                  key={i}
-                  className={`flex items-center justify-center bg-[#DE968F] p-6 ${tile.span}`}
-                >
-                  <p className="written max-w-[14ch] text-center text-[clamp(24px,2.8vw,40px)] leading-[1.05] text-ink">
-                    {tile.title}
-                  </p>
-                </div>
-              ) : (
-                <figure key={i} className={`relative overflow-hidden bg-[#FFE4DF] p-4 ${tile.span}`}>
-                  {tile.overlay ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={tile.art}
-                        alt=""
-                        aria-hidden
-                        className="absolute right-1 top-1 h-[72%] w-auto max-w-[62%] object-contain"
-                      />
-                      <figcaption className="absolute bottom-4 left-4 right-4">
-                        <p className="text-[15px] font-bold leading-tight">{tile.title}</p>
-                        {tile.body ? (
-                          <p className="mt-1 max-w-[34ch] text-[12px] leading-relaxed text-ink/70">{tile.body}</p>
-                        ) : null}
-                      </figcaption>
-                    </>
-                  ) : (
-                    <div className="flex h-full flex-col">
+        <div ref={bentoWrapRef} className="relative mx-auto max-w-[1280px]">
+          {/* The pointer outside the frame, gliding to whichever tile is hot.
+              Driven by state rather than :hover so touch works on first tap
+              and the behaviour is testable. Hidden below lg — there is no
+              outside-the-frame on a phone. */}
+          {hot !== null && hotPos ? (
+            <Scribble
+              name="arrow"
+              className={`pointer-events-none z-10 hidden h-9 w-9 text-ink transition-[top] duration-300 lg:block ${
+                hotPos.side === "l" ? "-left-12 rotate-[20deg]" : "-right-12 -scale-x-100 rotate-[20deg]"
+              }`}
+              style={{ position: "absolute", top: hotPos.top - 18 }}
+            />
+          ) : null}
+
+          <div className="bg-[#141414] p-3">
+            <div className="grid auto-rows-[clamp(130px,17vh,190px)] grid-cols-2 gap-3 md:grid-cols-4">
+              {BENTO.map((tile, i) =>
+                "centre" in tile ? (
+                  <div
+                    key={i}
+                    className={`flex items-center justify-center bg-[#DE968F] p-6 ${tile.span}`}
+                  >
+                    <p className="written max-w-[14ch] text-center text-[clamp(24px,2.8vw,40px)] leading-[1.05] text-ink">
+                      {tile.title}
+                    </p>
+                  </div>
+                ) : (
+                  <figure
+                    key={i}
+                    onMouseEnter={(e) => pointAt(i, e.currentTarget)}
+                    onMouseLeave={() => setHot(null)}
+                    className={`relative overflow-hidden transition-colors duration-300 ${
+                      hot === i ? "bg-[#DE968F]" : "bg-[#FFE4DF]"
+                    } ${tile.span}`}
+                  >
+                    {/* resting face: figure + name. On hover it FALLS — art and
+                        title drop off the bottom of the tile together. */}
+                    <div
+                      className={`absolute inset-0 flex flex-col p-4 transition-all duration-300 ${
+                        hot === i ? "translate-y-[115%] opacity-0" : "translate-y-0 opacity-100"
+                      }`}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={tile.art} alt="" aria-hidden className="min-h-0 flex-1 object-contain" />
                       <figcaption className="pt-2 text-center text-[13px] font-bold leading-tight">
                         {tile.title}
                       </figcaption>
                     </div>
-                  )}
-                </figure>
-              )
-            )}
+                    {/* revealed face: the words fall IN from above as the art
+                        falls out below — one motion handing to the other. */}
+                    <div
+                      className={`absolute inset-0 flex flex-col justify-center p-5 transition-all duration-300 ${
+                        hot === i ? "translate-y-0 opacity-100" : "-translate-y-[35%] opacity-0"
+                      }`}
+                    >
+                      <p className="text-[15px] font-bold leading-tight">{tile.title}</p>
+                      {tile.body ? (
+                        <p className="mt-1.5 max-w-[36ch] text-[12.5px] leading-relaxed text-ink/75">{tile.body}</p>
+                      ) : null}
+                    </div>
+                  </figure>
+                )
+              )}
+            </div>
           </div>
         </div>
       </section>
@@ -647,10 +702,42 @@ export default function RecruitmentPage() {
       <section className="relative px-6 py-24">
         <Scribble name="arrow" className="left-[6%] top-[10%] hidden h-20 w-20 lg:block" />
         <Reveal>
-        <SectionHead
-          kicker="What you get out"
-          title="Building your own thing, not someone else's"
-        />
+        {/* The heading writes itself in when it arrives: each line is
+            revealed left-to-right as though a pen were crossing it, and then —
+            the going-back — a stroke underscores "own". The extra line-height
+            keeps that stroke out of the second line's way. */}
+        <div ref={writeRef} className="write-on-scroll mx-auto max-w-3xl text-center">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] accent-text">
+            What you get out
+          </span>
+          <h2
+            className="written mt-3 tracking-tight"
+            style={{ fontSize: "clamp(30px, 4vw, 46px)", lineHeight: 1.35 }}
+          >
+            <span className="write-line write-line-1 inline-block">
+              Building your{" "}
+              <span className="relative inline-block">
+                own
+                <svg
+                  viewBox="0 0 120 14"
+                  aria-hidden
+                  className="own-underline absolute -bottom-[0.16em] left-0 h-[0.28em] w-full overflow-visible"
+                >
+                  <path
+                    d="M4 9 C 34 4, 74 3, 116 7 M10 12 C 44 8, 82 7, 112 10"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={3.2}
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>{" "}
+              thing,
+            </span>
+            <br />
+            <span className="write-line write-line-2 inline-block">not someone else&rsquo;s</span>
+          </h2>
+        </div>
         </Reveal>
         <div className="mx-auto mt-12 grid max-w-[1180px] gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {GIVES_YOU.map((g) => (
