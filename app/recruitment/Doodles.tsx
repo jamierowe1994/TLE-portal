@@ -1,44 +1,12 @@
 "use client";
 
-// Hand-drawn marks for the recruitment page: the biro squiggles and the circled
-// word. Drawn as SVG rather than shipped as images so they take currentColor
-// and can be animated — the circle draws itself in, which is the one bit of
-// motion the hero earns.
-
-/** The lasso around a word in the headline. */
-export function Circled({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="relative inline-block whitespace-nowrap">
-      <span className="relative z-10">{children}</span>
-      <svg
-        viewBox="0 0 240 90"
-        preserveAspectRatio="none"
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-1/2 h-[145%] w-[118%] -translate-x-1/2 -translate-y-1/2 overflow-visible text-ink"
-      >
-        {/* Two passes, deliberately not concentric — one clean loop reads as a
-            vector oval, two slightly-off loops read as a pen. */}
-        <path
-          className="doodle-draw"
-          d="M141 8 C 62 2, 8 20, 9 46 C 10 74, 88 86, 152 82 C 214 78, 236 60, 231 40 C 227 22, 190 8, 132 7"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={3}
-          strokeLinecap="round"
-        />
-        <path
-          className="doodle-draw doodle-draw-2"
-          d="M136 13 C 66 9, 16 26, 18 47 C 21 70, 92 80, 150 76"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          opacity={0.5}
-        />
-      </svg>
-    </span>
-  );
-}
+// Hand-drawn marks for the recruitment page. Drawn as SVG rather than shipped
+// as images so they take currentColor and scale cleanly.
+//
+// There WAS a lasso that circled a word in the headline. It went: on the
+// reference it works because the loop is open and scrappy, and ours read as a
+// tidy vector oval that fought the type for attention rather than pointing at
+// it.
 
 /** Loose biro scribbles for the margins. Six shapes, picked by name. */
 const MARKS: Record<string, { d: string; box: string }> = {

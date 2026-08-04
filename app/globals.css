@@ -1055,3 +1055,50 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .doodle-draw { animation: none; stroke-dashoffset: 0; }
 }
+
+/* ---- recruitment page: CTAs ------------------------------------------- *
+ * Three variants, one behaviour: lift on hover, press down on click, and a
+ * sheen that sweeps across once. The sheen is a pseudo-element on a masked
+ * overflow rather than a background-position trick, so it works on the ghost
+ * button (transparent) as well as the filled ones.                        */
+.cta {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+.cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.28) 50%, transparent 65%);
+  transform: translateX(-120%);
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.cta:hover::after { transform: translateX(120%); }
+.cta:hover { transform: translateY(-2px); }
+.cta:active { transform: translateY(0) scale(0.97); }
+
+.cta-accent { background: var(--accent); color: #fff; }
+.cta-accent:hover { background: var(--accent-dark); box-shadow: 0 12px 28px -12px rgba(227,31,54,0.7); }
+.cta-dark { background: var(--ink); color: #fff; }
+.cta-dark:hover { box-shadow: 0 12px 28px -14px rgba(16,16,20,0.6); }
+.cta-ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+.cta-ghost:hover { border-color: rgba(16,16,20,0.28); }
+
+/* The "new lead" card on the showcase drifts, so the panel doesn't read as a
+   flat screenshot pasted on the page. */
+.showcase-lead { animation: showcase-lead 6s ease-in-out infinite; }
+@keyframes showcase-lead {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -8px, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta, .cta::after, .showcase-lead { transition: none; animation: none; }
+}

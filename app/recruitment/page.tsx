@@ -18,7 +18,9 @@
 
 import { useEffect, useState } from "react";
 import DoodleIcon from "@/components/DoodleIcon";
-import { Circled, Mark } from "./Doodles";
+import { Mark } from "./Doodles";
+import Reveal from "./Reveal";
+import OsShowcase from "./OsShowcase";
 
 /* ------------------------------ the content ------------------------------ */
 
@@ -27,6 +29,43 @@ const LOVE = [
   { icon: "coin", text: "A higher income to support the lifestyle you strive toward" },
   { icon: "target", text: "Control of your own destiny: working how you want" },
   { icon: "star", text: "A better quality of life that nurtures your health & wellbeing" },
+];
+
+const EARN = [
+  {
+    figure: "100%",
+    label: "of your commission",
+    body: "No branch to fund, no manager taking a cut before you see it.",
+  },
+  {
+    figure: "£0",
+    label: "in area restrictions",
+    body: "Any property, any location, any price range. No postcode carve-ups.",
+  },
+  {
+    figure: "24/7",
+    label: "on your own terms",
+    body: "Set the hours around your life instead of the other way round.",
+  },
+];
+
+const BLOCKERS = [
+  {
+    fear: "I can't afford to go without a salary.",
+    answer: "That's the honest risk, and why step one is a suitability quiz rather than a contract. We'd rather you found out now than six months in.",
+  },
+  {
+    fear: "I don't know how to find my own leads.",
+    answer: "The Success Blueprint is the step-by-step version, and a Success Coach holds you to it. You're not handed a laptop and wished well.",
+  },
+  {
+    fear: "The compliance side terrifies me.",
+    answer: "A support team handles pre-tenancy compliance, move-ins and rent collection — and the software tells you what's expiring before it does.",
+  },
+  {
+    fear: "I'd be doing it on my own.",
+    answer: "You'd be self-employed, not alone. A national network, weekly sessions, live events, and people who've already done the bit you're on.",
+  },
 ];
 
 const WHO = [
@@ -294,88 +333,163 @@ export default function RecruitmentPage() {
   return (
     <div className="outline-cards soft-cards min-h-screen bg-page">
       {/* ---------------- nav ---------------- */}
-      <header className="sticky top-0 z-40 border-b border-line/60 bg-page/85 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
-          <span className="hand text-[18px]">The Letting Experts</span>
+      {/* No bottom rule: the hero sits on the same canvas, and a hairline
+          across the top only served to cut the page in half before it began. */}
+      <header className="sticky top-0 z-40 bg-page/80 backdrop-blur">
+        <div className="mx-auto flex max-w-[1180px] items-start justify-between px-6 py-5">
+          {/* Stacked wordmark — three lines, tight, so it reads as a mark
+              rather than a sentence in the corner. */}
+          <span className="hand text-[15px] leading-[0.95] tracking-tight sm:text-[17px]">
+            The
+            <br />
+            Letting
+            <br />
+            Experts
+          </span>
           <a
             href={QUIZ}
-            className="btn-press rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-white"
+            className="cta cta-dark rounded-full px-4 py-2 text-[13px] font-medium"
           >
-            Take the quiz →
+            Suitability quiz
           </a>
         </div>
       </header>
 
       {/* ---------------- hero ---------------- */}
-      <section className="relative overflow-hidden px-5 pb-16 pt-14 sm:pt-20">
-        <Mark name="swirl" className="left-[3%] top-[18%] hidden w-24 lg:block" />
-        <Mark name="grass" className="right-[5%] top-[12%] hidden w-20 lg:block" />
-        <Mark name="sparks" className="left-[8%] bottom-[8%] hidden w-16 xl:block" />
+      {/* An inverted pyramid: the title is the widest element, the subtext sits
+          inside it, the buttons inside that. Each measure is set deliberately
+          rather than left to the container, so the eye funnels down to the CTA
+          instead of reading three stacked blocks of the same width. */}
+      <section className="relative px-6 pb-0 pt-8 sm:pt-14">
+        <Mark name="swirl" className="left-[2%] top-[26%] hidden w-24 xl:block" />
+        <Mark name="grass" className="right-[3%] top-[16%] hidden w-20 xl:block" />
 
-        <div className="mx-auto max-w-4xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3.5 py-1.5 text-[12px] text-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            For letting agents with 2+ years&rsquo; experience
-          </span>
-
+        <div className="mx-auto max-w-[1180px] text-center">
           <h1
-            className="hand mx-auto mt-6 max-w-3xl tracking-tight"
-            style={{ fontSize: "clamp(38px, 6.4vw, 74px)", lineHeight: 1.02 }}
+            className="hand mx-auto max-w-[15ch] tracking-tight"
+            style={{ fontSize: "clamp(42px, 7.4vw, 92px)", lineHeight: 0.94 }}
           >
-            Run your own lettings business, <Circled>your way</Circled>
+            Run your own lettings business
           </h1>
 
-          <p className="mx-auto mt-6 max-w-xl text-[15px] leading-relaxed text-muted">
+          <p className="mx-auto mt-6 max-w-[46ch] text-[15px] leading-relaxed text-muted sm:text-[16.5px]">
             You already know how to let and manage property. This is the model that
-            lets you do it for yourself — with the tools, the training and the
-            support team behind you.
+            lets you do it for yourself — with the tools, the training and a support
+            team behind you.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <a
-              href={QUIZ}
-              className="btn-press rounded-full bg-accent px-6 py-3 text-[14px] font-semibold text-white"
-            >
-              Take the suitability quiz →
+          <div className="mx-auto mt-8 flex max-w-[30rem] flex-wrap items-center justify-center gap-3">
+            <a href={QUIZ} className="cta cta-accent rounded-full px-7 py-3.5 text-[14.5px] font-semibold">
+              Suitability quiz
             </a>
-            <a
-              href="#how"
-              className="btn-press rounded-full border border-line bg-card px-6 py-3 text-[14px] font-medium"
-            >
-              See how it works
+            <a href="#earn" className="cta cta-ghost rounded-full px-7 py-3.5 text-[14.5px] font-medium">
+              See what you could earn
             </a>
           </div>
-
-          <HeroImage />
         </div>
+
+        {/* The showcase deliberately runs off the bottom of the section and is
+            clipped by the next one. A panel that stops short reads as finished;
+            one that continues past the fold is the reason someone scrolls. */}
+        <Reveal delay={120}>
+          <div className="relative mx-auto mt-14 max-w-[1080px] px-2">
+            <OsShowcase />
+          </div>
+        </Reveal>
       </section>
 
-      {/* ---------------- why people love it ---------------- */}
-      <section className="border-y border-line bg-[#e8ecd7] px-5 py-14">
-        <p className="text-center text-[13px] font-medium text-ink/70">
-          Why people love this business opportunity
-        </p>
-        <div className="mx-auto mt-8 grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {LOVE.map((l) => (
-            <div key={l.text} className="flex items-start gap-3">
-              <span className="accent-text">
-                <DoodleIcon name={l.icon} size={22} />
+      {/* ---------------- what you could earn / what's stopping you -------- */}
+      {/* Deliberately the FIRST thing after the hero. The old page went
+          straight to "who it's for", which asks the reader to place themselves
+          in a category before they have been given a reason to care. Money and
+          the thing standing between them and it come first. */}
+      <section id="earn" className="relative px-6 py-24">
+        <Mark name="loop" className="right-[3%] top-[8%] hidden w-28 xl:block" />
+        <div className="mx-auto max-w-[1180px]">
+          <Reveal>
+            <div className="max-w-[52ch]">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] accent-text">
+                The honest bit
               </span>
-              <p className="text-[13.5px] leading-relaxed">{l.text}</p>
+              <h2
+                className="hand mt-3 tracking-tight"
+                style={{ fontSize: "clamp(32px, 4.6vw, 58px)", lineHeight: 1.02 }}
+              >
+                What you could earn, and what&rsquo;s stopping you
+              </h2>
+              <p className="mt-4 max-w-[46ch] text-[15px] leading-relaxed text-muted">
+                There&rsquo;s no salary here — it&rsquo;s your business. Which means the
+                ceiling comes off, and so does the safety net. Both halves of that
+                deserve saying out loud.
+              </p>
             </div>
-          ))}
+          </Reveal>
+
+          <div className="mt-12 grid gap-5 lg:grid-cols-2">
+            {/* what you keep */}
+            <Reveal delay={60}>
+              <div className="flex h-full flex-col rounded-2xl border border-line bg-card p-7">
+                <div className="flex items-center gap-2.5">
+                  <span className="accent-text"><DoodleIcon name="coin" size={20} /></span>
+                  <h3 className="text-[15px] font-semibold">What you could earn</h3>
+                </div>
+                <div className="mt-6 flex flex-1 flex-col justify-around gap-6">
+                  {EARN.map((e) => (
+                    <div key={e.label} className="flex items-baseline gap-4">
+                      <span className="hand shrink-0 tracking-tight" style={{ fontSize: "clamp(30px,3.4vw,42px)", lineHeight: 1 }}>
+                        {e.figure}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[13.5px] font-medium">{e.label}</span>
+                        <span className="block text-[12.5px] leading-relaxed text-muted">{e.body}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-6 border-t border-line pt-4 text-[11.5px] leading-relaxed text-muted">
+                  Illustrative, not a promise — what you earn depends on the portfolio
+                  you build. We&rsquo;ll walk you through the real numbers on the call.
+                </p>
+              </div>
+            </Reveal>
+
+            {/* what's stopping you */}
+            <Reveal delay={120}>
+              <div className="h-full rounded-2xl border border-line bg-card p-7">
+                <div className="flex items-center gap-2.5">
+                  <span className="accent-text"><DoodleIcon name="lock" size={20} /></span>
+                  <h3 className="text-[15px] font-semibold">What&rsquo;s holding you back</h3>
+                </div>
+                <div className="mt-6 space-y-3">
+                  {BLOCKERS.map((b) => (
+                    <div key={b.fear} className="rounded-xl border border-line p-4">
+                      <p className="text-[13.5px] font-medium">
+                        <span className="text-muted">&ldquo;</span>{b.fear}<span className="text-muted">&rdquo;</span>
+                      </p>
+                      <p className="mt-1.5 flex gap-2 text-[12.5px] leading-relaxed text-muted">
+                        <span className="shrink-0 accent-text">→</span>
+                        {b.answer}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+          </div>
         </div>
       </section>
 
       {/* ---------------- who it's for ---------------- */}
-      <section className="relative px-5 py-20">
+      <section className="relative px-6 py-24">
         <Mark name="loop" className="right-[4%] top-[6%] hidden w-28 lg:block" />
+        <Reveal>
         <SectionHead
           kicker="Who it's for"
-          title={<>You&rsquo;ll recognise <Circled>yourself</Circled> here</>}
+          title="You&rsquo;ll recognise yourself here"
           blurb="The model suits people with estate agency, lettings and property management experience — however they got it."
         />
-        <div className="mx-auto mt-12 grid max-w-5xl gap-4 md:grid-cols-2 lg:grid-cols-3">
+        </Reveal>
+        <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 md:grid-cols-2 lg:grid-cols-3">
           {WHO.map((w) => (
             <div key={w.title} className="card card-lift p-6">
               <h3 className="text-[15px] font-semibold">{w.title}</h3>
@@ -394,13 +508,15 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- what you get ---------------- */}
-      <section className="border-y border-line bg-card px-5 py-20">
+      <section className="border-y border-line bg-card px-6 py-24">
+        <Reveal>
         <SectionHead
           kicker="What we give you"
           title="Everything you need to be dangerous"
           blurb="Our goal is the best and most attractive business model for self-employed letting agents in the UK. So you get the lot."
         />
-        <div className="mx-auto mt-12 grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        </Reveal>
+        <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {GIVE.map((g) => (
             <div key={g.title} className="rounded-2xl border border-line p-6">
               <span className="accent-text">
@@ -414,13 +530,15 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- what it gives you ---------------- */}
-      <section className="relative px-5 py-20">
+      <section className="relative px-6 py-24">
         <Mark name="arrow" className="left-[6%] top-[10%] hidden w-24 lg:block" />
+        <Reveal>
         <SectionHead
           kicker="What you get out"
           title="Building your own thing, not someone else's"
         />
-        <div className="mx-auto mt-12 grid max-w-5xl gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        </Reveal>
+        <div className="mx-auto mt-12 grid max-w-[1180px] gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {GIVES_YOU.map((g) => (
             <div key={g.word} className="text-center">
               <p className="hand accent-text" style={{ fontSize: "clamp(34px, 4vw, 48px)" }}>
@@ -433,13 +551,15 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- the ten steps ---------------- */}
-      <section id="how" className="border-y border-line bg-card px-5 py-20">
+      <section id="how" className="border-y border-line bg-card px-6 py-24">
+        <Reveal>
         <SectionHead
           kicker="How it works"
-          title={<>Ten steps, and none of them <Circled>scary</Circled></>}
+          title="Ten steps, and none of them scary"
           blurb="The journey to becoming a Letting Expert, start to finish."
         />
-        <ol className="mx-auto mt-12 grid max-w-5xl gap-3 sm:grid-cols-2">
+        </Reveal>
+        <ol className="mx-auto mt-12 grid max-w-[1180px] gap-3 sm:grid-cols-2">
           {STEPS.map(([title, body], i) => (
             <li key={title} className="flex gap-4 rounded-2xl border border-line p-5">
               <span
@@ -458,8 +578,8 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- Susan ---------------- */}
-      <section className="relative px-5 py-20">
-        <div className="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
+      <section className="relative px-6 py-24">
+        <div className="mx-auto grid max-w-[1180px] items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="relative">
             <Mark name="sparks" className="-left-6 -top-6 hidden w-16 lg:block" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -493,9 +613,9 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- testimonials ---------------- */}
-      <section className="border-y border-line bg-card px-5 py-20">
+      <section className="border-y border-line bg-card px-6 py-24">
         <SectionHead kicker="In their words" title="Don't just take ours for it" />
-        <div className="mx-auto mt-12 grid max-w-5xl gap-4 sm:grid-cols-2">
+        <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 sm:grid-cols-2">
           {VOICES.map((v) => (
             <figure key={v.who} className="rounded-2xl border border-line p-6">
               <p className="hand text-[17px]">{v.head}</p>
@@ -512,9 +632,9 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- values ---------------- */}
-      <section className="px-5 py-20">
+      <section className="px-6 py-24">
         <SectionHead kicker="Our core values" title="What we actually mean by culture" />
-        <div className="mx-auto mt-12 grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {VALUES.map(([t, b]) => (
             <div key={t} className="card p-6">
               <h3 className="hand text-[19px]">{t}</h3>
@@ -525,12 +645,14 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- faqs ---------------- */}
-      <section className="border-y border-line bg-card px-5 py-20">
+      <section className="border-y border-line bg-card px-6 py-24">
+        <Reveal>
         <SectionHead
           kicker="Still not sure?"
           title="The questions everyone asks"
           blurb="Making the move to self-employment can feel a little scary. Here's the honest version."
         />
+        </Reveal>
         <div className="mx-auto mt-10 max-w-2xl space-y-3">
           {FAQS.map(([q, a]) => (
             <Faq key={q} q={q} a={a} />
@@ -539,11 +661,11 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- final CTA ---------------- */}
-      <section className="relative overflow-hidden px-5 py-24">
+      <section className="relative overflow-hidden px-6 py-28">
         <Mark name="underline" className="left-1/2 top-[46%] hidden w-64 -translate-x-1/2 lg:block" />
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="hand tracking-tight" style={{ fontSize: "clamp(32px, 5vw, 56px)", lineHeight: 1.05 }}>
-            Ready to find out if it&rsquo;s <Circled>for you?</Circled>
+            Ready to find out if it&rsquo;s for you?
           </h2>
           <p className="mx-auto mt-5 max-w-lg text-[14.5px] leading-relaxed text-muted">
             Start with the suitability quiz. It takes a couple of minutes, and it&rsquo;s
@@ -558,7 +680,7 @@ export default function RecruitmentPage() {
         </div>
       </section>
 
-      <footer className="border-t border-line px-5 py-10 text-center text-[12px] text-muted">
+      <footer className="border-t border-line px-6 py-12 text-center text-[12px] text-muted">
         <p>© The Letting Experts {new Date().getFullYear()}. All rights reserved.</p>
         <p className="mt-1">
           Newman Property Services Ltd. Registered in England &amp; Wales. Company No: 4018410.
