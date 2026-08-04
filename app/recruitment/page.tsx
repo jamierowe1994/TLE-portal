@@ -637,6 +637,62 @@ export default function RecruitmentPage() {
         </div>
       </section>
 
+      {/* ---------------- the company we keep ---------------- */}
+      {/* The Letting Game reference, inverted: image LEFT, words RIGHT, and a
+          scribble arrow doing the pointing back at the picture. Stock stand-in
+          until James's own shots arrive — the Mist plate behind it holds the
+          composition even if the image dies. */}
+      <section className="px-5 py-20 sm:px-8">
+        <div className="mx-auto grid max-w-[1340px] items-center gap-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
+          <Reveal>
+            <div className="relative">
+              <div aria-hidden className="absolute -left-3 -top-3 h-full w-full bg-[#FFE4DF]" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1400&q=75&fit=crop"
+                alt="The team at work"
+                loading="lazy"
+                className="relative aspect-[4/3] w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            </div>
+          </Reveal>
+
+          <Reveal delay={100}>
+            <div className="relative">
+              {/* the pointer, sending the reader back to the picture */}
+              <Scribble
+                name="arrow"
+                className="hero-arrow -left-2 top-1/2 hidden h-14 w-14 -scale-x-100 rotate-[15deg] lg:block xl:-left-10"
+              />
+              <div className="lg:pl-14 xl:pl-16">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] accent-text">
+                  The company you&rsquo;ll keep
+                </span>
+                <h2
+                  className="written mt-3 tracking-tight"
+                  style={{ fontSize: "clamp(30px, 4vw, 50px)", lineHeight: 1.05 }}
+                >
+                  Working with the best in the industry
+                </h2>
+                <p className="mt-5 text-[15px] leading-relaxed text-muted">
+                  We&rsquo;re leading the charge in lettings — changing how it&rsquo;s
+                  going to be done, with a technology-and-people-first approach
+                  that makes the whole experience smooth for everyone in it.
+                </p>
+                <p className="mt-4 text-[15px] leading-relaxed text-muted">
+                  For you, that means every tool at your fingertips and a support
+                  team behind you — so the admin runs itself, and your time goes
+                  on the parts of the job you actually enjoy.
+                </p>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
       {/* ---------------- the bento: what we give you ---------------- */}
       {/* The collage's black-grout geometry, carrying the give-you content:
           white tiles, ink illustrations, the section title in the centre on
