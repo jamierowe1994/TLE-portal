@@ -50,104 +50,70 @@ const PERSONAS = [
 ];
 
 /**
- * The collage strip: black gaps, photos, and the brand tile in Mist pink —
- * the VEIL reference recoloured to TLE. Stock stand-ins for now; swap each
- * `src` for the real team photos as James supplies them. Every tile falls
- * back to a flat pink panel if its image dies, so a dead URL can never
- * render as a broken-image glyph.
+ * The bento: the collage's geometry carrying the "what we give you" content.
+ * Nine tiles — mirrored long tiles top and bottom, two talls flanking the
+ * Mist title tile in the centre. Size dictates voice: talls and longs carry a
+ * description over the artwork, smalls just name the thing. The old nine-item
+ * list became eight by merging the two marketing entries, which were one
+ * promise wearing two hats.
  */
-const COLLAGE: Array<
-  | { kind: "photo"; src: string; alt: string; span?: string; caption?: [string, string, string] }
-  | { kind: "brand"; span?: string }
-> = [
+type BentoTile = {
+  art: string;
+  title: string;
+  body?: string;
+  span: string;
+  /** big tiles let the words share the frame with the art */
+  overlay?: boolean;
+};
+const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
   {
-    kind: "photo",
-    src: "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=900&q=75&fit=crop",
-    alt: "Handing over the keys",
-    span: "row-span-2",
-    caption: ["Experts in", "lettings", "not just listings"],
+    art: "/illustrations/notioly/accomplishment.svg",
+    title: "Training & accountability",
+    span: "",
   },
   {
-    kind: "photo",
-    src: "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=900&q=75&fit=crop",
-    alt: "A managed home",
-  },
-  {
-    kind: "photo",
-    src: "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=900&q=75&fit=crop",
-    alt: "Working your own hours",
-  },
-  {
-    kind: "photo",
-    src: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=900&q=75&fit=crop",
-    alt: "A let property",
-    span: "row-span-2",
-    caption: ["Experts", "not just", "agents"],
-  },
-  { kind: "brand", span: "col-span-2" },
-  {
-    kind: "photo",
-    src: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&q=75&fit=crop",
-    alt: "On the doorstep",
+    art: "/illustrations/notioly/tasks.svg",
+    title: "Industry-leading tools",
+    body: "A CRM built for self-employed agents, lead gen, and platforms that cut the admin.",
     span: "col-span-2",
+    overlay: true,
   },
   {
-    kind: "photo",
-    src: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=900&q=75&fit=crop",
-    alt: "The next instruction",
+    art: "/illustrations/notioly/checklist.svg",
+    title: "Legislation, handled",
+    span: "",
   },
   {
-    kind: "photo",
-    src: "https://images.unsplash.com/photo-1556911220-bff31c812dba?w=900&q=75&fit=crop",
-    alt: "Home, managed",
-  },
-];
-
-const GIVE = [
-  {
-    icon: "rocket",
-    title: "Training, coaching and accountability",
-    body: "A 'Success Blueprint' — a step-by-step guide with proven systems, processes and strategies to build your lettings business.",
-  },
-  {
-    icon: "dashboard",
-    title: "Industry-leading tools and technology",
-    body: "A CRM built specifically for self-employed agents, lead generation tools, and pre-tenancy and property management platforms that cut the admin.",
-  },
-  {
-    icon: "shield",
-    title: "Property management and legislation",
-    body: "The latest training, keeping you up to speed with legislation and your portfolio compliant. Accredited qualifications available.",
-  },
-  {
-    icon: "checklist",
-    title: "Lettings and compliance support team",
-    body: "Full support with pre-tenancy compliance, the move-in process and rent collection, so you can focus on the income-producing work.",
-  },
-  {
-    icon: "user",
-    title: "Your own agent success coach",
-    body: "There to help you succeed — admin, tech, pipeline management and compliance.",
-  },
-  {
-    icon: "home-1",
+    art: "/illustrations/notioly/buildings.svg",
     title: "No postcode restrictions",
-    body: "List any property, in any location, in any price range. No area restrictions placed upon you at all.",
+    body: "Any property, any location, any price range. No carve-ups, no territories.",
+    span: "row-span-2",
+    overlay: true,
+  },
+  { title: "Everything you need to be dangerous", centre: true, span: "col-span-2 row-span-2" },
+  {
+    art: "/illustrations/notioly/growth.svg",
+    title: "Marketing, done with you",
+    body: "A dedicated team building assets you personalise — for your brand, not ours.",
+    span: "row-span-2",
+    overlay: true,
   },
   {
-    icon: "megaphone",
-    title: "Support to build your personal brand",
-    body: "This business is about marketing your brand and your properties — and you get the help to do it properly.",
+    art: "/illustrations/notioly/reminder.svg",
+    title: "Compliance support team",
+    body: "Pre-tenancy, move-ins and rent collection handled, so you do the income work.",
+    span: "col-span-2",
+    overlay: true,
   },
   {
-    icon: "file-contract",
-    title: "Printed and digital marketing",
-    body: "A dedicated marketing team constantly creating assets you can personalise and use to generate business.",
+    art: "/illustrations/notioly/png/social-acceptance.png",
+    title: "Your own success coach",
+    span: "",
   },
   {
-    icon: "trend-up",
-    title: "Support to build your portfolio",
-    body: "The Letting Experts Blueprint gives you everything you need to build a profitable management portfolio.",
+    art: "/illustrations/notioly/piggy-bank.svg",
+    title: "Portfolio building",
+    span: "",
   },
 ];
 
@@ -574,11 +540,13 @@ export default function RecruitmentPage() {
       {/* Pulled up over the collapse's tail (-20vh): by the time the curtain
           is a stripe this section is already climbing the viewport — no dead
           eggshell between the hero and the people it's for. */}
-      <section id="who" className="relative z-10 -mt-[34vh] scroll-mt-6 px-6 pb-24 pt-4">
+      <section id="who" className="relative z-10 -mt-[34vh] scroll-mt-6 px-5 pb-24 pt-4 sm:px-8">
         <Scribble name="swoosh" className="right-[4%] top-[9%] hidden h-24 w-24 xl:block" />
-        <div className="mx-auto max-w-[1180px]">
+        {/* Full width at the hero's own gutter — the heading runs from the
+            same left edge the canvas does, using the whole line. */}
+        <div>
           <Reveal>
-            <div className="max-w-[52ch]">
+            <div>
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] accent-text">
                 Who this is for
               </span>
@@ -621,83 +589,57 @@ export default function RecruitmentPage() {
         </div>
       </section>
 
-      {/* ---------------- the collage ---------------- */}
-      {/* The VEIL board, recoloured: near-black ground, thin black gaps, warm
-          photos, and the brand tile in Mist. The captions are the brand PDF's
-          own slogans ("Experts in…", "Experts not just…"), because a collage
-          with invented taglines would need sign-off this one doesn't. */}
-      {/* Inset from the page edges so the eggshell flows around it — this is
-          a section, not a takeover. The black frame's own padding equals the
-          internal gap exactly (12px everywhere), so the border reads as one
-          consistent grout line right to the outer edge. */}
-      <section className="px-5 py-10 sm:px-8">
+      {/* ---------------- the bento: what we give you ---------------- */}
+      {/* The collage's black-grout geometry, carrying the give-you content:
+          white tiles, ink illustrations, the section title in the centre on
+          Mist where the wordmark used to sit. Inset so the eggshell flows
+          around it; the frame's padding equals the internal gap (12px), one
+          grout line to the outer edge. Rows are viewport-scaled so the whole
+          board reads at roughly three-quarters of a screen. */}
+      <section id="give" className="scroll-mt-6 px-5 py-10 sm:px-8">
         <div className="mx-auto max-w-[1280px] bg-[#141414] p-3">
-          <div className="grid auto-rows-[170px] grid-cols-2 gap-3 sm:auto-rows-[200px] md:grid-cols-4">
-          {COLLAGE.map((tile, i) =>
-            tile.kind === "brand" ? (
-              <div
-                key={i}
-                className={`relative flex items-center justify-center overflow-hidden bg-[#FFE4DF] ${tile.span ?? ""}`}
-              >
-                <Scribble name="wind" className="left-3 top-3 h-10 w-10 text-ink/20" />
-                <p className="written text-center text-[clamp(26px,3.4vw,44px)] leading-[0.95] text-ink">
-                  The
-                  <br />
-                  Letting
-                  <br />
-                  Experts
-                </p>
-                <Scribble name="sparkles" className="bottom-3 right-3 h-10 w-10 text-ink/20" />
-              </div>
-            ) : (
-              <figure key={i} className={`relative overflow-hidden bg-[#FFE4DF] ${tile.span ?? ""}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={tile.src}
-                  alt={tile.alt}
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover"
-                  onError={(e) => {
-                    // a dead stock URL becomes a flat pink tile, never a broken glyph
-                    e.currentTarget.style.display = "none";
-                  }}
-                />
-                {tile.caption ? (
-                  <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-5 pt-14">
-                    <p className="text-[clamp(20px,2.2vw,30px)] font-extrabold uppercase leading-[1.02] text-white">
-                      {tile.caption[0]}
-                      <br />
-                      <span className="text-[#FFE4DF]">{tile.caption[1]}</span>
-                    </p>
-                    <p className="mt-1 text-[12px] text-white/80">{tile.caption[2]}</p>
-                  </figcaption>
-                ) : null}
-              </figure>
-            )
-          )}
+          <div className="grid auto-rows-[clamp(130px,17vh,190px)] grid-cols-2 gap-3 md:grid-cols-4">
+            {BENTO.map((tile, i) =>
+              "centre" in tile ? (
+                <div
+                  key={i}
+                  className={`flex items-center justify-center bg-[#FFE4DF] p-6 ${tile.span}`}
+                >
+                  <p className="written max-w-[14ch] text-center text-[clamp(24px,2.8vw,40px)] leading-[1.05] text-ink">
+                    {tile.title}
+                  </p>
+                </div>
+              ) : (
+                <figure key={i} className={`relative overflow-hidden bg-white p-4 ${tile.span}`}>
+                  {tile.overlay ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={tile.art}
+                        alt=""
+                        aria-hidden
+                        className="absolute right-1 top-1 h-[72%] w-auto max-w-[62%] object-contain"
+                      />
+                      <figcaption className="absolute bottom-4 left-4 right-4">
+                        <p className="text-[15px] font-bold leading-tight">{tile.title}</p>
+                        {tile.body ? (
+                          <p className="mt-1 max-w-[34ch] text-[12px] leading-relaxed text-muted">{tile.body}</p>
+                        ) : null}
+                      </figcaption>
+                    </>
+                  ) : (
+                    <div className="flex h-full flex-col">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={tile.art} alt="" aria-hidden className="min-h-0 flex-1 object-contain" />
+                      <figcaption className="pt-2 text-center text-[13px] font-bold leading-tight">
+                        {tile.title}
+                      </figcaption>
+                    </div>
+                  )}
+                </figure>
+              )
+            )}
           </div>
-        </div>
-      </section>
-
-      {/* ---------------- what you get ---------------- */}
-      <section id="give" className="scroll-mt-6 px-6 py-24">
-        <Reveal>
-        <SectionHead
-          kicker="What we give you"
-          title="Everything you need to be dangerous"
-          blurb="Our goal is the best and most attractive business model for self-employed letting agents in the UK. So you get the lot."
-        />
-        </Reveal>
-        <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {GIVE.map((g) => (
-            <div key={g.title} className="rounded-2xl border border-line p-6">
-              <span className="accent-text">
-                <DoodleIcon name={g.icon} size={24} />
-              </span>
-              <h3 className="mt-4 text-[14.5px] font-semibold">{g.title}</h3>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{g.body}</p>
-            </div>
-          ))}
         </div>
       </section>
 
