@@ -16,7 +16,7 @@
 // people read all day, this is a page somebody reads once, and it is allowed to
 // have a voice.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DoodleIcon from "@/components/DoodleIcon";
 import Reveal from "./Reveal";
 import HousesScene from "@/components/HousesScene";
@@ -281,6 +281,59 @@ function Faq({ q, a }: { q: string; a: string }) {
 }
 
 /**
+ * The hero's moving picture. Prefers the Higgsfield loop and falls back to the
+ * mono street scene, so the page is never waiting on an asset.
+ *
+ * Drop the video at public/illustrations/hero-loop.mp4 (or .webm) and it takes
+ * over on the next load — no code change. Probed with HEAD rather than just
+ * rendered, because a <video> with a missing src fails silently and we'd be
+ * showing nothing without knowing it.
+ */
+function HeroVisual() {
+  const [loop, setLoop] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const src of ["/illustrations/hero-loop.webm", "/illustrations/hero-loop.mp4"]) {
+        try {
+          const r = await fetch(src, { method: "HEAD" });
+          const type = r.headers.get("content-type") ?? "";
+          // Next's dev server answers HEAD for MISSING files with 200 text/html
+          // (the 404 page) — the content-type is the only honest signal here.
+          if (r.ok && type.startsWith("video/")) {
+            if (!cancelled) setLoop(src);
+            return;
+          }
+        } catch {
+          /* keep looking */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loop) {
+    return (
+      <video
+        src={loop}
+        autoPlay
+        muted
+        loop
+        playsInline
+        aria-hidden
+        // multiply melts the video's white ground into the clay behind it, so
+        // black-on-white line art reads as ink drawn straight onto the canvas —
+        // no alpha channel needed from the export.
+        className="pointer-events-none block w-full mix-blend-multiply"
+      />
+    );
+  }
+  return <HousesScene src="/illustrations/houses-mono.png" className="w-full" />;
+}
+
+/**
  * The search line at the foot of the hero — an underline, not a box, matching
  * the reference. It searches THIS page: the query is matched against a small
  * keyword index plus the FAQ copy, and the page scrolls to the best answer.
@@ -360,20 +413,29 @@ export default function RecruitmentPage() {
         {/* the clay rectangle */}
         <div className="relative flex flex-1 flex-col overflow-hidden bg-[#DE968F]">
           <div className="relative flex flex-1 flex-col px-4 pb-8 sm:px-8">
+            {/* Reference treatment: huge, heavy, tight. "THE FUTURE" runs the
+                full width; "OF LETTINGS" starts padded in on the left rather
+                than stretching to fit — the stagger is the composition, and it
+                spares us a single line that would never have fitted. */}
             <h1
-              className="mt-12 text-center font-extrabold uppercase leading-[0.86] tracking-[-0.02em] text-ink sm:mt-16"
-              style={{ fontSize: "clamp(44px, 10.4vw, 158px)" }}
+              className="mt-10 text-left font-extrabold uppercase text-ink sm:mt-12"
+              style={{ fontSize: "clamp(46px, 13.2vw, 210px)", lineHeight: 0.84, letterSpacing: "-0.045em" }}
             >
-              The Future
-              <br />
-              of Lettings
+              <span className="block whitespace-nowrap">The Future</span>
+              {/* A touch smaller so that, with the indent, its right edge lands
+                  where line one's does — "of Lettings" isn't trying to go full
+                  width, it finishes where THE FUTURE finishes. */}
+              <span className="block whitespace-nowrap pl-[20%]" style={{ fontSize: "0.78em" }}>
+                of Lettings
+              </span>
             </h1>
 
-            {/* The moving illustration — mono plate, birds still flapping.
-                Sized UP: this is the feature, not a vignette. Swaps for the
-                Higgsfield character when it lands. */}
-            <div className="relative z-10 mx-auto mt-auto w-[min(720px,92%)] pt-6 lg:mx-0 lg:ml-[7%] lg:w-[min(700px,62%)]">
-              <HousesScene src="/illustrations/houses-mono.png" className="w-full" />
+            {/* NO z-index here: a z-indexed wrapper is a stacking context, and
+                a stacking context ISOLATES mix-blend-mode — the video's multiply
+                would blend against the wrapper's transparency instead of the
+                clay, leaving the white box this exists to remove. */}
+            <div className="relative mx-auto mt-auto w-[min(720px,92%)] pt-6 lg:mx-0 lg:ml-[2%] lg:w-[min(880px,74%)]">
+              <HeroVisual />
             </div>
 
             {/* left bracket label + down arrow, reference-style */}
@@ -383,7 +445,7 @@ export default function RecruitmentPage() {
             </div>
 
             {/* right column: the pitch, and the search line across the bottom */}
-            <div className="mx-auto mt-8 w-full max-w-[44ch] text-center lg:absolute lg:bottom-8 lg:right-8 lg:mt-0 lg:w-[320px] lg:max-w-none lg:text-left">
+            <div className="mx-auto mt-8 w-full max-w-[44ch] text-center lg:absolute lg:right-10 lg:top-[44%] lg:mt-0 lg:w-[320px] lg:max-w-none lg:text-left">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink">About</p>
               <p className="mt-2 text-[13.5px] leading-relaxed text-ink/80">
                 You already know how to let and manage property. This is the model
