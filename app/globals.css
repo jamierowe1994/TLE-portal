@@ -1041,21 +1041,6 @@ body.presenting .source-badge[class*="border"] {
   .page-art-float, .page-art-sway, .page-art-pulse { animation: none; }
 }
 
-/* ---- recruitment page: hand-drawn marks ------------------------------- *
- * The lasso in the hero draws itself once on load. Everything else on this
- * page is static — a page full of self-drawing biro would be a fairground.  */
-.doodle-draw {
-  stroke-dasharray: 620;
-  stroke-dashoffset: 620;
-  animation: doodle-draw 1.1s cubic-bezier(0.65, 0, 0.35, 1) 0.35s forwards;
-}
-.doodle-draw-2 { animation-delay: 0.85s; animation-duration: 0.8s; }
-@keyframes doodle-draw { to { stroke-dashoffset: 0; } }
-
-@media (prefers-reduced-motion: reduce) {
-  .doodle-draw { animation: none; stroke-dashoffset: 0; }
-}
-
 /* ---- recruitment page: CTAs ------------------------------------------- *
  * Three variants, one behaviour: lift on hover, press down on click, and a
  * sheen that sweeps across once. The sheen is a pseudo-element on a masked
@@ -1102,3 +1087,11 @@ body.presenting .source-badge[class*="border"] {
 @media (prefers-reduced-motion: reduce) {
   .cta, .cta::after, .showcase-lead { transition: none; animation: none; }
 }
+
+/* The hero's down-arrow nudges toward the fold — enough to say "go on". */
+.hero-arrow { animation: hero-arrow 2.6s ease-in-out infinite; }
+@keyframes hero-arrow {
+  0%, 100% { transform: rotate(130deg) translateX(0); }
+  50%      { transform: rotate(130deg) translateX(8px); }
+}
+@media (prefers-reduced-motion: reduce) { .hero-arrow { animation: none; } }

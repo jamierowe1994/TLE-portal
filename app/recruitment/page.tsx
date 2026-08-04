@@ -16,10 +16,11 @@
 // people read all day, this is a page somebody reads once, and it is allowed to
 // have a voice.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import DoodleIcon from "@/components/DoodleIcon";
-import { Mark } from "./Doodles";
 import Reveal from "./Reveal";
+import HousesScene from "@/components/HousesScene";
+import Scribble from "./Scribble";
 import OsShowcase from "./OsShowcase";
 
 /* ------------------------------ the content ------------------------------ */
@@ -237,7 +238,7 @@ function SectionHead({
         {kicker}
       </span>
       <h2
-        className="hand mt-3 tracking-tight"
+        className="written mt-3 tracking-tight"
         style={{ fontSize: "clamp(30px, 4vw, 46px)", lineHeight: 1.08 }}
       >
         {title}
@@ -279,52 +280,6 @@ function Faq({ q, a }: { q: string; a: string }) {
   );
 }
 
-/**
- * The hero photo, with an honest fallback.
- *
- * An `onError` on a plain <img> is not enough: the request fails during SSR
- * hydration, before React has attached the handler, so the browser paints its
- * broken-image state and the swap never happens. This probes for the file first
- * and only renders it once it has actually loaded — so the page shows a figure
- * while the photo is missing, and never a broken frame.
- *
- * Drop the real image at /public/recruitment/hero.jpg and it takes over on the
- * next load. Nothing else needs changing.
- */
-function HeroImage() {
-  const [photo, setPhoto] = useState<string | null>(null);
-  useEffect(() => {
-    const img = new Image();
-    img.onload = () => setPhoto("/recruitment/hero.jpg");
-    img.src = "/recruitment/hero.jpg";
-  }, []);
-
-  return (
-    <figure className="relative mx-auto mt-12 max-w-3xl">
-      <Mark name="sparks" className="-right-8 -top-6 hidden w-14 lg:block" />
-      <div className="card overflow-hidden p-0">
-        {photo ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={photo} alt="A Letting Expert at work" className="block h-auto w-full object-cover" />
-        ) : (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src="/illustrations/notioly/accomplishment.svg"
-            alt=""
-            aria-hidden
-            className="mx-auto block w-[62%] py-12"
-          />
-        )}
-      </div>
-      {!photo ? (
-        <figcaption className="mt-2 text-[11px] text-muted">
-          Placeholder — drop the hero photo at <code>/public/recruitment/hero.jpg</code>
-        </figcaption>
-      ) : null}
-    </figure>
-  );
-}
-
 /* ---------------------------------- page --------------------------------- */
 
 export default function RecruitmentPage() {
@@ -333,66 +288,75 @@ export default function RecruitmentPage() {
   return (
     <div className="outline-cards soft-cards min-h-screen bg-page">
       {/* ---------------- nav ---------------- */}
-      {/* No bottom rule: the hero sits on the same canvas, and a hairline
-          across the top only served to cut the page in half before it began. */}
-      <header className="sticky top-0 z-40 bg-page/80 backdrop-blur">
-        <div className="mx-auto flex max-w-[1180px] items-start justify-between px-6 py-5">
-          {/* Stacked wordmark — three lines, tight, so it reads as a mark
-              rather than a sentence in the corner. */}
-          <span className="hand text-[15px] leading-[0.95] tracking-tight sm:text-[17px]">
-            The
-            <br />
-            Letting
-            <br />
-            Experts
-          </span>
-          <a
-            href={QUIZ}
-            className="cta cta-dark rounded-full px-4 py-2 text-[13px] font-medium"
-          >
-            Suitability quiz
-          </a>
-        </div>
-      </header>
-
-      {/* ---------------- hero ---------------- */}
-      {/* An inverted pyramid: the title is the widest element, the subtext sits
-          inside it, the buttons inside that. Each measure is set deliberately
-          rather than left to the container, so the eye funnels down to the CTA
-          instead of reading three stacked blocks of the same width. */}
-      <section className="relative px-6 pb-0 pt-8 sm:pt-14">
-        <Mark name="swirl" className="left-[2%] top-[26%] hidden w-24 xl:block" />
-        <Mark name="grass" className="right-[3%] top-[16%] hidden w-20 xl:block" />
-
-        <div className="mx-auto max-w-[1180px] text-center">
-          <h1
-            className="hand mx-auto max-w-[15ch] tracking-tight"
-            style={{ fontSize: "clamp(42px, 7.4vw, 92px)", lineHeight: 0.94 }}
-          >
-            Run your own lettings business
-          </h1>
-
-          <p className="mx-auto mt-6 max-w-[46ch] text-[15px] leading-relaxed text-muted sm:text-[16.5px]">
-            You already know how to let and manage property. This is the model that
-            lets you do it for yourself — with the tools, the training and a support
-            team behind you.
-          </p>
-
-          <div className="mx-auto mt-8 flex max-w-[30rem] flex-wrap items-center justify-center gap-3">
-            <a href={QUIZ} className="cta cta-accent rounded-full px-7 py-3.5 text-[14.5px] font-semibold">
+      {/* ---------------- hero: full-screen Mist canvas ---------------- */}
+      {/* The pink is the canvas now, not the frame: one square-cornered Mist
+          block filling the viewport to the corners, with the page's eggshell
+          showing only as a thin padding gutter around it. Nav sits on the pink.
+          Mist x Expert Red is an approved brand colourway, so the red display
+          word and the red CTA are on-book here, not improvised. */}
+      <section className="p-3 sm:p-4">
+        <div className="relative flex flex-col overflow-hidden bg-[#DE968F]" style={{ minHeight: "calc(100vh - 32px)" }}>
+          {/* nav, on the canvas */}
+          <div className="flex items-start justify-between px-5 pt-5 sm:px-8">
+            <span className="written text-[15px] leading-[0.95] tracking-tight text-[#3B3B3C] sm:text-[17px]">
+              The
+              <br />
+              Letting
+              <br />
+              Experts
+            </span>
+            <a href={QUIZ} className="cta cta-dark rounded-full px-4 py-2 text-[13px] font-medium">
               Suitability quiz
             </a>
-            <a href="#earn" className="cta cta-ghost rounded-full px-7 py-3.5 text-[14.5px] font-medium">
-              See what you could earn
-            </a>
+          </div>
+
+          <div className="relative flex flex-1 flex-col px-4 pb-8 sm:px-8">
+            <h1
+              className="mt-4 text-center font-extrabold uppercase leading-[0.86] tracking-[-0.02em] text-[#F1F1F1] sm:mt-6"
+              style={{ fontSize: "clamp(44px, 10.4vw, 158px)" }}
+            >
+              The Future
+              <br />
+              of <span className="accent-text">Lettings</span>
+            </h1>
+
+            {/* The moving illustration — the birds genuinely flap (the same
+                lifted-out-of-the-raster trick My Properties uses), so the
+                scene is alive without a video or a GIF anywhere. Anchored to
+                the foot of the canvas so the ground line sits on the bottom
+                edge, and centre-left so the About column has clear air. */}
+            <div className="relative z-10 mx-auto mt-auto w-[min(640px,82%)] pt-6 lg:mx-0 lg:ml-[19%] lg:w-[min(580px,52%)]">
+              <HousesScene className="w-full" />
+            </div>
+
+            {/* left bracket label + down arrow, reference-style */}
+            <div className="pointer-events-none absolute bottom-8 left-7 hidden w-[190px] lg:block">
+              <p className="text-[12.5px] tracking-wide text-[#3B3B3C]/70">[ For agents with 2+ years in lettings ]</p>
+              <Scribble name="arrow" className="hero-arrow relative mt-4 block h-10 w-10 rotate-[130deg] text-[#3B3B3C]" />
+            </div>
+
+            {/* right column: the pitch and the way in */}
+            <div className="mx-auto mt-8 max-w-[44ch] text-center lg:absolute lg:bottom-8 lg:right-8 lg:mt-0 lg:w-[300px] lg:max-w-none lg:text-left">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#F1F1F1]">About</p>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-[#3B3B3C]/90">
+                You already know how to let and manage property. This is the model
+                that lets you do it for yourself — your own business, with the
+                tools, training and support team behind you.
+              </p>
+              <a href={QUIZ} className="cta cta-dark mt-4 inline-block w-full rounded-xl px-6 py-3 text-center text-[14px] font-semibold lg:w-auto">
+                Suitability quiz
+              </a>
+            </div>
           </div>
         </div>
+      </section>
 
-        {/* The showcase deliberately runs off the bottom of the section and is
-            clipped by the next one. A panel that stops short reads as finished;
-            one that continues past the fold is the reason someone scrolls. */}
-        <Reveal delay={120}>
-          <div className="relative mx-auto mt-14 max-w-[1080px] px-2">
+      {/* ---------------- the product, running past the fold ---------------- */}
+      <section className="relative px-6 pb-4 pt-16 sm:pt-20">
+        <Reveal>
+          <div className="relative mx-auto w-full max-w-[1080px] px-2">
+            <Scribble name="pop" className="-top-9 right-1 h-14 w-14 text-ink/70 sm:-top-11 sm:h-16 sm:w-16" />
+            <Scribble name="pop" className="-top-9 left-1 h-14 w-14 -scale-x-100 text-ink/70 sm:-top-11 sm:h-16 sm:w-16" />
             <OsShowcase />
           </div>
         </Reveal>
@@ -404,7 +368,7 @@ export default function RecruitmentPage() {
           in a category before they have been given a reason to care. Money and
           the thing standing between them and it come first. */}
       <section id="earn" className="relative px-6 py-24">
-        <Mark name="loop" className="right-[3%] top-[8%] hidden w-28 xl:block" />
+        <Scribble name="swoosh" className="right-[4%] top-[9%] hidden h-24 w-24 xl:block" />
         <div className="mx-auto max-w-[1180px]">
           <Reveal>
             <div className="max-w-[52ch]">
@@ -412,7 +376,7 @@ export default function RecruitmentPage() {
                 The honest bit
               </span>
               <h2
-                className="hand mt-3 tracking-tight"
+                className="written mt-3 tracking-tight"
                 style={{ fontSize: "clamp(32px, 4.6vw, 58px)", lineHeight: 1.02 }}
               >
                 What you could earn, and what&rsquo;s stopping you
@@ -436,7 +400,7 @@ export default function RecruitmentPage() {
                 <div className="mt-6 flex flex-1 flex-col justify-around gap-6">
                   {EARN.map((e) => (
                     <div key={e.label} className="flex items-baseline gap-4">
-                      <span className="hand shrink-0 tracking-tight" style={{ fontSize: "clamp(30px,3.4vw,42px)", lineHeight: 1 }}>
+                      <span className="written shrink-0 tracking-tight" style={{ fontSize: "clamp(30px,3.4vw,42px)", lineHeight: 1 }}>
                         {e.figure}
                       </span>
                       <span className="min-w-0">
@@ -481,7 +445,7 @@ export default function RecruitmentPage() {
 
       {/* ---------------- who it's for ---------------- */}
       <section className="relative px-6 py-24">
-        <Mark name="loop" className="right-[4%] top-[6%] hidden w-28 lg:block" />
+        <Scribble name="confetti" className="right-[5%] top-[7%] hidden h-20 w-20 lg:block" />
         <Reveal>
         <SectionHead
           kicker="Who it's for"
@@ -497,7 +461,7 @@ export default function RecruitmentPage() {
             </div>
           ))}
           <div className="card flex flex-col justify-center bg-ink p-6 text-white">
-            <p className="hand text-[22px] leading-snug">
+            <p className="written text-[22px] leading-snug">
               &ldquo;Everyone deserves to live their best life.&rdquo;
             </p>
             <p className="mt-3 text-[12.5px] text-white/70">
@@ -531,7 +495,7 @@ export default function RecruitmentPage() {
 
       {/* ---------------- what it gives you ---------------- */}
       <section className="relative px-6 py-24">
-        <Mark name="arrow" className="left-[6%] top-[10%] hidden w-24 lg:block" />
+        <Scribble name="arrow" className="left-[6%] top-[10%] hidden h-20 w-20 lg:block" />
         <Reveal>
         <SectionHead
           kicker="What you get out"
@@ -541,7 +505,7 @@ export default function RecruitmentPage() {
         <div className="mx-auto mt-12 grid max-w-[1180px] gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {GIVES_YOU.map((g) => (
             <div key={g.word} className="text-center">
-              <p className="hand accent-text" style={{ fontSize: "clamp(34px, 4vw, 48px)" }}>
+              <p className="written accent-text" style={{ fontSize: "clamp(34px, 4vw, 48px)" }}>
                 {g.word}
               </p>
               <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{g.body}</p>
@@ -563,7 +527,7 @@ export default function RecruitmentPage() {
           {STEPS.map(([title, body], i) => (
             <li key={title} className="flex gap-4 rounded-2xl border border-line p-5">
               <span
-                className="hand shrink-0 accent-text"
+                className="written shrink-0 accent-text"
                 style={{ fontSize: 26, lineHeight: 1 }}
               >
                 {i + 1}
@@ -581,7 +545,7 @@ export default function RecruitmentPage() {
       <section className="relative px-6 py-24">
         <div className="mx-auto grid max-w-[1180px] items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="relative">
-            <Mark name="sparks" className="-left-6 -top-6 hidden w-16 lg:block" />
+            <Scribble name="sparkles" className="-left-4 -top-5 hidden h-14 w-14 lg:block" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/illustrations/notioly/growth.svg"
@@ -594,7 +558,7 @@ export default function RecruitmentPage() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] accent-text">
               Meet the founder
             </span>
-            <h2 className="hand mt-3 tracking-tight" style={{ fontSize: "clamp(28px, 3.4vw, 40px)", lineHeight: 1.1 }}>
+            <h2 className="written mt-3 tracking-tight" style={{ fontSize: "clamp(28px, 3.4vw, 40px)", lineHeight: 1.1 }}>
               Susan Liles
             </h2>
             <p className="mt-4 text-[14px] leading-relaxed text-muted">
@@ -618,7 +582,7 @@ export default function RecruitmentPage() {
         <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 sm:grid-cols-2">
           {VOICES.map((v) => (
             <figure key={v.who} className="rounded-2xl border border-line p-6">
-              <p className="hand text-[17px]">{v.head}</p>
+              <p className="written text-[17px]">{v.head}</p>
               <blockquote className="mt-3 text-[13.5px] leading-relaxed text-muted">
                 &ldquo;{v.quote}&rdquo;
               </blockquote>
@@ -637,7 +601,7 @@ export default function RecruitmentPage() {
         <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {VALUES.map(([t, b]) => (
             <div key={t} className="card p-6">
-              <h3 className="hand text-[19px]">{t}</h3>
+              <h3 className="written text-[19px]">{t}</h3>
               <p className="mt-2 text-[13px] leading-relaxed text-muted">{b}</p>
             </div>
           ))}
@@ -662,9 +626,9 @@ export default function RecruitmentPage() {
 
       {/* ---------------- final CTA ---------------- */}
       <section className="relative overflow-hidden px-6 py-28">
-        <Mark name="underline" className="left-1/2 top-[46%] hidden w-64 -translate-x-1/2 lg:block" />
+        <Scribble name="underline" className="left-1/2 top-[52%] hidden h-10 w-56 -translate-x-1/2 text-ink/40 lg:block" />
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="hand tracking-tight" style={{ fontSize: "clamp(32px, 5vw, 56px)", lineHeight: 1.05 }}>
+          <h2 className="written tracking-tight" style={{ fontSize: "clamp(32px, 5vw, 56px)", lineHeight: 1.05 }}>
             Ready to find out if it&rsquo;s for you?
           </h2>
           <p className="mx-auto mt-5 max-w-lg text-[14.5px] leading-relaxed text-muted">
