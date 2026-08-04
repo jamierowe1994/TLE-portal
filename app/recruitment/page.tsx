@@ -16,12 +16,11 @@
 // people read all day, this is a page somebody reads once, and it is allowed to
 // have a voice.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import DoodleIcon from "@/components/DoodleIcon";
 import Reveal from "./Reveal";
 import HousesScene from "@/components/HousesScene";
 import Scribble from "./Scribble";
-import OsShowcase from "./OsShowcase";
 
 /* ------------------------------ the content ------------------------------ */
 
@@ -32,63 +31,21 @@ const LOVE = [
   { icon: "star", text: "A better quality of life that nurtures your health & wellbeing" },
 ];
 
-const EARN = [
+const PERSONAS = [
   {
-    figure: "100%",
-    label: "of your commission",
-    body: "No branch to fund, no manager taking a cut before you see it.",
+    art: "/illustrations/notioly/fast-worker.svg",
+    title: "The employed agent",
+    body: "Working hard every day to build someone else's business. Undervalued, capped on what you can earn, and quietly certain you'd do it better if it were yours.",
   },
   {
-    figure: "£0",
-    label: "in area restrictions",
-    body: "Any property, any location, any price range. No postcode carve-ups.",
+    art: "/illustrations/notioly/lost-the-way.svg",
+    title: "The self-employed agent",
+    body: "You made the leap — but the brand behind you didn't. No real support, no proper tools, nobody in your corner when it gets hard. It shouldn't feel this alone.",
   },
   {
-    figure: "24/7",
-    label: "on your own terms",
-    body: "Set the hours around your life instead of the other way round.",
-  },
-];
-
-const BLOCKERS = [
-  {
-    fear: "I can't afford to go without a salary.",
-    answer: "That's the honest risk, and why step one is a suitability quiz rather than a contract. We'd rather you found out now than six months in.",
-  },
-  {
-    fear: "I don't know how to find my own leads.",
-    answer: "The Success Blueprint is the step-by-step version, and a Success Coach holds you to it. You're not handed a laptop and wished well.",
-  },
-  {
-    fear: "The compliance side terrifies me.",
-    answer: "A support team handles pre-tenancy compliance, move-ins and rent collection — and the software tells you what's expiring before it does.",
-  },
-  {
-    fear: "I'd be doing it on my own.",
-    answer: "You'd be self-employed, not alone. A national network, weekly sessions, live events, and people who've already done the bit you're on.",
-  },
-];
-
-const WHO = [
-  {
-    title: "Letting agency employees",
-    body: "Feeling trapped in a high street office, restricted by rigid rules and limitations. Working hard for someone else's dream, yet unappreciated, undervalued and limited to what you can earn.",
-  },
-  {
-    title: "Letting agency business owners",
-    body: "Generating a decent income but little or no profit once the bills, salaries and ever-increasing costs are met — and no time left to concentrate on the core of your business.",
-  },
-  {
-    title: "Self-employed letting agents",
-    body: "Unsupported and lacking guidance with your current brand. Looking for a network with the best tools, a dedicated marketing team, a success blueprint and a personal coach.",
-  },
-  {
-    title: "Budding entrepreneurs",
-    body: "Ambitious, with an entrepreneurial mindset and a goal to own a successful business — in control of your destiny, working flexible hours and earning a significant income.",
-  },
-  {
-    title: "Career changers",
-    body: "Eager to break free from the 9–5, the office politics and the commute, with a solid foundation in sales, marketing and customer service you want to put to better use.",
+    art: "/illustrations/notioly/moving.svg",
+    title: "The career changer",
+    body: "Years of sales, service and graft in somebody else's industry, and a growing feeling it's time all of that started paying you instead.",
   },
 ];
 
@@ -330,8 +287,9 @@ function HeroSearch() {
     const t = q.trim().toLowerCase();
     if (!t) return; // an empty search scrolling the page is a jump scare, not help
     const INDEX: Array<[RegExp, string]> = [
-      [/earn|money|salary|income|commission|fee|pay/, "earn"],
+      [/earn|money|salary|income|commission|fee|pay/, "faqs"],
       [/train|coach|support|tool|tech|crm|market|lead|blueprint/, "give"],
+      [/who|for me|employed|career|change/, "who"],
       [/step|process|join|start|how|quiz|onboard/, "how"],
       [/susan|founder|who runs|director/, "founder"],
     ];
@@ -359,11 +317,72 @@ function HeroSearch() {
   );
 }
 
+/**
+ * The hero collapses in on itself as you scroll — VERTICALLY: both edges close
+ * on the centre line until the clay is a thin stripe, then it fades. The nav
+ * rides the collapsing top edge down as though it were scrolling with it, and
+ * the runway is deliberately short so the next section is waiting right there
+ * when the stripe disappears — no dead space to wade through.
+ *
+ * Plain scroll + rAF rather than a scroll-timeline animation: this has to
+ * work in every browser an agent might open the link in, and the CSS
+ * scroll-driven API still doesn't. Writes happen inside requestAnimationFrame
+ * so a fast trackpad can't queue up layout work.
+ *
+ * Under prefers-reduced-motion the whole mechanism stands down: no runway, no
+ * pin, no transform — the page is just a page.
+ */
+function useCollapseOnScroll() {
+  const runwayRef = useRef<HTMLElement | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const navRef = useRef<HTMLDivElement | null>(null);
+  const [enabled, setEnabled] = useState(true);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setEnabled(false);
+      return;
+    }
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const sec = runwayRef.current;
+        const box = boxRef.current;
+        const nav = navRef.current;
+        if (!sec || !box) return;
+        const runway = sec.offsetHeight - window.innerHeight;
+        if (runway <= 0) return;
+        const p = Math.min(1, Math.max(0, -sec.getBoundingClientRect().top / runway));
+        // Ease-in: barely moves at first, then commits to the collapse.
+        const sy = Math.max(0, 1 - p * p);
+        // The squeeze is VERTICAL only — both edges close on the centre line
+        // until the canvas is a thin horizontal stripe, then it fades.
+        box.style.transform = `scaleY(${sy})`;
+        box.style.opacity = p > 0.9 ? String(Math.max(0, (1 - p) / 0.1)) : "1";
+        // The nav rides the collapsing TOP edge down, as if scrolling with it:
+        // the top edge drops by half the height the box has given up.
+        // offsetHeight is the untransformed height, so this stays stable.
+        if (nav) nav.style.transform = `translateY(${((1 - sy) / 2) * box.offsetHeight}px)`;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  return { runwayRef, boxRef, navRef, enabled };
+}
+
 /* ---------------------------------- page --------------------------------- */
 
 export default function RecruitmentPage() {
   const QUIZ = "https://join.thelettingexperts.co.uk/join-us";
   const loop = useHeroLoop();
+  const { runwayRef, boxRef, navRef, enabled: collapse } = useCollapseOnScroll();
 
   return (
     <div className="outline-cards soft-cards min-h-screen bg-page">
@@ -374,9 +393,12 @@ export default function RecruitmentPage() {
           the bottom corners with only the padding gutter. Monochrome-plus-clay
           is the whole premise: black type, black linework, and the Warm Clay
           (#DE968F) shining through. The red returns further down the page. */}
-      <section className="flex flex-col px-5 pb-5 sm:px-8 sm:pb-8" style={{ minHeight: "100vh" }}>
+      <section ref={runwayRef} className="relative" style={{ height: collapse ? "180vh" : "auto" }}>
+        <div
+          className={`${collapse ? "sticky top-0 h-screen" : "min-h-screen"} flex flex-col px-5 pb-5 sm:px-8 sm:pb-8`}
+        >
         {/* nav, on the page background */}
-        <div className="flex items-center justify-between px-1 py-6 sm:px-2 sm:py-8">
+        <div ref={navRef} className="flex items-center justify-between px-1 py-6 will-change-transform sm:px-2 sm:py-8">
           <span className="written text-[15px] leading-[0.95] tracking-tight text-ink sm:text-[17px]">
             The
             <br />
@@ -392,8 +414,8 @@ export default function RecruitmentPage() {
           </a>
         </div>
 
-        {/* the clay rectangle */}
-        <div className="relative flex flex-1 flex-col overflow-hidden bg-[#DE968F]">
+        {/* the clay rectangle — boxRef is what the scroll collapse scales */}
+        <div ref={boxRef} className="relative flex flex-1 flex-col overflow-hidden bg-[#DE968F] will-change-transform">
           <div className="relative flex flex-1 flex-col px-4 pb-8 sm:px-8">
             {/* Reference treatment: huge, heavy, tight. "THE FUTURE" runs the
                 full width; "OF LETTINGS" starts padded in on the left rather
@@ -434,7 +456,7 @@ export default function RecruitmentPage() {
                         left/top/width and the whole block shrank onto her —
                         the em a length resolves against is the element's own
                         font size, not its parent's. */}
-                    <span className="absolute block" style={{ left: "-0.3em", top: "2.28em", width: "2.4em" }}>
+                    <span className="absolute block" style={{ left: "-0.85em", top: "2.28em", width: "2.4em" }}>
                       <span
                         className="written relative block whitespace-normal text-left font-normal normal-case tracking-normal"
                         style={{ fontSize: "clamp(13px, 0.115em, 26px)", lineHeight: 1.35 }}
@@ -515,125 +537,58 @@ export default function RecruitmentPage() {
             </div>
           </div>
         </div>
+        </div>
       </section>
 
-      {/* ---------------- the product, running past the fold ---------------- */}
-      <section className="relative px-6 pb-4 pt-16 sm:pt-20">
-        <Reveal>
-          <div className="relative mx-auto w-full max-w-[1080px] px-2">
-            <Scribble name="pop" className="-top-9 right-1 h-14 w-14 text-ink/70 sm:-top-11 sm:h-16 sm:w-16" />
-            <Scribble name="pop" className="-top-9 left-1 h-14 w-14 -scale-x-100 text-ink/70 sm:-top-11 sm:h-16 sm:w-16" />
-            <OsShowcase />
-          </div>
-        </Reveal>
-      </section>
-
-      {/* ---------------- what you could earn / what's stopping you -------- */}
-      {/* Deliberately the FIRST thing after the hero. The old page went
-          straight to "who it's for", which asks the reader to place themselves
-          in a category before they have been given a reason to care. Money and
-          the thing standing between them and it come first. */}
-      <section id="earn" className="relative scroll-mt-6 px-6 py-24">
+      {/* ---------------- who this is for ---------------- */}
+      {/* Three people, not a lecture: the reader should find themselves in one
+          of these boxes within a scroll. Each carries its own Notioly figure —
+          the employed agent on the treadmill, the self-employed one without a
+          map, the career changer mid-move. */}
+      <section id="who" className="relative scroll-mt-6 px-6 py-24">
         <Scribble name="swoosh" className="right-[4%] top-[9%] hidden h-24 w-24 xl:block" />
         <div className="mx-auto max-w-[1180px]">
           <Reveal>
             <div className="max-w-[52ch]">
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] accent-text">
-                The honest bit
+                Who this is for
               </span>
               <h2
                 className="written mt-3 tracking-tight"
                 style={{ fontSize: "clamp(32px, 4.6vw, 58px)", lineHeight: 1.02 }}
               >
-                What you could earn, and what&rsquo;s stopping you
+                You&rsquo;ll recognise yourself here
               </h2>
               <p className="mt-4 max-w-[46ch] text-[15px] leading-relaxed text-muted">
-                There&rsquo;s no salary here — it&rsquo;s your business. Which means the
-                ceiling comes off, and so does the safety net. Both halves of that
-                deserve saying out loud.
+                The model is built for people who already know lettings — or know
+                how to graft — and want the next chapter to be their own.
               </p>
             </div>
           </Reveal>
 
-          <div className="mt-12 grid gap-5 lg:grid-cols-2">
-            {/* what you keep */}
-            <Reveal delay={60}>
-              <div className="flex h-full flex-col rounded-2xl border border-line bg-card p-7">
-                <div className="flex items-center gap-2.5">
-                  <span className="accent-text"><DoodleIcon name="coin" size={20} /></span>
-                  <h3 className="text-[15px] font-semibold">What you could earn</h3>
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
+            {PERSONAS.map((who, i) => (
+              <Reveal key={who.title} delay={60 + i * 60}>
+                <div className="flex h-full flex-col rounded-2xl border border-line bg-card p-7">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={who.art} alt="" aria-hidden className="mx-auto h-40 w-auto" />
+                  <h3 className="mt-5 text-[16px] font-semibold">{who.title}</h3>
+                  <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{who.body}</p>
                 </div>
-                <div className="mt-6 flex flex-1 flex-col justify-around gap-6">
-                  {EARN.map((e) => (
-                    <div key={e.label} className="flex items-baseline gap-4">
-                      <span className="written shrink-0 tracking-tight" style={{ fontSize: "clamp(30px,3.4vw,42px)", lineHeight: 1 }}>
-                        {e.figure}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-[13.5px] font-medium">{e.label}</span>
-                        <span className="block text-[12.5px] leading-relaxed text-muted">{e.body}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-6 border-t border-line pt-4 text-[11.5px] leading-relaxed text-muted">
-                  Illustrative, not a promise — what you earn depends on the portfolio
-                  you build. We&rsquo;ll walk you through the real numbers on the call.
-                </p>
-              </div>
-            </Reveal>
-
-            {/* what's stopping you */}
-            <Reveal delay={120}>
-              <div className="h-full rounded-2xl border border-line bg-card p-7">
-                <div className="flex items-center gap-2.5">
-                  <span className="accent-text"><DoodleIcon name="lock" size={20} /></span>
-                  <h3 className="text-[15px] font-semibold">What&rsquo;s holding you back</h3>
-                </div>
-                <div className="mt-6 space-y-3">
-                  {BLOCKERS.map((b) => (
-                    <div key={b.fear} className="rounded-xl border border-line p-4">
-                      <p className="text-[13.5px] font-medium">
-                        <span className="text-muted">&ldquo;</span>{b.fear}<span className="text-muted">&rdquo;</span>
-                      </p>
-                      <p className="mt-1.5 flex gap-2 text-[12.5px] leading-relaxed text-muted">
-                        <span className="shrink-0 accent-text">→</span>
-                        {b.answer}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Reveal>
+              </Reveal>
+            ))}
           </div>
-        </div>
-      </section>
 
-      {/* ---------------- who it's for ---------------- */}
-      <section className="relative px-6 py-24">
-        <Scribble name="confetti" className="right-[5%] top-[7%] hidden h-20 w-20 lg:block" />
-        <Reveal>
-        <SectionHead
-          kicker="Who it's for"
-          title="You&rsquo;ll recognise yourself here"
-          blurb="The model suits people with estate agency, lettings and property management experience — however they got it."
-        />
-        </Reveal>
-        <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {WHO.map((w) => (
-            <div key={w.title} className="card card-lift p-6">
-              <h3 className="text-[15px] font-semibold">{w.title}</h3>
-              <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{w.body}</p>
+          <Reveal delay={120}>
+            <div className="mt-5 flex flex-col items-start justify-between gap-3 rounded-2xl bg-ink p-7 text-white sm:flex-row sm:items-center">
+              <p className="written text-[20px] leading-snug sm:text-[24px]">
+                &ldquo;Everyone deserves to live their best life.&rdquo;
+              </p>
+              <p className="shrink-0 text-[12.5px] text-white/70">
+                Sean Newman · Founder, The Experts Group
+              </p>
             </div>
-          ))}
-          <div className="card flex flex-col justify-center bg-ink p-6 text-white">
-            <p className="written text-[22px] leading-snug">
-              &ldquo;Everyone deserves to live their best life.&rdquo;
-            </p>
-            <p className="mt-3 text-[12.5px] text-white/70">
-              Sean Newman, Founder, The Experts Group
-            </p>
-          </div>
+          </Reveal>
         </div>
       </section>
 
