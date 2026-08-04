@@ -435,20 +435,19 @@ export default function RecruitmentPage() {
                 full width; "OF LETTINGS" starts padded in on the left rather
                 than stretching to fit — the stagger is the composition, and it
                 spares us a single line that would never have fitted. */}
-            {/* The staircase, at full weight: line one flush left, line two
-                pushed over and RIGHT-FLUSH so it runs to the end of the screen.
-                The stagger position isn't a chosen indent any more — it falls
-                out of right-aligning the (slightly smaller) second line, which
-                is what keeps both lines bleeding to their respective edges at
-                every viewport width. Black weight, near-touching tracking,
-                lines almost stacked. */}
+            {/* The staircase at full, EQUAL weight — both lines the same size,
+                line two right-flush so it runs to the end of the screen.
+                "Lettings" swaps to the handwritten face inside the same line:
+                the one word the brand owns, in the hand the OS writes with.
+                Base size is tuned to the WIDER second line; measured, not
+                guessed. */}
             <h1
               className="mt-8 text-left font-black uppercase text-ink sm:mt-10"
-              style={{ fontSize: "clamp(46px, 13.4vw, 214px)", lineHeight: 0.82, letterSpacing: "-0.055em" }}
+              style={{ fontSize: "clamp(40px, 11.4vw, 184px)", lineHeight: 0.85, letterSpacing: "-0.05em" }}
             >
               <span className="block whitespace-nowrap">The Future</span>
-              <span className="block whitespace-nowrap text-right" style={{ fontSize: "0.84em" }}>
-                of Lettings
+              <span className="block whitespace-nowrap text-right">
+                of <span className="written">Lettings</span>
               </span>
             </h1>
 
@@ -456,18 +455,16 @@ export default function RecruitmentPage() {
                 a stacking context ISOLATES mix-blend-mode — the video's multiply
                 would blend against the wrapper's transparency instead of the
                 clay, leaving the white box this exists to remove. */}
-            <div className="relative mx-auto mt-auto w-[min(720px,92%)] pt-6 lg:mx-0 lg:ml-[2%] lg:w-[min(880px,74%)]">
+            <div className="relative mx-auto mt-auto w-[min(760px,94%)] lg:-mt-[7vw] lg:w-[min(900px,74%)]">
               <HeroVisual />
-            </div>
-
-            {/* left bracket label + down arrow, reference-style */}
-            <div className="pointer-events-none absolute left-7 top-[47%] hidden w-[190px] lg:block">
-              <p className="text-[12.5px] tracking-wide text-ink/70">[ For agents with 2+ years in lettings ]</p>
-              <Scribble name="arrow" className="hero-arrow relative mt-4 block h-10 w-10 rotate-[130deg] text-ink" />
+              {/* moved under the lady, as asked — it was pinned mid-left */}
+              <p className="pointer-events-none mt-1 pb-1 text-center text-[12.5px] tracking-wide text-ink/70">
+                [ For agents with 2+ years in lettings ]
+              </p>
             </div>
 
             {/* right column: the pitch, and the search line across the bottom */}
-            <div className="mx-auto mt-8 w-full max-w-[44ch] text-center lg:absolute lg:right-10 lg:top-[44%] lg:mt-0 lg:w-[320px] lg:max-w-none lg:text-left">
+            <div className="mx-auto mt-8 w-full max-w-[44ch] text-center lg:absolute lg:right-10 lg:top-[56%] lg:mt-0 lg:w-[320px] lg:max-w-none lg:text-left">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink">About</p>
               <p className="mt-2 text-[13.5px] leading-relaxed text-ink/80">
                 You already know how to let and manage property. This is the model
