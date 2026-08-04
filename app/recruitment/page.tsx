@@ -318,11 +318,12 @@ function HeroSearch() {
 }
 
 /**
- * The hero collapses in on itself as you scroll — VERTICALLY: both edges close
- * on the centre line until the clay is a thin stripe, then it fades. The nav
- * rides the collapsing top edge down as though it were scrolling with it, and
- * the runway is deliberately short so the next section is waiting right there
- * when the stripe disappears — no dead space to wade through.
+ * The hero closes down as you scroll — a CURTAIN, not a compression: the
+ * canvas's visible window narrows from both edges (clip-path inset) while the
+ * artwork underneath keeps its exact aspect, so the words are cut off rather
+ * than squashed. The nav rides the collapsing top edge down as though it were
+ * scrolling with it, and the next section is pulled up over the runway's tail
+ * so it is already arriving while the curtain closes.
  *
  * Plain scroll + rAF rather than a scroll-timeline animation: this has to
  * work in every browser an agent might open the link in, and the CSS
@@ -355,15 +356,16 @@ function useCollapseOnScroll() {
         if (runway <= 0) return;
         const p = Math.min(1, Math.max(0, -sec.getBoundingClientRect().top / runway));
         // Ease-in: barely moves at first, then commits to the collapse.
-        const sy = Math.max(0, 1 - p * p);
-        // The squeeze is VERTICAL only — both edges close on the centre line
-        // until the canvas is a thin horizontal stripe, then it fades.
-        box.style.transform = `scaleY(${sy})`;
+        const open = Math.max(0, 1 - p * p);
+        // CROP, not squash: the content keeps its exact aspect and the canvas
+        // closes over it from both edges — a curtain, not a compression. A
+        // clip-path leaves layout and the artwork untouched; only the visible
+        // window narrows to a stripe and fades.
+        const inset = ((1 - open) / 2) * box.offsetHeight;
+        box.style.clipPath = `inset(${inset}px 0 ${inset}px 0)`;
         box.style.opacity = p > 0.9 ? String(Math.max(0, (1 - p) / 0.1)) : "1";
-        // The nav rides the collapsing TOP edge down, as if scrolling with it:
-        // the top edge drops by half the height the box has given up.
-        // offsetHeight is the untransformed height, so this stays stable.
-        if (nav) nav.style.transform = `translateY(${((1 - sy) / 2) * box.offsetHeight}px)`;
+        // The nav rides the collapsing top edge down, as if scrolling with it.
+        if (nav) nav.style.transform = `translateY(${inset}px)`;
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -395,7 +397,7 @@ export default function RecruitmentPage() {
           (#DE968F) shining through. The red returns further down the page. */}
       <section ref={runwayRef} className="relative" style={{ height: collapse ? "180vh" : "auto" }}>
         <div
-          className={`${collapse ? "sticky top-0 h-screen" : "min-h-screen"} flex flex-col px-5 pb-5 sm:px-8 sm:pb-8`}
+          className={`${collapse ? "sticky top-0 z-0 h-screen" : "min-h-screen"} flex flex-col px-5 pb-5 sm:px-8 sm:pb-8`}
         >
         {/* nav, on the page background */}
         <div ref={navRef} className="flex items-center justify-between px-1 py-6 will-change-transform sm:px-2 sm:py-8">
@@ -545,7 +547,10 @@ export default function RecruitmentPage() {
           of these boxes within a scroll. Each carries its own Notioly figure —
           the employed agent on the treadmill, the self-employed one without a
           map, the career changer mid-move. */}
-      <section id="who" className="relative scroll-mt-6 px-6 py-24">
+      {/* Pulled up over the collapse's tail (-20vh): by the time the curtain
+          is a stripe this section is already climbing the viewport — no dead
+          eggshell between the hero and the people it's for. */}
+      <section id="who" className="relative z-10 -mt-[20vh] scroll-mt-6 px-6 pb-24 pt-4">
         <Scribble name="swoosh" className="right-[4%] top-[9%] hidden h-24 w-24 xl:block" />
         <div className="mx-auto max-w-[1180px]">
           <Reveal>
@@ -569,7 +574,7 @@ export default function RecruitmentPage() {
           <div className="mt-12 grid gap-5 md:grid-cols-3">
             {PERSONAS.map((who, i) => (
               <Reveal key={who.title} delay={60 + i * 60}>
-                <div className="flex h-full flex-col rounded-2xl border border-line bg-card p-7">
+                <div className="flex h-full flex-col rounded-2xl border border-line p-7">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={who.art} alt="" aria-hidden className="mx-auto h-40 w-auto" />
                   <h3 className="mt-5 text-[16px] font-semibold">{who.title}</h3>
@@ -593,7 +598,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- what you get ---------------- */}
-      <section id="give" className="scroll-mt-6 border-y border-line bg-card px-6 py-24">
+      <section id="give" className="scroll-mt-6 px-6 py-24">
         <Reveal>
         <SectionHead
           kicker="What we give you"
@@ -636,7 +641,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- the ten steps ---------------- */}
-      <section id="how" className="scroll-mt-6 border-y border-line bg-card px-6 py-24">
+      <section id="how" className="scroll-mt-6 px-6 py-24">
         <Reveal>
         <SectionHead
           kicker="How it works"
@@ -698,7 +703,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- testimonials ---------------- */}
-      <section className="border-y border-line bg-card px-6 py-24">
+      <section className="px-6 py-24">
         <SectionHead kicker="In their words" title="Don't just take ours for it" />
         <div className="mx-auto mt-12 grid max-w-[1180px] gap-4 sm:grid-cols-2">
           {VOICES.map((v) => (
@@ -730,7 +735,7 @@ export default function RecruitmentPage() {
       </section>
 
       {/* ---------------- faqs ---------------- */}
-      <section id="faqs" className="scroll-mt-6 border-y border-line bg-card px-6 py-24">
+      <section id="faqs" className="scroll-mt-6 px-6 py-24">
         <Reveal>
         <SectionHead
           kicker="Still not sure?"
