@@ -181,8 +181,13 @@ const running = new Set<string>();
  * which is far too slow to block an admin page on. The first call returns
  * null and starts the walk; once it lands every later call is instant.
  */
-/** Bump when a cached shape gains or loses a field. */
-const CACHE_VERSION = "v12"; // v12: VAT rounded the sheet's way (subtract, not divide)
+/**
+ * Bump when a cached shape gains or loses a field — OR when the same shape
+ * would now be filled with different numbers. The cache is durable and holds
+ * for an hour, so a classifier change that isn't accompanied by a bump ships
+ * to production and stays completely invisible behind the old result.
+ */
+const CACHE_VERSION = "v13"; // v13: "Other" paid to the agency counts as fee income
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
