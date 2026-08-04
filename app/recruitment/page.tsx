@@ -62,6 +62,8 @@ type BentoTile = {
   title: string;
   body?: string;
   span: string;
+  /** which OUTSIDE edge of the frame the pointer arrow sits on */
+  edge: "top" | "bottom" | "left" | "right";
 };
 const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
   {
@@ -69,24 +71,28 @@ const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
     title: "Training & accountability",
     body: "A step-by-step Success Blueprint, and a coach who holds you to it.",
     span: "",
+    edge: "top",
   },
   {
     art: "/illustrations/notioly/tasks.svg",
     title: "Industry-leading tools",
     body: "A CRM built for self-employed agents, lead gen, and platforms that cut the admin.",
     span: "col-span-2",
+    edge: "top",
   },
   {
     art: "/illustrations/notioly/checklist.svg",
     title: "Legislation, handled",
     body: "Training that keeps you current and your portfolio compliant.",
     span: "",
+    edge: "top",
   },
   {
     art: "/illustrations/notioly/buildings.svg",
     title: "No postcode restrictions",
     body: "Any property, any location, any price range. No carve-ups, no territories.",
     span: "row-span-2",
+    edge: "left",
   },
   { title: "Everything you need to be dangerous", centre: true, span: "col-span-2 row-span-2" },
   {
@@ -94,24 +100,28 @@ const BENTO: (BentoTile | { title: string; centre: true; span: string })[] = [
     title: "Marketing, done with you",
     body: "A dedicated team building assets you personalise — for your brand, not ours.",
     span: "row-span-2",
+    edge: "right",
   },
   {
     art: "/illustrations/notioly/reminder.svg",
     title: "Compliance support team",
     body: "Pre-tenancy, move-ins and rent collection handled, so you do the income work.",
     span: "col-span-2",
+    edge: "left",
   },
   {
     art: "/illustrations/notioly/png/social-acceptance.png",
     title: "Your own success coach",
     body: "One person whose whole job is your success — admin to pipeline.",
     span: "",
+    edge: "bottom",
   },
   {
     art: "/illustrations/notioly/piggy-bank.svg",
     title: "Portfolio building",
     body: "The blueprint for a management book that pays you every month.",
     span: "",
+    edge: "right",
   },
 ];
 
@@ -407,16 +417,22 @@ export default function RecruitmentPage() {
   // Which bento tile is hot, and where the outside arrow should sit.
   const bentoWrapRef = useRef<HTMLDivElement | null>(null);
   const [hot, setHot] = useState<number | null>(null);
-  const [hotPos, setHotPos] = useState<{ top: number; side: "l" | "r" } | null>(null);
+  const [hotPos, setHotPos] = useState<{ edge: "top" | "bottom" | "left" | "right"; at: number } | null>(null);
   const pointAt = (i: number, el: HTMLElement) => {
     setHot(i);
     const wrap = bentoWrapRef.current;
-    if (!wrap) return;
+    const tile = BENTO[i];
+    if (!wrap || !("edge" in tile)) return;
     const r = el.getBoundingClientRect();
     const w = wrap.getBoundingClientRect();
+    // `at` is the coordinate ALONG the chosen edge: y for the sides, x for
+    // top and bottom — each tile declares which edge its pointer lives on.
     setHotPos({
-      top: r.top - w.top + r.height / 2,
-      side: (r.left + r.right) / 2 < (w.left + w.right) / 2 ? "l" : "r",
+      edge: tile.edge,
+      at:
+        tile.edge === "left" || tile.edge === "right"
+          ? r.top - w.top + r.height / 2
+          : r.left - w.left + r.width / 2,
     });
   };
 
@@ -629,7 +645,7 @@ export default function RecruitmentPage() {
           grout line to the outer edge. Rows are viewport-scaled so the whole
           board reads at roughly three-quarters of a screen. */}
       <section id="give" className="scroll-mt-6 px-5 py-10 sm:px-8">
-        <div ref={bentoWrapRef} className="relative mx-auto max-w-[1280px]">
+        <div ref={bentoWrapRef} className="relative mx-auto max-w-[1340px]">
           {/* The pointer outside the frame, gliding to whichever tile is hot.
               Driven by state rather than :hover so touch works on first tap
               and the behaviour is testable. Hidden below lg — there is no
@@ -637,15 +653,24 @@ export default function RecruitmentPage() {
           {hot !== null && hotPos ? (
             <Scribble
               name="arrow"
-              className={`pointer-events-none z-10 hidden h-9 w-9 text-ink transition-[top] duration-300 lg:block ${
-                hotPos.side === "l" ? "-left-12 rotate-[20deg]" : "-right-12 -scale-x-100 rotate-[20deg]"
+              className={`pointer-events-none z-10 hidden h-9 w-9 text-ink transition-[top,left] duration-300 lg:block ${
+                {
+                  left: "-left-12 rotate-[20deg]",
+                  right: "-right-12 -scale-x-100 rotate-[20deg]",
+                  top: "-top-12 rotate-[135deg]",
+                  bottom: "-bottom-12 -rotate-45",
+                }[hotPos.edge]
               }`}
-              style={{ position: "absolute", top: hotPos.top - 18 }}
+              style={
+                hotPos.edge === "left" || hotPos.edge === "right"
+                  ? { position: "absolute", top: hotPos.at - 18 }
+                  : { position: "absolute", left: hotPos.at - 18 }
+              }
             />
           ) : null}
 
-          <div className="bg-[#141414] p-3">
-            <div className="grid auto-rows-[clamp(130px,17vh,190px)] grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="bg-[#141414] p-2">
+            <div className="grid auto-rows-[clamp(135px,18vh,200px)] grid-cols-2 gap-2 md:grid-cols-4">
               {BENTO.map((tile, i) =>
                 "centre" in tile ? (
                   <div
