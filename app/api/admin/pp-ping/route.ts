@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { payPropPing, payPropAccounts, payPropLabel } from "@/lib/payprop";
+import { payPropPing, payPropGetAll, payPropAccounts, payPropLabel } from "@/lib/payprop";
 import { getAgencyIncome } from "@/lib/payprop-income";
 import { exVat } from "@/lib/format";
 
@@ -46,6 +46,34 @@ export async function GET(req: NextRequest) {
     out.paidToBeneficiaries = +income.paidToBeneficiaries.toFixed(2);
     out.unclassified = income.unclassifiedByCategory.slice(0, 6);
   }
+  // WHY the gap: split every category by BENEFICIARY TYPE. The classifier
+  // currently tests the category allowlist BEFORE the type, so a fee sitting
+  // in PayProp's "Other" category is discarded — and Susan's sheet has an
+  // "Other Fees" column that is real income.
+  const [yy, mm] = month.split("-").map(Number);
+  const wFrom = new Date(Date.UTC(yy, mm - 2, 1)).toISOString().slice(0, 10);
+  const wTo = new Date(Date.UTC(yy, mm + 1, 0)).toISOString().slice(0, 10);
+  const split: Record<string, Record<string, Record<string, number>>> = {};
+  for (const acc of payPropAccounts()) {
+    if (!ping.find((p) => p.account === acc)?.ok) continue;
+    const raw = await payPropGetAll<{
+      amount?: number | string;
+      category?: { name?: string };
+      beneficiary?: { type?: string };
+      payment_batch?: { transfer_date?: string };
+    }>(acc, "report/all-payments", { from_date: wFrom, to_date: wTo }).catch(() => []);
+    const label = payPropLabel(acc);
+    split[label] = {};
+    for (const r of raw) {
+      if ((r.payment_batch?.transfer_date ?? "").slice(0, 7) !== month) continue;
+      const c = r.category?.name || "Other";
+      const t = r.beneficiary?.type || "(none)";
+      split[label][c] ??= {};
+      split[label][c][t] = +(((split[label][c][t] ?? 0) + num(r.amount)).toFixed(2));
+    }
+  }
+  out.categoryByBeneficiaryType = split;
+
   out.combinedNet = +combinedNet.toFixed(2);
   out.susanSaid = 51068.37;
   return NextResponse.json(out);
