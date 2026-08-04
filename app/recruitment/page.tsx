@@ -527,10 +527,21 @@ export default function RecruitmentPage() {
                       playsInline
                       aria-hidden
                       className="pointer-events-none absolute max-w-none mix-blend-multiply"
-                      // brightness clips the export's 254-white to true 255
-                      // before the blend — without it, multiply leaves a 0.4%
-                      // ghost rectangle you can just see against flat clay.
-                      style={{ width: "3.54em", left: "-0.87em", top: "-1.06em", filter: "brightness(1.04)" }}
+                      // Two defences against the ghost box on flat clay:
+                      // brightness clips the export's near-white (and any
+                      // darker frames mid-playback) to true 255 before the
+                      // multiply, and the 2px clip-path trims the video's
+                      // outermost texels — at non-integer scale the GPU's
+                      // bilinear sampler bleeds darkness in from beyond the
+                      // frame edge, which no colour filter can reach because
+                      // it was never part of the image.
+                      style={{
+                        width: "3.54em",
+                        left: "-0.87em",
+                        top: "-1.06em",
+                        filter: "brightness(1.06)",
+                        clipPath: "inset(2px)",
+                      }}
                     />
                   </span>
                   <span className="sr-only">O</span>f <span className="written">Lettings</span>
