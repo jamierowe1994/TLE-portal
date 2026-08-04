@@ -438,7 +438,7 @@ export default function RecruitmentPage() {
                       // brightness clips the export's 254-white to true 255
                       // before the blend — without it, multiply leaves a 0.4%
                       // ghost rectangle you can just see against flat clay.
-                      style={{ width: "3.54em", left: "-0.87em", top: "-1.34em", filter: "brightness(1.04)" }}
+                      style={{ width: "3.54em", left: "-0.87em", top: "-1.26em", filter: "brightness(1.04)" }}
                     />
                   </span>
                   <span className="sr-only">O</span>f <span className="written">Lettings</span>
