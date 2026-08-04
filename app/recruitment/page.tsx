@@ -603,14 +603,14 @@ export default function RecruitmentPage() {
               "centre" in tile ? (
                 <div
                   key={i}
-                  className={`flex items-center justify-center bg-[#FFE4DF] p-6 ${tile.span}`}
+                  className={`flex items-center justify-center bg-[#DE968F] p-6 ${tile.span}`}
                 >
                   <p className="written max-w-[14ch] text-center text-[clamp(24px,2.8vw,40px)] leading-[1.05] text-ink">
                     {tile.title}
                   </p>
                 </div>
               ) : (
-                <figure key={i} className={`relative overflow-hidden bg-white p-4 ${tile.span}`}>
+                <figure key={i} className={`relative overflow-hidden bg-[#FFE4DF] p-4 ${tile.span}`}>
                   {tile.overlay ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -623,7 +623,7 @@ export default function RecruitmentPage() {
                       <figcaption className="absolute bottom-4 left-4 right-4">
                         <p className="text-[15px] font-bold leading-tight">{tile.title}</p>
                         {tile.body ? (
-                          <p className="mt-1 max-w-[34ch] text-[12px] leading-relaxed text-muted">{tile.body}</p>
+                          <p className="mt-1 max-w-[34ch] text-[12px] leading-relaxed text-ink/70">{tile.body}</p>
                         ) : null}
                       </figcaption>
                     </>
