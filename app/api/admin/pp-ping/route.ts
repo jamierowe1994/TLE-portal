@@ -22,6 +22,11 @@ export async function GET(req: NextRequest) {
   }
   const month = req.nextUrl.searchParams.get("m") ?? "2026-07";
   const ping = await payPropPing();
+  // PayProp sends amounts as STRINGS — a bare + concatenates them.
+  const num = (v: unknown) => {
+    const n = parseFloat(String(v ?? ""));
+    return Number.isFinite(n) ? n : 0;
+  };
   const out: Record<string, unknown> = { month, ping, fees: {} };
 
   // The PORTAL's own figure, not a hand-rolled filter: combinedGci is agency
