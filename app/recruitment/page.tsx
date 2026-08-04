@@ -323,14 +323,32 @@ function HeroVisual() {
         loop
         playsInline
         aria-hidden
-        // multiply melts the video's white ground into the clay behind it, so
-        // black-on-white line art reads as ink drawn straight onto the canvas —
-        // no alpha channel needed from the export.
+        // multiply melts a video's WHITE ground into the clay behind it, so
+        // black-on-white line art reads as ink drawn straight onto the canvas.
+        // It cannot rescue a BLACK ground — multiply keeps black, and the
+        // screen blend that removes black would erase the linework with it.
+        // Any future export must be black-on-white (or true alpha).
         className="pointer-events-none block w-full mix-blend-multiply"
       />
     );
   }
-  return <HousesScene src="/illustrations/houses-mono.png" className="w-full" />;
+  // The house style: our own Notioly figure, large, with the clay showing
+  // through its real transparency — no blend needed. Motion deliberately
+  // subtle after the spinning-keys experiment: a slow float and a pulse of
+  // sparkles, not a performance.
+  return (
+    <div className="relative mx-auto w-[86%] lg:w-[64%]">
+      <Scribble name="sparkles" className="page-art-pulse -right-6 top-[6%] h-14 w-14 text-ink/60 sm:h-16 sm:w-16" />
+      <Scribble name="wind" className="-left-8 top-[38%] hidden h-12 w-12 -scale-x-100 text-ink/40 sm:block" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/illustrations/notioly/png/mailbox-full.png"
+        alt=""
+        aria-hidden
+        className="page-art-float block w-full"
+      />
+    </div>
+  );
 }
 
 /**
@@ -417,15 +435,19 @@ export default function RecruitmentPage() {
                 full width; "OF LETTINGS" starts padded in on the left rather
                 than stretching to fit — the stagger is the composition, and it
                 spares us a single line that would never have fitted. */}
+            {/* The staircase, at full weight: line one flush left, line two
+                pushed over and RIGHT-FLUSH so it runs to the end of the screen.
+                The stagger position isn't a chosen indent any more — it falls
+                out of right-aligning the (slightly smaller) second line, which
+                is what keeps both lines bleeding to their respective edges at
+                every viewport width. Black weight, near-touching tracking,
+                lines almost stacked. */}
             <h1
-              className="mt-10 text-left font-extrabold uppercase text-ink sm:mt-12"
-              style={{ fontSize: "clamp(46px, 13.2vw, 210px)", lineHeight: 0.84, letterSpacing: "-0.045em" }}
+              className="mt-8 text-left font-black uppercase text-ink sm:mt-10"
+              style={{ fontSize: "clamp(46px, 13.4vw, 214px)", lineHeight: 0.82, letterSpacing: "-0.055em" }}
             >
               <span className="block whitespace-nowrap">The Future</span>
-              {/* A touch smaller so that, with the indent, its right edge lands
-                  where line one's does — "of Lettings" isn't trying to go full
-                  width, it finishes where THE FUTURE finishes. */}
-              <span className="block whitespace-nowrap pl-[20%]" style={{ fontSize: "0.78em" }}>
+              <span className="block whitespace-nowrap text-right" style={{ fontSize: "0.84em" }}>
                 of Lettings
               </span>
             </h1>
