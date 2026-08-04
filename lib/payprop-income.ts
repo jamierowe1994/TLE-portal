@@ -271,6 +271,23 @@ const FEE_CATEGORIES = new Set([
   "Rent and Legal Protection",
 ]);
 
+/**
+ * Catch-all categories that ARE fee income, but only when the money went to
+ * the agency itself.
+ *
+ * PayProp's "Other" bucket holds both. Measured on July 2026: Glasgow's
+ * Other-to-agency is GBP 1,908.30 gross = GBP 1,590.25 net, which is EXACTLY
+ * the "Other Fees" column of the accounts summary; its Other-to-beneficiary
+ * (46.14) and Other-to-global-beneficiary (2,159.34) appear nowhere on that
+ * sheet, and counting them overshoots Glasgow by GBP 1,837.90.
+ *
+ * So the rule is not a fudge to make one month fit: agency-directed money is
+ * by definition TLE income, while a beneficiary-directed row in a catch-all
+ * category could be a refund, a disbursement or a miscategorised cost, and
+ * the business does not treat it as commission.
+ */
+const AGENCY_ONLY_FEE_CATEGORIES = new Set(["Other"]);
+
 // Money that only passes through a recipient — never commission. Still used
 // to separate an agent's pass-through from their earnings.
 const NOT_EARNINGS = new Set(["Contractor", "Deposit (Custodial)", "Property account"]);
@@ -526,6 +543,15 @@ async function computeIncomeRange(
 
     if (category === "Owner") {
       ownerPayments += amount;
+    } else if (AGENCY_ONLY_FEE_CATEGORIES.has(category)) {
+      // Fee income only in the agency's own hands — see the set's comment.
+      if (type === "agency") {
+        agencyIncome += amount;
+        cats.set(category, (cats.get(category) ?? 0) + amount);
+      } else {
+        unclassified += amount;
+        unclassifiedCats.set(category, (unclassifiedCats.get(category) ?? 0) + amount);
+      }
     } else if (!FEE_CATEGORIES.has(category)) {
       // Contractor costs, deposits, refunds, uncategorised — real money, but
       // not commission. Kept visible so the total is accounted for.
