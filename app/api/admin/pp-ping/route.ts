@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { payPropPing, payPropGetAll, payPropAccounts, payPropLabel } from "@/lib/payprop";
+import { payPropPing, payPropAccounts, payPropLabel } from "@/lib/payprop";
+import { getAgencyIncome } from "@/lib/payprop-income";
 import { exVat } from "@/lib/format";
 
 // TEMPORARY, READ-ONLY: confirms each PayProp account's live connection in
@@ -23,38 +24,27 @@ export async function GET(req: NextRequest) {
   const ping = await payPropPing();
   const out: Record<string, unknown> = { month, ping, fees: {} };
 
-  const [y, m] = month.split("-").map(Number);
-  const from = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
-  const to = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
-  const num = (v: unknown) => {
-    const n = parseFloat(String(v ?? ""));
-    return Number.isFinite(n) ? n : 0;
-  };
-
+  // The PORTAL's own figure, not a hand-rolled filter: combinedGci is agency
+  // slice + partner fees, which is what Susan's "Total" column is. An
+  // agency-only filter matches Glasgow (zero associate payments every month)
+  // and badly under-counts E&W (27k to associates in July) — the exact trap
+  // this probe fell into first time.
+  const income = await getAgencyIncome(month);
   let combinedNet = 0;
-  for (const acc of payPropAccounts()) {
-    const label = payPropLabel(acc);
-    if (!ping.find((p) => p.account === acc)?.ok) {
-      (out.fees as Record<string, unknown>)[label] = "not authenticated";
-      continue;
+  if (income) {
+    for (const a of income.byAccount) {
+      const gross = +a.combinedGci.toFixed(2);
+      const net = +exVat(gross).toFixed(2);
+      combinedNet += net;
+      (out.fees as Record<string, unknown>)[a.label] = {
+        gross,
+        net,
+        agencyOnlyNet: +exVat(a.agencyIncome).toFixed(2),
+      };
     }
-    const rows = await payPropGetAll<Row>(acc, "report/all-payments", {
-      from_date: from,
-      to_date: to,
-    }).catch(() => null);
-    if (!rows) {
-      (out.fees as Record<string, unknown>)[label] = "fetch failed";
-      continue;
-    }
-    const fee = rows.filter(
-      (r) =>
-        r.beneficiary?.type === "agency" &&
-        (r.payment_batch?.transfer_date ?? "").slice(0, 7) === month
-    );
-    const gross = +fee.reduce((t, r) => t + num(r.amount), 0).toFixed(2);
-    const net = +exVat(gross).toFixed(2);
-    combinedNet += net;
-    (out.fees as Record<string, unknown>)[label] = { gross, net, rows: fee.length };
+    out.portalCombinedGciGross = +income.combinedGci.toFixed(2);
+    out.paidToBeneficiaries = +income.paidToBeneficiaries.toFixed(2);
+    out.unclassified = income.unclassifiedByCategory.slice(0, 6);
   }
   out.combinedNet = +combinedNet.toFixed(2);
   out.susanSaid = 51068.37;
