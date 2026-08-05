@@ -43,12 +43,15 @@ function initials(name: string): string {
 function greeting(name: string): { hello: string; prompt: string } {
   const first = name.split(" ")[0] || name;
   const h = new Date().getHours();
+  // Four bands, not six. The late one has to come BEFORE midnight to ever be
+  // seen — the previous version only said "Still up?" after 5am had passed,
+  // which is nobody's idea of late, so from 22:00 to 05:00 it now owns the
+  // greeting. Ordered earliest-hour-first so the small-hours case is reached.
   if (h < 5) return { hello: `Still up, ${first}?`, prompt: "Burning the midnight oil — don't work too hard." };
-  if (h < 7) return { hello: `Morning, ${first}`, prompt: "You're an early riser — let's make it count." };
   if (h < 12) return { hello: `Good morning, ${first}`, prompt: "Here's where you're at today." };
   if (h < 17) return { hello: `Good afternoon, ${first}`, prompt: "Hope the day's going your way." };
-  if (h < 21) return { hello: `Good evening, ${first}`, prompt: "Winding down — here's your day." };
-  return { hello: `Evening, ${first}`, prompt: "Late one? Here's the latest." };
+  if (h < 22) return { hello: `Good evening, ${first}`, prompt: "Winding down — here's your day." };
+  return { hello: `Still up, ${first}?`, prompt: "Late one — here's the latest." };
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
