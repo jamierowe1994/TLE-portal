@@ -80,6 +80,48 @@ export function currentMonth(): string {
 }
 
 /**
+ * The last `count` months ending at the current one, oldest first.
+ *
+ * Rolls itself on the 1st. This exists because the month list used to be typed
+ * out by hand ("2026-01" … "2026-07"), which meant that on 1 August the
+ * dashboard had no August to offer and quietly kept showing July — the figures
+ * weren't stale, nobody could ask for the new month. Twelve months rather than
+ * year-to-date so January doesn't leave you unable to look back at December.
+ */
+export function recentMonths(count = 12): string[] {
+  const now = new Date();
+  const out: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+/** True when `month` is the month we're living in — i.e. still accumulating. */
+export function isLiveMonth(month: string): boolean {
+  return month === currentMonth();
+}
+
+/**
+ * How far through the live month we are, in plain words: "day 7 of 31".
+ * Past months are closed and say so. This is the context that stops a small
+ * number on the 7th reading as a bad month rather than an early one.
+ */
+export function monthProgressLabel(month: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(month ?? "");
+  if (!m) return "";
+  const year = Number(m[1]);
+  const mon = Number(m[2]);
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMon = now.getMonth() + 1;
+  if (year < curYear || (year === curYear && mon < curMon)) return "Closed";
+  if (year > curYear || (year === curYear && mon > curMon)) return "Not started";
+  return `Live · day ${now.getDate()} of ${new Date(year, mon, 0).getDate()}`;
+}
+
+/**
  * Fraction of the given month ("2026-07") that has elapsed, 0..1.
  * Past months → 1, future months → 0, current month → daysElapsed/daysInMonth.
  * Used for month-end run-rate predictions (actual / fraction).

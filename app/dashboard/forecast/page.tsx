@@ -16,16 +16,21 @@ import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilde
 /* Helpers                                                                   */
 /* ------------------------------------------------------------------------ */
 
-const YEAR = "2026";
+// Both derived from the clock, and that pairing is the whole point.
+//
+// The old hazard: ANCHOR from the wall clock while YEAR stayed "2026" meant
+// that at 2027-01 monthIdx(ANCHOR) was 0 — monthIdx throws the year away — so
+// every month of 2026 looked unstarted, became draggable, and a drag could
+// PUT a forecast over a closed month that already had an actual against it.
+// Pinning ANCHOR fixed that but froze the board on July.
+//
+// Deriving BOTH keeps them in the same year, which is what the guard actually
+// needed: at 2027-01 the grid is 2027's twelve months and the floor is January,
+// so nothing closed is reachable and the board still rolls.
+const YEAR = currentMonth().slice(0, 4);
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_KEYS = MONTH_LABELS.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
-// The latest month the portal holds anything for — the same value as
-// SNAPSHOT_MONTH in lib/seed-data.ts and ANCHOR in components/PeriodPicker.tsx
-// and app/dashboard/page.tsx. The builder's floor comes from here, never the
-// wall clock: monthIdx throws the year away, so at 2027-01 the clock made every
-// month of 2026 draggable and a drag PUTs a forecast over a closed month that
-// already has an actual against it.
-const ANCHOR = "2026-07";
+const ANCHOR = currentMonth();
 const monthIdx = (m: string) => Number(m.slice(5, 7)) - 1;
 
 // Standard management fee assumption for the estimated-income figure. TLE bills

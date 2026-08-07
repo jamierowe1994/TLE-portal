@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { monthLabel } from "@/lib/format";
+import { currentMonth, monthLabel } from "@/lib/format";
 
 // Compact period selector for the earnings view: one dropdown of preset
 // windows (default "This month"), a "By month" dropdown beside it, and a
@@ -15,8 +15,11 @@ export interface ResolvedPeriod {
   forecastMonth: string;
 }
 
-const YEAR = 2026;
-const ANCHOR = "2026-07"; // latest month covered by the current snapshot
+// Derived from the clock, not pinned to a snapshot. "This month" has to mean
+// the month the partner is actually in — a fixed anchor meant every agent's
+// "this month" silently stayed July once August began.
+const YEAR = Number(currentMonth().slice(0, 4));
+const ANCHOR = currentMonth();
 const SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const ALL_MONTHS = SHORT.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
 

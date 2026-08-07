@@ -14,7 +14,7 @@ import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import type { UserProfile } from "@/lib/types";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
-import { monthLabel } from "@/lib/format";
+import { currentMonth, monthLabel, monthProgressLabel, recentMonths } from "@/lib/format";
 
 import Overview from "@/app/admin/tabs/overview";
 import PaidLeads from "@/app/admin/tabs/paid-leads";
@@ -55,17 +55,12 @@ const TABS: { key: string; label: string; Component: TabComponent }[] = [
 // Diagnostics/Compliance/Arrears etc. are for doing the job, not showing it.
 const PRESENT_KEYS = ["overview", "paid-leads", "income", "portfolio", "forecast"];
 
-// Month selector range: Jan–Jul 2026, defaulting to July (the live month).
-const MONTHS = [
-  "2026-01",
-  "2026-02",
-  "2026-03",
-  "2026-04",
-  "2026-05",
-  "2026-06",
-  "2026-07",
-];
-const DEFAULT_MONTH = "2026-07";
+// The month list is DERIVED, never typed out. It was hardcoded Jan–Jul 2026,
+// so on 1 August the dashboard had no August to offer and sat on July —
+// nothing was stale, there was simply no way to ask for the new month.
+//
+// Twelve rolling months so January can still look back at December. Signing in
+// always lands on the live month: month-to-date, however far in we are.
 
 /* --------------------------- CRM shell chrome --------------------------- */
 
@@ -276,7 +271,9 @@ function AdminShell({
 }) {
   const { presenting } = usePresent();
   const [tabIndex, setTabIndex] = useState(0);
-  const [month, setMonth] = useState(DEFAULT_MONTH);
+  // Resolved once per mount rather than at module load, so a tab left open
+  // overnight on the 31st picks up the new month on its next visit.
+  const [month, setMonth] = useState(currentMonth);
   const [autoCycle, setAutoCycle] = useState(false);
   const [seed, setSeed] = useState<SeedData | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
@@ -359,10 +356,21 @@ function AdminShell({
   const active = TABS[tabIndex];
   const ActiveComponent = active.Component;
 
-  const monthOptions = useMemo(
-    () => MONTHS.map((m) => ({ value: m, label: monthLabel(m) })),
-    []
-  );
+  // Newest first: the live month is the one she wants, so it shouldn't be at
+  // the bottom of a twelve-item list. It's labelled, so there's no doubt which
+  // figures are still moving and which are finished.
+  const monthOptions = useMemo(() => {
+    const live = currentMonth();
+    return recentMonths(12)
+      .slice()
+      .reverse()
+      .map((m) => ({
+        value: m,
+        label: m === live ? `${monthLabel(m)} — live` : monthLabel(m),
+      }));
+  }, []);
+
+  const monthStatus = monthProgressLabel(month);
 
   return (
     <div
@@ -432,7 +440,14 @@ function AdminShell({
       >
         <div className="min-w-0">
           <h1 className="truncate text-[16px] font-semibold leading-tight">{active.label}</h1>
-          <p className="truncate text-[12px] text-muted">TLE Business · {monthLabel(month)}</p>
+          {/* "day 7 of 31" is the difference between a bad month and an early
+              one — without it a small figure on the 7th reads as alarming. */}
+          <p className="truncate text-[12px] text-muted">
+            TLE Business · {monthLabel(month)} ·{" "}
+            <span className={monthStatus.startsWith("Live") ? "text-accent" : undefined}>
+              {monthStatus}
+            </span>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <select
