@@ -22,9 +22,15 @@ import { payPropAccessToken, type PayPropAccountId } from "@/lib/payprop";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+/** Distinguishes "the bridge isn't switched on here" from "wrong secret".
+ *  Whether a FEATURE is enabled is not a secret, and conflating the two
+ *  makes a misconfiguration impossible to diagnose from the outside. */
+function bridgeOpen(): boolean {
+  return Boolean(process.env.OS_BRIDGE_SECRET);
+}
+
 function authorised(req: NextRequest): boolean {
   const expected = process.env.OS_BRIDGE_SECRET ?? "";
-  // Unset means the bridge is closed, not open to everyone.
   if (!expected) return false;
   const got = req.headers.get("x-os-bridge") ?? "";
   if (got.length !== expected.length) return false;
@@ -34,6 +40,12 @@ function authorised(req: NextRequest): boolean {
 }
 
 export async function GET(req: NextRequest) {
+  if (!bridgeOpen()) {
+    return NextResponse.json(
+      { ok: false, error: "OS_BRIDGE_SECRET is not set on the portal — the bridge is switched off here." },
+      { status: 503 }
+    );
+  }
   if (!authorised(req)) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
