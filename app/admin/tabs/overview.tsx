@@ -781,25 +781,55 @@ export default function Overview({ month }: { month: string }) {
     return asLive(v, note, `${v}%`);
   };
 
-  // ---- Headline "Jun YTD" band → live sums of the closed months ----
-  // Same stored per-month figures the period pills use, summed Jan–Jun (the
-  // band's label really means "closed months so far"). GCI + Total Income
-  // stay snapshot — they're PayProp figures and PayProp has no API access.
+  // ---- Headline YEAR-TO-DATE band, ending at the selected month ----
+  // Same stored per-month figures the period pills use. GCI + Total Income
+  // stay snapshot — they're PayProp figures on a route this tab doesn't call.
   // Pipeline is a right-now state metric, so it upgrades to the live REX
-  // let-agreed count rather than a June sum.
-  // Every month that has actually closed, not a typed-out Jan–Jun. The old
-  // literal meant the headline band silently stopped growing: once July closed
-  // it still summed to June, so the "year so far" lost a whole month.
-  const JAN_JUN = [...CLOSED].reverse();
+  // let-agreed count rather than a year sum.
+  /**
+   * The headline band is YEAR TO DATE, and it ends at whichever pill is
+   * selected — January through that month inclusive.
+   *
+   * It used to sum a fixed Jan–Jun and ignore the pill entirely, so it read
+   * "Jun YTD MAs 255" no matter which month you clicked. Two things were wrong
+   * at once: the window never grew as months closed, and clicking July or
+   * August changed nothing above the fold.
+   *
+   * The live month is included from the live sweep — it has no stored history
+   * row yet, being unfinished — so August YTD is Jan–Jul stored plus August so
+   * far, which is what "year to date" means on the 10th.
+   */
+  const ytdThrough = kpiKey === "ytd" ? LIVE : (PERIOD_MONTHS[kpiKey]?.[0] ?? LIVE);
+  /** "August" — the month the year-to-date window runs up to. */
+  const ytdLabel = MONTH_NAMES[Number(ytdThrough.slice(5, 7)) - 1] ?? "";
+  const ytdMonths = [
+    ...CLOSED.filter((m) => m <= ytdThrough),
+  ].reverse();
+  const includesLive = ytdThrough >= LIVE;
+
   const closedSum = (
     metric: "combinedMas" | "listings" | "applications" | "moveIns"
   ): number | null => {
     if (!hist) return null;
     let total = 0;
-    for (const m of JAN_JUN) {
+    for (const m of ytdMonths) {
       const v = hist.months[m]?.[metric];
       if (v == null) return null;
       total += v;
+    }
+    // The unfinished month has no history row — take it from the live sweep,
+    // or the total would silently stop at the end of last month.
+    if (includesLive) {
+      const liveNow =
+        metric === "moveIns"
+          ? live?.propoly?.moveInsThisMonth
+          : metric === "combinedMas"
+            ? live?.monthCounts?.combinedMas
+            : metric === "listings"
+              ? live?.monthCounts?.newListings
+              : live?.monthCounts?.applications;
+      if (liveNow == null) return null;
+      total += liveNow;
     }
     return total;
   };
@@ -1001,11 +1031,9 @@ export default function Overview({ month }: { month: string }) {
       {/* ---- headline band ---- */}
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 className="text-[13px] font-semibold uppercase tracking-wide">
-            KPI Metrics · July MTD
-          </h2>
+          <h2 className="text-[13px] font-semibold uppercase tracking-wide">KPI Metrics</h2>
           <span className="text-[11px] text-muted">
-            Snapshot {d.headline.lastUpdated} · live tiles refresh on load
+            Year to date · {ytdLabel} · live tiles refresh on load
           </span>
           <button
             type="button"
@@ -1020,12 +1048,12 @@ export default function Overview({ month }: { month: string }) {
           </button>
         </div>
         <div className={HEADLINE_GRID}>
-          <Tile label="Jun YTD MAs" stat={hlMas.stat} flag={hlMas.flag} compact />
-          <Tile label="Jun YTD Listings" stat={hlListings.stat} flag={hlListings.flag} compact />
-          <Tile label="Jun YTD Applications" stat={hlApplications.stat} flag={hlApplications.flag} compact />
-          <Tile label="Jun YTD Move-ins" stat={hlMoveIns.stat} flag={hlMoveIns.flag} compact />
+          <Tile label={`${ytdLabel} YTD MAs`} stat={hlMas.stat} flag={hlMas.flag} compact />
+          <Tile label={`${ytdLabel} YTD Listings`} stat={hlListings.stat} flag={hlListings.flag} compact />
+          <Tile label={`${ytdLabel} YTD Applications`} stat={hlApplications.stat} flag={hlApplications.flag} compact />
+          <Tile label={`${ytdLabel} YTD Move-ins`} stat={hlMoveIns.stat} flag={hlMoveIns.flag} compact />
           <Tile
-            label="Jun YTD GCI exc VAT"
+            label={`${ytdLabel} YTD GCI exc VAT`}
             stat={
               ytdMoney
                 ? {
@@ -1038,7 +1066,7 @@ export default function Overview({ month }: { month: string }) {
             }
             compact
           />
-          <Tile label="Jun YTD Total Income" stat={d.headline.totalIncome} compact />
+          <Tile label={`${ytdLabel} YTD Total Income`} stat={d.headline.totalIncome} compact />
           <Tile label="Pipeline now" stat={hlPipeline} compact />
         </div>
       </div>
