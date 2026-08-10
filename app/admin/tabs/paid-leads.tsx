@@ -10,6 +10,7 @@ import FunnelBar from "@/components/charts/FunnelBar";
 import TimescaleSelect from "@/components/TimescaleSelect";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import { monthLabel } from "@/lib/format";
+const SNAPSHOT_MONTH = "2026-07"; // the one month the seed answers for
 
 /* ------------------------------- socials ------------------------------- */
 
@@ -185,7 +186,6 @@ function SocialsSection() {
 
 export default function PaidLeadsTab({ month, seed }: { month: string; seed: SeedData }) {
   const pl = seed.paidLeads;
-  const isSnapshotMonth = month === "2026-07";
 
   // Live layer: Meta answers leads/spend/CPL; GHL answers the funnel
   // (created → referred to agents → MAs booked) from the paid pipelines.
@@ -307,14 +307,20 @@ export default function PaidLeadsTab({ month, seed }: { month: string; seed: See
         </div>
       )}
 
-      {!isSnapshotMonth ? (
+      {/* A FLOW tab: the month selector genuinely re-queries the source, so
+          most figures below really are {monthLabel(month)}. The warning is
+          only about the ones still on the seed, which stay badged and dated
+          — the old wording condemned the whole tab as stale, including the
+          live figures it had just fetched for the selected month. */}
+      {month !== SNAPSHOT_MONTH ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
-          Snapshot data covers July 2026 — figures below are from the 11 Jul
-          2026 capture, not {monthLabel(month)}.
+          Live figures below are for {monthLabel(month)}. Anything still badged{" "}
+          <em>snapshot</em> comes from the 11 Jul 2026 capture and answers for July only —
+          it is not {monthLabel(month)}.
         </div>
       ) : null}
 
-      {/* July MTD cards */}
+      {/* Month cards — the selected month, not a fixed July */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label="Leads generated (MTD)" stat={leadsStat} sub={leadsSub} big />
         <StatCard label="Referred to agents" stat={referredStat} />

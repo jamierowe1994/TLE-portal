@@ -10,6 +10,7 @@ import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { ComplianceAgentRow, ComplianceTypeRow } from "@/lib/seed-types";
 import { formatPct, monthLabel } from "@/lib/format";
+import { liveMonth } from "@/lib/roster";
 
 interface LiveCompliance {
   totalItems: number;
@@ -81,7 +82,6 @@ const AGENT_COLUMNS: DataTableColumn<ComplianceAgentRow & Record<string, unknown
 
 export default function ComplianceTab({ month, seed }: { month: string; seed: SeedData }) {
   const c = seed.compliance;
-  const isSnapshotMonth = month === "2026-07";
 
   // Live totals from REX. The sweep takes a while on a large account, so poll
   // rather than blocking the tab on it.
@@ -122,10 +122,18 @@ export default function ComplianceTab({ month, seed }: { month: string; seed: Se
         Property Management module; snapshot figures until then.
       </div>
 
-      {!isSnapshotMonth ? (
+      {/* This tab reads a STOCK, not a flow. PayProp and Rex both export
+          current state and neither keeps a history, so "as it stood in June"
+          cannot be rebuilt — only invented. The month selector above does not
+          change these figures, and saying so is the whole point of this
+          banner: the old wording implied they were a July capture, which made
+          a live read look stale AND made a past month look answerable. */}
+      {month !== liveMonth() ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
-          Snapshot data covers July 2026 — figures below are from the 11 Jul
-          2026 capture, not {monthLabel(month)}.
+          Everything below is <strong>as at today</strong>, not {monthLabel(month)}. These are
+          current-state figures — neither PayProp nor Rex stores a history of them, so a past
+          month can&apos;t be rebuilt. Live figures carry their own date; anything still on the
+          snapshot is badged and dated 11 Jul 2026.
         </div>
       ) : null}
 

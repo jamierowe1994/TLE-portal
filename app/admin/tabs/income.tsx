@@ -12,6 +12,7 @@ import Bars from "@/components/charts/Bars";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { IncomeMonthlyRow, LicenceFeeRow } from "@/lib/seed-types";
 import { exVat, formatGBP, formatNum, monthLabel } from "@/lib/format";
+const SNAPSHOT_MONTH = "2026-07"; // the one month the seed answers for
 
 
 /* ------------------------------ table columns ------------------------------ */
@@ -241,7 +242,6 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
   const splitPartnerNet =
     liveSplit && prev ? gbp(prev.paidToBeneficiaries) : inc.june.partnerNetIncome.display ?? "";
 
-  const isSnapshotMonth = month === "2026-07";
 
   // Live estimate input: this month's completed move-ins from Propoly.
   const [liveMoveIns, setLiveMoveIns] = useState<number | null>(null);
@@ -358,10 +358,16 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
         </section>
       ) : null}
 
-      {!isSnapshotMonth ? (
+      {/* A FLOW tab: the month selector genuinely re-queries the source, so
+          most figures below really are {monthLabel(month)}. The warning is
+          only about the ones still on the seed, which stay badged and dated
+          — the old wording condemned the whole tab as stale, including the
+          live figures it had just fetched for the selected month. */}
+      {month !== SNAPSHOT_MONTH ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
-          Snapshot data covers July 2026 — figures below are from the 11 Jul
-          2026 capture, not {monthLabel(month)}.
+          Live figures below are for {monthLabel(month)}. Anything still badged{" "}
+          <em>snapshot</em> comes from the 11 Jul 2026 capture and answers for July only —
+          it is not {monthLabel(month)}.
         </div>
       ) : null}
 

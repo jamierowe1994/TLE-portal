@@ -17,6 +17,7 @@ import type { PipelineRow, MoveInRow } from "@/lib/seed-types";
 import { resolveStat, type ManualOverride } from "@/lib/stats";
 import { formatDate, formatGBP, monthLabel } from "@/lib/format";
 import type { ActualOverride, StatValue } from "@/lib/types";
+const SNAPSHOT_MONTH = "2026-07"; // the one month the seed answers for
 
 /* ------------------------------ status chips ------------------------------ */
 
@@ -157,7 +158,6 @@ const MONTH_NAME = (m: string) =>
 
 export default function MoveInsTab({ month, seed }: { month: string; seed: SeedData }) {
   const h = seed.moveInHeader;
-  const isSnapshotMonth = month === "2026-07";
 
   // Admin-added move-in rows + optional explicit count override for the month.
   const [addedRows, setAddedRows] = useState<MoveInRow[]>([]);
@@ -474,10 +474,16 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
           })()
         : null}
 
-      {!isSnapshotMonth ? (
+      {/* A FLOW tab: the month selector genuinely re-queries the source, so
+          most figures below really are {monthLabel(month)}. The warning is
+          only about the ones still on the seed, which stay badged and dated
+          — the old wording condemned the whole tab as stale, including the
+          live figures it had just fetched for the selected month. */}
+      {month !== SNAPSHOT_MONTH ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
-          Snapshot data covers July 2026 — tables below are from the 11 Jul
-          2026 capture, not {monthLabel(month)}.
+          Live figures below are for {monthLabel(month)}. Anything still badged{" "}
+          <em>snapshot</em> comes from the 11 Jul 2026 capture and answers for July only —
+          it is not {monthLabel(month)}.
         </div>
       ) : null}
 

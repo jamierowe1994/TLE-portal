@@ -12,6 +12,7 @@ import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { ArrearsTenantRow } from "@/lib/seed-types";
 import { formatDate, formatGBP, formatNum, monthLabel } from "@/lib/format";
+import { liveMonth } from "@/lib/roster";
 
 const COLUMNS: DataTableColumn<ArrearsTenantRow & Record<string, unknown>>[] = [
   { key: "tenant", label: "Tenant" },
@@ -44,7 +45,6 @@ const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
 export default function ArrearsTab({ month, seed }: { month: string; seed: SeedData }) {
   const a = seed.arrears;
   const s = a.summary;
-  const isSnapshotMonth = month === "2026-07";
 
   // PayProp gathers in the background, so poll until it lands rather than
   // sitting on the snapshot for the whole session.
@@ -101,10 +101,18 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
         </div>
       )}
 
-      {!isSnapshotMonth ? (
+      {/* This tab reads a STOCK, not a flow. PayProp and Rex both export
+          current state and neither keeps a history, so "as it stood in June"
+          cannot be rebuilt — only invented. The month selector above does not
+          change these figures, and saying so is the whole point of this
+          banner: the old wording implied they were a July capture, which made
+          a live read look stale AND made a past month look answerable. */}
+      {month !== liveMonth() ? (
         <div className="rounded-2xl border border-line bg-card px-4 py-3 text-[13px] text-muted">
-          Snapshot data covers July 2026 — figures below are from the 11 Jul
-          2026 capture, not {monthLabel(month)}.
+          Everything below is <strong>as at today</strong>, not {monthLabel(month)}. These are
+          current-state figures — neither PayProp nor Rex stores a history of them, so a past
+          month can&apos;t be rebuilt. Live figures carry their own date; anything still on the
+          snapshot is badged and dated 11 Jul 2026.
         </div>
       ) : null}
 
