@@ -128,11 +128,15 @@ const MONTH_NAMES = ["January","February","March","April","May","June","July","A
 function emptyPeriod(key: string): PeriodKpis {
   const idx = SHORT_KEYS.indexOf(key);
   const label = idx >= 0 ? `${MONTH_NAMES[idx]} MTD` : key.toUpperCase();
+  // NOT "live-rex": Tile keys its green border and pulsing LIVE chip off
+  // source.startsWith("live-"), so a null dressed as live rendered an empty
+  // tile that claimed to be a live reading — and promised it would "fill in",
+  // which for the deliberately-gated stock tiles is false by construction.
   const none = (): StatValue => ({
     value: null,
     display: "—",
-    source: "live-rex",
-    note: "No figure for this month yet — it fills in as the live sweep of REX, Propoly and PayProp completes.",
+    source: "derived",
+    note: "No figure for this month on this source.",
   });
   return {
     label,
@@ -454,35 +458,94 @@ export default function Overview({ month }: { month: string }) {
   // The API answers instantly with the last-good figures (flagged `stale`)
   // while it re-sweeps REX in the background — poll a few times to swap the
   // fresh numbers in as soon as they land.
+  /*
+   * The live sweep, with cancellation — which it did not have, and which was
+   * the worst defect on this page.
+   *
+   * Three things conspired. loadLive re-enters itself via setTimeout every 6s
+   * while the server reports `stale`; the effect that drives it returned no
+   * cleanup (the only one of four here that didn't); and setLive() wrote
+   * unconditionally. So switching month left the OLD month's poll chain alive,
+   * and six seconds later it wrote its figures into state while every heading
+   * said the new month. Two quick picks did it without any timer at all,
+   * because a cached month answers in milliseconds and a cold one sweeps for
+   * ~15s, so replies do not arrive in the order they were asked for.
+   *
+   * Not theoretical: the route returns stale:true whenever a persisted
+   * snapshot exists and the memory cache is cold, and snapshots exist for 8 of
+   * the 12 months the picker offers. Measured contamination: RLP flipping
+   * 100% (Dec 2025) -> 58% (Aug 2026), MA-split total 26 -> 3.
+   *
+   * Belt and braces: a cancelled flag, a cleared timer, AND a check that the
+   * payload's own `month` matches what we asked for.
+   */
   const staleRetries = useRef(0);
-  const loadLive = useCallback(async (refresh = false) => {
-    setLiveLoading(true);
-    // Each month gets its own retry budget — without this, switching months
-    // after a slow sweep leaves the new month with no retries left and it
-    // sits on stale figures for ever.
-    try {
-      const res = await fetch(`/api/admin/live-business?month=${sel}${refresh ? "&refresh=1" : ""}`, {
-        cache: "no-store",
-      });
-      const j = (await res.json()) as LiveBusiness & { configured?: boolean; stale?: boolean };
-      setLive(j);
-      if (j.stale && staleRetries.current < 6) {
-        staleRetries.current += 1;
-        setTimeout(() => void loadLive(), 6000);
-        return; // keep the refreshing chip up while the sweep runs
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Each month gets its own retry budget. Sharing one counter handed a
+    // still-running old chain a fresh budget on every month change.
+    let retries = 0;
+
+    const run = async (refresh = false) => {
+      if (cancelled) return;
+      setLiveLoading(true);
+      try {
+        const res = await fetch(
+          `/api/admin/live-business?month=${sel}${refresh ? "&refresh=1" : ""}`,
+          { cache: "no-store" }
+        );
+        const j = (await res.json()) as LiveBusiness & { configured?: boolean; stale?: boolean };
+        if (cancelled) return;
+        // The payload says which month it is. Never render a month we didn't
+        // ask for, whatever raced its way back here.
+        if (j.month && j.month !== sel) return;
+        setLive(j);
+        if (j.stale && retries < 6) {
+          retries += 1;
+          timer = setTimeout(() => void run(), 6000);
+          return; // keep the refreshing chip up while the sweep runs
+        }
+        setLiveLoading(false);
+      } catch {
+        /* live layer is an upgrade — the rest of the page still renders */
+        if (!cancelled) setLiveLoading(false);
       }
-      staleRetries.current = 0;
-      setLiveLoading(false);
-    } catch {
-      /* live layer is an upgrade — the snapshot mirror still renders */
-      setLiveLoading(false);
-    }
+    };
+
+    // Clear the previous month's figures rather than leaving them on screen,
+    // LIVE-badged, under the new month's heading for the length of a sweep.
+    // The funnel tiles fall back to stored history, but RLP and the MA split
+    // have no fallback at all — they would simply show the wrong month.
+    setLive(null);
+    staleRetries.current = 0;
+    void run();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [sel]);
 
-  useEffect(() => {
-    staleRetries.current = 0;
-    void loadLive();
-  }, [loadLive]);
+  /** Manual "Refresh live" — forces a re-sweep of the selected month. */
+  const loadLive = useCallback(
+    async (refresh = true) => {
+      setLiveLoading(true);
+      try {
+        const res = await fetch(
+          `/api/admin/live-business?month=${sel}${refresh ? "&refresh=1" : ""}`,
+          { cache: "no-store" }
+        );
+        const j = (await res.json()) as LiveBusiness & { configured?: boolean; stale?: boolean };
+        if (!j.month || j.month === sel) setLive(j);
+      } catch {
+        /* leave whatever is on screen */
+      } finally {
+        setLiveLoading(false);
+      }
+    },
+    [sel]
+  );
 
   // Closed-month history + like-for-like YoY. First-ever call computes and
   // stores the backfill (slow); afterwards it's served from the store.
@@ -545,7 +608,7 @@ export default function Overview({ month }: { month: string }) {
     let cancelled = false;
     let tries = 0;
     const ask = () => {
-      fetch("/api/admin/payprop-live", { cache: "no-store" })
+      fetch(`/api/admin/payprop-live?month=${sel}`, { cache: "no-store" })
         .then((r) => r.json())
         .then((res: {
           income?: { combinedGci: number; agencyIncome: number; agentsEarning: number } | null;
@@ -568,15 +631,26 @@ export default function Overview({ month }: { month: string }) {
         })
         .catch(() => {});
     };
+    // Cleared on month change, so the previous month's money can't sit under
+    // the new month's heading while this walk runs.
+    setYtdMoney(null);
+    setLiveMoney(null);
     ask();
     return () => {
       cancelled = true;
     };
-  }, []);
+    // The money fetch had NO month param and [] deps: of the five fetches on
+    // this page it was the one most obviously wrong, because its tiles are
+    // labelled with the SELECTED month while its window was pinned to the
+    // clock. Picking September 2025 showed August 2026's money under a
+    // September heading.
+  }, [sel]);
 
   const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
-  // Live only makes sense against the current month's figures.
-  const liveForThisPeriod = isCurrent ? liveMoney : null;
+  // The money walk is asked for `sel`, so its figures describe the selected
+  // month whichever one that is — the isCurrent gate here was left over from
+  // when the fetch was pinned to the clock.
+  const liveForThisPeriod = liveMoney;
 
   const liveGciPerMoveIn: StatValue | null =
     liveForThisPeriod && liveForThisPeriod.moveIns
@@ -614,10 +688,18 @@ export default function Overview({ month }: { month: string }) {
   // an August pill: every tile would render a plausible number sourced from a
   // month nobody selected. An empty period renders "—" until the live layer
   // fills it in, which is the honest state.
-  // The seed holds one month — July 2026. Any other selection gets an empty
-  // period whose tiles read "—" until the live layer fills them, rather than
-  // borrowing July's numbers.
-  const kpiPeriod = (sel === "2026-07" ? d.periods.jul : undefined) ?? emptyPeriod(sel);
+  /*
+   * Susan's capture holds a value for every month of 2026 it covers, keyed by
+   * three-letter month name. Map the selection back to that key rather than
+   * special-casing July — hardcoding "2026-07" made every other month fall to
+   * emptyPeriod, whose values are null, which in turn made the June
+   * reconciliation dot unreachable on the funnel (flagIf needs a non-null
+   * figure of Susan's to compare against, and June's had become null).
+   *
+   * The seed only describes 2026; a 2025 selection correctly gets nothing.
+   */
+  const seedKey = sel.startsWith("2026-") ? SHORT_KEYS[Number(sel.slice(5, 7)) - 1] : null;
+  const kpiPeriod = (seedKey ? d.periods[seedKey] : undefined) ?? emptyPeriod(sel);
   const rampPeriod = d.periods[rampKey] ?? emptyPeriod(rampKey);
 
   // Upgrade a snapshot stat to live when the live layer carries the same
@@ -789,6 +871,19 @@ export default function Overview({ month }: { month: string }) {
    * snapshot's own percentage stands. A live numerator over a snapshot
    * denominator is a number nobody could source.
    */
+  /**
+   * A rate is only as trustworthy as its inputs: both must be measured, or the
+   * snapshot's own percentage stands.
+   *
+   * PLUS a plausibility ceiling. Ten days into August there were 2 listings and
+   * 24 move-ins, giving "Listing → Move-in 1200%" with a green LIVE dot — not
+   * a counting error but a month-to-date artefact, because move-ins complete
+   * against listings instructed in earlier months. Arithmetically correct and
+   * completely useless, and a green dot on 1200% is what teaches someone to
+   * stop trusting green dots. Above the ceiling the figure is withheld and the
+   * reason is given instead.
+   */
+  const RATE_CEILING = 300;
   const derived = (
     num: StatValue,
     den: StatValue,
@@ -798,6 +893,16 @@ export default function Overview({ month }: { month: string }) {
     if (!measured(num) || !measured(den)) return fallback;
     const v = pct(num.value as number, den.value as number);
     if (v == null) return fallback;
+    if (v > RATE_CEILING) {
+      return {
+        value: null,
+        display: "—",
+        source: "derived",
+        note: `${num.value} ÷ ${den.value} is ${v}%, which isn't a meaningful conversion rate${
+          isCurrent ? " this early in the month" : ""
+        } — completions land against instructions from earlier months. Shown once the month has enough of both.`,
+      };
+    }
     return asLive(v, note, `${v}%`);
   };
 
@@ -887,7 +992,22 @@ export default function Overview({ month }: { month: string }) {
     source: StatValue["source"]
   ): { stat: StatValue; flag: string | null } => {
     const v = closedSum(metric);
-    if (v == null) return { stat: susan, flag: null };
+    // An incomplete window renders "—", NOT Susan's capture. The old fallback
+    // put four plausible numbers from a fixed June-2026 window under whatever
+    // month was selected, with the discrepancy dot forced off — and because
+    // `hist` is a separate round-trip, that was the state on every first paint.
+    // The only honest answers here are the real total or none.
+    if (v == null) {
+      return {
+        stat: {
+          value: null,
+          display: "—",
+          source: "derived",
+          note: `Year-to-date needs every month in ${ytdWindowLabel}; at least one hasn't been computed yet. It fills in once the history walk finishes.`,
+        },
+        flag: null,
+      };
+    }
     return {
       stat: { value: v, source, note, asOf: new Date().toISOString().slice(0, 10) },
       flag: flagIf(v, susan),
@@ -896,25 +1016,25 @@ export default function Overview({ month }: { month: string }) {
   const hlMas = headlineUpgrade(
     "combinedMas",
     d.headline.mas,
-    "Live from REX — combined MAs (recorded + listing-only, Susan's definition), Jan–Jun summed from the stored closed months.",
+    `Live from REX — combined MAs (recorded + listing-only, Susan's definition), ${ytdWindowLabel}, summed from the stored closed months.`,
     "live-rex"
   );
   const hlListings = headlineUpgrade(
     "listings",
     d.headline.listings,
-    "Live from REX — rental listings created Jan–Jun, drafts excluded, summed from the stored closed months.",
+    `Live from REX — rental listings created ${ytdWindowLabel}, drafts excluded, summed from the stored closed months.`,
     "live-rex"
   );
   const hlApplications = headlineUpgrade(
     "applications",
     d.headline.applications,
-    "Live from REX — applications accepted Jan–Jun, summed from the stored closed months.",
+    `Live from REX — applications accepted ${ytdWindowLabel}, summed from the stored closed months.`,
     "live-rex"
   );
   const hlMoveIns = headlineUpgrade(
     "moveIns",
     d.headline.moveIns,
-    "Live from Propoly — completed move-ins Jan–Jun. Susan's Move-In Report also counts managed transfers + marketing-only, so hers can run higher.",
+    `Live from Propoly — completed move-ins ${ytdWindowLabel}. Susan's Move-In Report also counts managed transfers + marketing-only, so hers can run higher.`,
     "live-propoly"
   );
   const hlPipeline: StatValue = live?.totals
@@ -1118,7 +1238,23 @@ export default function Overview({ month }: { month: string }) {
             }
             compact
           />
-          <Tile label={`${ytdLabel} YTD Total Income`} stat={d.headline.totalIncome} compact />
+          {/* Seed constant describing ONE window — the June-2026 year-to-date
+              capture. It has no live source on this route, so rather than wear
+              the selected month's label it only appears under its own. */}
+          <Tile
+            label={sel === "2026-06" ? "Jun YTD Total Income" : "Total Income"}
+            stat={
+              sel === "2026-06"
+                ? d.headline.totalIncome
+                : {
+                    value: null,
+                    display: "—",
+                    source: "snapshot",
+                    note: "Total income was captured once, as a June 2026 year-to-date figure. There is no live source for it on this page, so it is not shown for any other window rather than repeated under one.",
+                  }
+            }
+            compact
+          />
           <Tile label="Pipeline now" stat={hlPipeline} compact />
         </div>
       </div>
