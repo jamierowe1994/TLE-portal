@@ -25,14 +25,20 @@ export const runtime = "nodejs";
 /** Distinguishes "the bridge isn't switched on here" from "wrong secret".
  *  Whether a FEATURE is enabled is not a secret, and conflating the two
  *  makes a misconfiguration impossible to diagnose from the outside. */
+function bridgeSecret(): string {
+  // A long secret pasted into a dashboard arrives line-wrapped; compare the
+  // cleaned form so a stray newline isn't an unexplainable 401.
+  return (process.env.OS_BRIDGE_SECRET ?? "").replace(/\s+/g, "");
+}
+
 function bridgeOpen(): boolean {
-  return Boolean(process.env.OS_BRIDGE_SECRET);
+  return Boolean(bridgeSecret());
 }
 
 function authorised(req: NextRequest): boolean {
-  const expected = process.env.OS_BRIDGE_SECRET ?? "";
+  const expected = bridgeSecret();
   if (!expected) return false;
-  const got = req.headers.get("x-os-bridge") ?? "";
+  const got = (req.headers.get("x-os-bridge") ?? "").replace(/\s+/g, "");
   if (got.length !== expected.length) return false;
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= got.charCodeAt(i) ^ expected.charCodeAt(i);
