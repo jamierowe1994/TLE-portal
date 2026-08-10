@@ -708,7 +708,8 @@ export default function Overview({ month }: { month: string }) {
       flag: flagIf(v, susan),
     };
   };
-  const periodLabelBit = kpiKey === "ytd" ? "Jan 1 to today" : kpiPeriod.label;
+  const periodLabelBit =
+    kpiKey === "ytd" ? "Jan 1 to today" : kpiPeriod.label.replace(/\s*MTD$/, "");
   const hMas = histUpgrade(
     "combinedMas",
     kpiPeriod.funnel.marketAppraisals,
@@ -740,13 +741,56 @@ export default function Overview({ month }: { month: string }) {
     "live-propoly"
   );
 
+  const pct = (num: number, den: number): number | null =>
+    den > 0 ? Math.round((num / den) * 100) : null;
+
+  /* ------------- the funnel AS SELECTED, whichever month that is -------------
+   * One place that answers "what were the figures for the pill I clicked?".
+   * The live month reads from the live sweep, a closed month from stored
+   * history, and only a month with neither falls back to the snapshot.
+   *
+   * Everything downstream derives from THESE rather than re-testing isCurrent,
+   * which is why the conversion rates were frozen: they were computed only
+   * when the selected period was the current month, so every other pill showed
+   * the July snapshot's percentages and the rates never moved between months.
+   */
+  const effMas = hMas?.stat ?? funnelMas;
+  const effListings = hListings?.stat ?? funnelListings;
+  const effViewings = hViewings?.stat ?? funnelViewings;
+  const effApplications = hApplications?.stat ?? funnelApplications;
+  const effMoveIns = hMoveIns?.stat ?? funnelMoveIns;
+
+  /** Measured (live or stored-live), as opposed to a hand-keyed snapshot. */
+  const measured = (s: StatValue | undefined): s is StatValue =>
+    !!s && s.value != null && s.source.startsWith("live-");
+
+  /**
+   * A rate is only as trustworthy as its inputs: both must be measured, or the
+   * snapshot's own percentage stands. A live numerator over a snapshot
+   * denominator is a number nobody could source.
+   */
+  const derived = (
+    num: StatValue,
+    den: StatValue,
+    note: string,
+    fallback: StatValue
+  ): StatValue => {
+    if (!measured(num) || !measured(den)) return fallback;
+    const v = pct(num.value as number, den.value as number);
+    if (v == null) return fallback;
+    return asLive(v, note, `${v}%`);
+  };
+
   // ---- Headline "Jun YTD" band → live sums of the closed months ----
   // Same stored per-month figures the period pills use, summed Jan–Jun (the
   // band's label really means "closed months so far"). GCI + Total Income
   // stay snapshot — they're PayProp figures and PayProp has no API access.
   // Pipeline is a right-now state metric, so it upgrades to the live REX
   // let-agreed count rather than a June sum.
-  const JAN_JUN = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
+  // Every month that has actually closed, not a typed-out Jan–Jun. The old
+  // literal meant the headline band silently stopped growing: once July closed
+  // it still summed to June, so the "year so far" lost a whole month.
+  const JAN_JUN = [...CLOSED].reverse();
   const closedSum = (
     metric: "combinedMas" | "listings" | "applications" | "moveIns"
   ): number | null => {
@@ -805,22 +849,16 @@ export default function Overview({ month }: { month: string }) {
 
   // Conversion rates go live only when BOTH inputs are live — a live/snapshot
   // hybrid ratio would be a made-up number.
-  const pct = (num: number, den: number): number | null =>
-    den > 0 ? Math.round((num / den) * 100) : null;
-  // MA → Listing — live now the combined-MA denominator exists (recorded MAs
-  // alone gave 1200%-style nonsense; combined matches Susan's formula).
-  const liveMaToListing =
-    isCurrent && live?.monthCounts?.combinedMas != null && live?.monthCounts?.newListings != null
-      ? pct(live.monthCounts.newListings, live.monthCounts.combinedMas)
-      : null;
-  const convMaToListing: StatValue =
-    liveMaToListing != null
-      ? asLive(
-          liveMaToListing,
-          "Derived from live funnel — listings ÷ combined MAs (Susan's formula), this month.",
-          `${liveMaToListing}%`
-        )
-      : kpiPeriod.conversions.maToListing;
+  // MA → Listing, for WHICHEVER month is selected — derived from the same two
+  // tiles shown above it, so the rate and the figures it came from can never
+  // disagree. (Recorded MAs alone gave 1200%-style nonsense; the combined
+  // definition is Susan's formula.)
+  const convMaToListing = derived(
+    effListings,
+    effMas,
+    `Derived from the funnel above — listings ÷ combined MAs (Susan's formula), ${periodLabelBit}.`,
+    kpiPeriod.conversions.maToListing
+  );
   // RLP conversion — fully-managed share of this month's Propoly move-ins.
   const rlp = isCurrent ? (live?.rlpMtd ?? null) : null;
   const liveRlp = rlp && rlp.total > 0 ? pct(rlp.fullyManaged, rlp.total) : null;
@@ -833,22 +871,25 @@ export default function Overview({ month }: { month: string }) {
         )
       : kpiPeriod.conversions.rlpConversion;
 
-  const liveListingToMoveIn =
-    isCurrent && funnelListings.source === "live-rex" && funnelMoveIns.source === "live-propoly"
-      ? pct(funnelMoveIns.value ?? 0, funnelListings.value ?? 0)
-      : null;
-  const convListingToMoveIn: StatValue =
-    liveListingToMoveIn != null
-      ? asLive(liveListingToMoveIn, "Derived from live funnel — move-ins ÷ listings, this month.", `${liveListingToMoveIn}%`)
-      : kpiPeriod.conversions.listingToMoveIn;
+  const convListingToMoveIn = derived(
+    effMoveIns,
+    effListings,
+    `Derived from the funnel above — move-ins ÷ listings, ${periodLabelBit}.`,
+    kpiPeriod.conversions.listingToMoveIn
+  );
 
   // MAs by partner type — live REX per-agent MAs split by the Team Hub's
   // dual-brand flag. Lettings Lite has no hub category → snapshot.
   const mbt = isCurrent ? (live?.masByType ?? null) : null;
   const masTiles = {
+    // The same combined-MA figure as the funnel tile above, whichever month is
+    // selected — these two disagreeing was one of the things that made the
+    // page hard to trust.
     total: mbt
-      ? asLive(mbt.total, "Live from REX — MAs this month across all lettings agents.")
-      : d.masByPartnerType.total,
+      ? asLive(mbt.total, `Live from REX — MAs across all lettings agents, ${periodLabelBit}.`)
+      : measured(effMas)
+        ? effMas
+        : d.masByPartnerType.total,
     tle: mbt
       ? asLive(
           mbt.tle,
@@ -903,9 +944,13 @@ export default function Overview({ month }: { month: string }) {
 
   // The live pill is offered even though the seed has no entry for it — it is
   // the whole point of the page now. Everything else still needs stored KPIs.
+  // "July MTD" reads as a partial month; on a closed month it is simply wrong,
+  // and on the live one the pill already says which month it is. Dropped
+  // everywhere, so a total is a total.
+  const stripMtd = (l: string) => l.replace(/\s*MTD$/, "");
   const pillOptions = PERIOD_ORDER.filter((k) => k === LIVE_KEY || d.periods[k]).map((k) => ({
     key: k,
-    label: d.periods[k]?.label ?? emptyPeriod(k).label,
+    label: stripMtd(d.periods[k]?.label ?? emptyPeriod(k).label),
   }));
   // Her ramp pills say "July" rather than "July MTD".
   const rampPillOptions = pillOptions.map((p) => ({
@@ -999,7 +1044,7 @@ export default function Overview({ month }: { month: string }) {
       </div>
 
       {/* ---- 1. Agent Headcount ---- */}
-      <Section title="Agent Headcount — July 2026" source={d.sources.headcount}>
+      <Section title="Agent Headcount" source={d.sources.headcount}>
         <div className={TILE_GRID}>
           <Tile label="Active Agents" stat={hc.activeAgents} sub="Managing portfolio" />
           <Tile label="TLE" stat={hc.tle} sub="Full partner" />
@@ -1042,11 +1087,11 @@ export default function Overview({ month }: { month: string }) {
         <PeriodPills options={pillOptions} active={kpiKey} onChange={setKpiKey} />
         <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Sales Funnel</h3>
         <div className={TILE_GRID}>
-          <Tile label="Market Appraisals" stat={hMas?.stat ?? funnelMas} flag={hMas?.flag} />
-          <Tile label="Listings" stat={hListings?.stat ?? funnelListings} flag={hListings?.flag} />
-          <Tile label="Viewings" stat={hViewings?.stat ?? funnelViewings} flag={hViewings?.flag} />
-          <Tile label="Applications" stat={hApplications?.stat ?? funnelApplications} flag={hApplications?.flag} />
-          <Tile label="Move-ins" stat={hMoveIns?.stat ?? funnelMoveIns} flag={hMoveIns?.flag} />
+          <Tile label="Market Appraisals" stat={effMas} flag={hMas?.flag} />
+          <Tile label="Listings" stat={effListings} flag={hListings?.flag} />
+          <Tile label="Viewings" stat={effViewings} flag={hViewings?.flag} />
+          <Tile label="Applications" stat={effApplications} flag={hApplications?.flag} />
+          <Tile label="Move-ins" stat={effMoveIns} flag={hMoveIns?.flag} />
           <Tile label="Live Listings" stat={funnelLiveListings} />
           <Tile label="Forward Pipeline" stat={funnelPipeline} />
         </div>
@@ -1054,7 +1099,7 @@ export default function Overview({ month }: { month: string }) {
 
       {/* ---- 4. Conversion Rates ---- */}
       {/* Follows the Business KPIs pill, exactly as on her dashboard. */}
-      <Section title={`Conversion Rates — ${kpiPeriod.label}`} source={d.sources.conversions}>
+      <Section title={`Conversion Rates — ${periodLabelBit}`} source={d.sources.conversions}>
         <div className={TILE_GRID}>
           <Tile label="MA → Listing" stat={convMaToListing} sub={subNote(convMaToListing)} />
           <Tile label="Listing → Move-in" stat={convListingToMoveIn} sub={subNote(convListingToMoveIn)} />
@@ -1073,11 +1118,22 @@ export default function Overview({ month }: { month: string }) {
       </Section>
 
       {/* ---- 5. MAs by Partner Type ---- */}
-      <Section title="Market Appraisals by Partner Type" source={d.sources.masByPartnerType}>
+      <Section
+        title={`Market Appraisals by Partner Type${mbt ? ` — ${periodLabelBit}` : ""}`}
+        source={d.sources.masByPartnerType}
+      >
         <div className={TILE_GRID}>
           <Tile label="Total Appraisals" stat={masTiles.total} />
-          <Tile label="TLE Partners" stat={masTiles.tle} />
-          <Tile label="TLE Dual" stat={masTiles.tleDual} />
+          <Tile
+            label="TLE Partners"
+            stat={masTiles.tle}
+            sub={mbt ? null : "Split is live-month only"}
+          />
+          <Tile
+            label="TLE Dual"
+            stat={masTiles.tleDual}
+            sub={mbt ? null : "Split is live-month only"}
+          />
           <Tile label="Lettings Lite" stat={d.masByPartnerType.lettingsLite} />
         </div>
       </Section>
