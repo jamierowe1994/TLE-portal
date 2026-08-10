@@ -371,9 +371,9 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
         </div>
       ) : null}
 
-      {/* July MTD estimates */}
+      {/* Estimates for the selected month */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold">July MTD — estimates</h2>
+        <h2 className="text-sm font-semibold">{monthLabel(month)} — estimates</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard
             label={live ? "Combined GCI" : "Combined GCI (est)"}
@@ -421,7 +421,7 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
       {/* Split donut + June finals */}
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="card p-5">
-          <h2 className="text-sm font-semibold">TLE / partner split — July MTD est</h2>
+          <h2 className="text-sm font-semibold">TLE / partner split — {monthLabel(month)} est</h2>
           <div className="mt-4">
             <Donut
               segments={[

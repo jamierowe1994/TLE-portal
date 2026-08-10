@@ -9,13 +9,24 @@ import { useCallback, useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
 import SourceBadge from "@/components/SourceBadge";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
-import { SNAPSHOT_DATE } from "@/lib/roster";
+import { SNAPSHOT_DATE, liveMonth } from "@/lib/roster";
 import type { H2ReforecastRow } from "@/lib/seed-types";
 import { formatGBP, formatNum, formatPct } from "@/lib/format";
 import type { ActualOverride } from "@/lib/types";
 
-// The editable column is July 2026 — fixed, this grid is the H2 2026 plan.
-const PNL_MONTH = "2026-07";
+// This grid is the H2 2026 plan (Jul–Dec), so it deliberately does NOT follow
+// the month picker — the whole half-year is the point of it.
+//
+// The EDITABLE column does move, though. It was pinned to July, which meant
+// that from 1 August every actual typed in here was filed against July: the
+// figures went into the right grid under the wrong month. It now tracks the
+// live month, clamped into the plan's own window.
+const PNL_FIRST = "2026-07";
+const PNL_LAST = "2026-12";
+const pnlMonth = () => {
+  const m = liveMonth();
+  return m < PNL_FIRST ? PNL_FIRST : m > PNL_LAST ? PNL_LAST : m;
+};
 
 function formatCell(row: H2ReforecastRow, value: number): string {
   if (row.kind === "currency") return formatGBP(value);
@@ -36,7 +47,7 @@ export default function PnlTab({ month, seed }: { month: string; seed: SeedData 
   const loadOverrides = useCallback(async () => {
     try {
       const res = await fetch(
-        `/api/admin/actuals?month=${encodeURIComponent(PNL_MONTH)}`,
+        `/api/admin/actuals?month=${encodeURIComponent(pnlMonth())}`,
         { cache: "no-store" }
       );
       if (!res.ok) return;
@@ -47,7 +58,7 @@ export default function PnlTab({ month, seed }: { month: string; seed: SeedData 
       const map: Record<string, number> = {};
       for (const o of list) {
         const m = /^pnl\.([A-Za-z0-9]+)\.(\d{4}-\d{2})$/.exec(o.metric);
-        if (m && m[2] === PNL_MONTH && o.scope === "business") {
+        if (m && m[2] === pnlMonth() && o.scope === "business") {
           map[m[1]] = o.value;
         }
       }
@@ -81,8 +92,8 @@ export default function PnlTab({ month, seed }: { month: string; seed: SeedData 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scope: "business",
-          month: PNL_MONTH,
-          metric: `pnl.${row.key}.${PNL_MONTH}`,
+          month: pnlMonth(),
+          metric: `pnl.${row.key}.${pnlMonth()}`,
           value,
           note: `P&L manual entry — ${row.label}, Jul 2026`,
         }),

@@ -586,7 +586,7 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
 
       {/* ----------------------- per-agent KPI table ----------------------- */}
       <SectionTitle source={seed.agentKpisJulyMtd.source}>
-        Per-Agent KPIs — July MTD
+        Per-Agent KPIs — July 2026
       </SectionTitle>
       <p className="mb-2 text-xs text-muted">
         Click an agent&rsquo;s row to open their drill-down (forecast, ads,
@@ -858,7 +858,7 @@ function AgentDrilldown({
 
       {/* July KPIs */}
       <h4 className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">
-        July MTD KPIs (snapshot)
+        KPIs — July 2026 only (snapshot)
       </h4>
       {kpi ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
@@ -872,7 +872,7 @@ function AgentDrilldown({
         </div>
       ) : (
         <p className="text-xs text-muted">
-          Not in the July MTD Agent Detail table (no activity recorded).
+          Not in the July 2026 Agent Detail table (no activity recorded).
         </p>
       )}
 
