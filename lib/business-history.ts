@@ -6,6 +6,7 @@ import { hasDb, q } from "@/lib/db";
 import { rexConfigured, rexLettingsAgents } from "@/lib/rex";
 import { getBusinessMonthCounts } from "@/lib/rex-stats";
 import { getPropolyMoveInsInRange } from "@/lib/propoly-deals";
+import { HISTORY_FLOOR, withinHistory } from "@/lib/roster";
 
 // Live funnel figures for CLOSED months, computed once with the validated
 // definitions and stored forever (a finished month can't change, so we don't
@@ -140,16 +141,20 @@ function complete(h: HistoryFunnel): boolean {
 }
 
 /**
- * Funnel history for every closed month from `fromMonth` (default 2026-01) to
- * last month. Stored months come back instantly; missing ones are computed
- * live and — when complete — stored permanently. Never throws.
+ * The reporting floor and its clamp live in lib/roster.ts, which is
+ * client-safe — the Overview needs the same fact to clamp its picker, and it
+ * cannot import from a "server-only" module. Re-exported here so server
+ * callers still find it where they'd expect.
  */
+export { HISTORY_FLOOR, withinHistory } from "@/lib/roster";
+
 export async function getHistory(
-  fromMonth = "2026-01"
+  fromMonth = HISTORY_FLOOR
 ): Promise<Record<string, HistoryFunnel>> {
   const now = new Date();
   const months: string[] = [];
-  const cursor = new Date(Date.UTC(Number(fromMonth.slice(0, 4)), Number(fromMonth.slice(5, 7)) - 1, 1));
+  const from = withinHistory(fromMonth);
+  const cursor = new Date(Date.UTC(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1, 1));
   // up to (not including) the current month — current month is live, not history
   const currentKey = now.toISOString().slice(0, 7);
   while (cursor.toISOString().slice(0, 7) < currentKey) {
@@ -160,14 +165,51 @@ export async function getHistory(
   const stored = await loadStored().catch(() => ({}) as Record<string, HistoryFunnel>);
   const out: Record<string, HistoryFunnel> = {};
 
-  // Serial on purpose — each month is already parallel inside, and 6-7 months
-  // of concurrent calendar paging would hammer REX's rate limits.
+  // Stored months cost nothing — take them first and only compute the gaps.
+  const missing: string[] = [];
   for (const m of months) {
-    if (stored[m] && complete(stored[m])) {
-      out[m] = stored[m];
-      continue;
-    }
-    const computed = await computeMonth(m).catch(() => null);
+    if (stored[m] && complete(stored[m])) out[m] = stored[m];
+    else missing.push(m);
+  }
+
+  /*
+   * WARM PROPOLY FIRST, before fanning anything out.
+   *
+   * getPropolyMoveInsInRange races a shared 15s deadline over a cold cache of
+   * every completed deal. Cold, the first caller spends ~10-15s filling that
+   * cache; warm, every later month is served from it in ~0ms. Fanned out cold,
+   * several months hit the deadline together and return null — and because
+   * `complete()` requires a non-null moveIns, those months were never STORED,
+   * so every subsequent load recomputed them and timed out again. Measured
+   * 10 Aug 2026: 2025-09 null at exactly 15,003ms, 2025-10 fine at 10,492ms,
+   * everything after it 0ms.
+   *
+   * One throwaway call pays that cost once, in series, where it can't collide.
+   */
+  if (missing.length > 1) {
+    await getPropolyMoveInsInRange(`${months[0]}-01`, lastDayOf(months[0])).catch(() => null);
+  }
+
+  // Cold months fanned out, capped so a twelve-month backfill doesn't open
+  // twelve simultaneous Rex paging walks. Measured: no throttling at this
+  // width, and identical figures to the serial walk.
+  const CONCURRENCY = 4;
+  const queue = [...missing];
+  const computedAll = new Map<string, HistoryFunnel | null>();
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      for (;;) {
+        const m = queue.shift();
+        if (!m) return;
+        computedAll.set(m, await computeMonth(m).catch(() => null));
+      }
+    })
+  );
+
+  // Stored serially AFTER the fan-out: the file-backed store rewrites the
+  // whole JSON document each time, so concurrent writes would lose months.
+  for (const m of missing) {
+    const computed = computedAll.get(m) ?? null;
     if (computed) {
       out[m] = computed;
       if (complete(computed)) await store(computed).catch(() => undefined);

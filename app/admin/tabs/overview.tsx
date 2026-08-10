@@ -15,8 +15,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Bars from "@/components/charts/Bars";
 import type { SeedData, PeriodKpis } from "@/lib/seed-data";
 import type { StatValue } from "@/lib/types";
-import { exVat, formatNum } from "@/lib/format";
-import { liveMonth } from "@/lib/roster";
+import { exVat, formatNum, monthLabel } from "@/lib/format";
+import { HISTORY_FLOOR, liveMonth, withinHistory } from "@/lib/roster";
 
 
 interface LiveBusiness {
@@ -405,23 +405,39 @@ function PeriodPills({
 /* ---------------------------------- tab ---------------------------------- */
 
 export default function Overview({ month }: { month: string }) {
-  void month; // the mirror is the July-2026 snapshot + live upgrades
+  /*
+   * `month` is the top-right picker, and it now drives this whole page.
+   *
+   * It used to be `void month` — the prop was accepted and thrown away, and
+   * both fetches were pinned to the clock month. Changing the picker did
+   * literally nothing here; the only working control was a row of internal
+   * pills keyed by three-letter month name ("jul"), a vocabulary that cannot
+   * even express September 2025 because it carries no year. Those pills are
+   * gone. One control, one answer.
+   */
   const [data, setData] = useState<OverviewPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<LiveBusiness | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
   const [hist, setHist] = useState<HistoryPayload | null>(null);
   const [ramp, setRamp] = useState<RampPayload | null>(null);
-  // Working period pills — one per pill-driven section, exactly like hers.
+  // The ramp cohort keeps its own pill row — it selects a COHORT of starters
+  // by launch month, which is a different question from "what happened in
+  // August", and collapsing the two would silently change what it counts.
   const [rampKey, setRampKey] = useState<string>("ytd");
-  const [kpiKey, setKpiKey] = useState<string>(LIVE_KEY);
+  // Clamped to the floor: before Sept 2025 the viewing appointment types
+  // didn't exist, so Rex returns a real zero that reads as a trading figure.
+  const sel = withinHistory(month);
+  const isCurrent = sel === LIVE;
+  /** "August 2026" — what every heading on this page is an answer to. */
+  const selLabel = monthLabel(sel);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
     (async () => {
       try {
-        const res = await fetch(`/api/admin/overview?month=${LIVE}`, { cache: "no-store" });
+        const res = await fetch(`/api/admin/overview?month=${sel}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`Overview fetch failed (${res.status})`);
         const payload = (await res.json()) as OverviewPayload;
         if (!cancelled) setData(payload);
@@ -432,7 +448,7 @@ export default function Overview({ month }: { month: string }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sel]);
 
   // Live layer (REX business sums + Propoly) — upgrades matching tiles.
   // The API answers instantly with the last-good figures (flagged `stale`)
@@ -441,8 +457,11 @@ export default function Overview({ month }: { month: string }) {
   const staleRetries = useRef(0);
   const loadLive = useCallback(async (refresh = false) => {
     setLiveLoading(true);
+    // Each month gets its own retry budget — without this, switching months
+    // after a slow sweep leaves the new month with no retries left and it
+    // sits on stale figures for ever.
     try {
-      const res = await fetch(`/api/admin/live-business?month=${LIVE}${refresh ? "&refresh=1" : ""}`, {
+      const res = await fetch(`/api/admin/live-business?month=${sel}${refresh ? "&refresh=1" : ""}`, {
         cache: "no-store",
       });
       const j = (await res.json()) as LiveBusiness & { configured?: boolean; stale?: boolean };
@@ -458,9 +477,10 @@ export default function Overview({ month }: { month: string }) {
       /* live layer is an upgrade — the snapshot mirror still renders */
       setLiveLoading(false);
     }
-  }, []);
+  }, [sel]);
 
   useEffect(() => {
+    staleRetries.current = 0;
     void loadLive();
   }, [loadLive]);
 
@@ -556,7 +576,7 @@ export default function Overview({ month }: { month: string }) {
 
   const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
   // Live only makes sense against the current month's figures.
-  const liveForThisPeriod = kpiKey === LIVE_KEY ? liveMoney : null;
+  const liveForThisPeriod = isCurrent ? liveMoney : null;
 
   const liveGciPerMoveIn: StatValue | null =
     liveForThisPeriod && liveForThisPeriod.moveIns
@@ -594,12 +614,14 @@ export default function Overview({ month }: { month: string }) {
   // an August pill: every tile would render a plausible number sourced from a
   // month nobody selected. An empty period renders "—" until the live layer
   // fills it in, which is the honest state.
-  const kpiPeriod = d.periods[kpiKey] ?? emptyPeriod(kpiKey);
+  // The seed holds one month — July 2026. Any other selection gets an empty
+  // period whose tiles read "—" until the live layer fills them, rather than
+  // borrowing July's numbers.
+  const kpiPeriod = (sel === "2026-07" ? d.periods.jul : undefined) ?? emptyPeriod(sel);
   const rampPeriod = d.periods[rampKey] ?? emptyPeriod(rampKey);
 
   // Upgrade a snapshot stat to live when the live layer carries the same
   // figure — current month (July) only; history months are final numbers.
-  const isCurrent = kpiKey === LIVE_KEY;
   const asLive = (value: number, note: string, display?: string): StatValue => ({
     value,
     display,
@@ -608,24 +630,28 @@ export default function Overview({ month }: { month: string }) {
     asOf: new Date().toISOString().slice(0, 10),
   });
   const funnelMas =
-    isCurrent && live?.monthCounts?.combinedMas != null
+    live?.monthCounts?.combinedMas != null
       ? asLive(
           live.monthCounts.combinedMas,
           `Live from REX — Susan's combined-MA definition: ${live.monthCounts.marketAppraisals ?? "?"} recorded appraisals + listings with no same-month MA (June check: 41 vs her 40).`
         )
-      : isCurrent && live?.totals
+      : isCurrent && live?.totals /* current-state fallback — live month only */
         ? asLive(live.totals.marketAppraisals, "Live from REX — recorded appraisals summed across every lettings agent.")
         : kpiPeriod.funnel.marketAppraisals;
+  // STOCK, not a flow: live.totals.onMarketListings is what is on the market
+  // RIGHT NOW, summed across agents. Rex keeps no history of it, so it can
+  // only ever answer for the live month — the gate here is load-bearing.
   const funnelLiveListings =
     isCurrent && live?.totals
       ? asLive(live.totals.onMarketListings, "Live from REX — on-market listings right now.")
       : kpiPeriod.funnel.liveListings;
+  // STOCK, same as Live Listings above. Deliberately still gated.
   const funnelPipeline =
     isCurrent && live?.totals
       ? asLive(live.totals.pipeline, "Live from REX — let-agreed forward pipeline right now.")
       : kpiPeriod.funnel.pipeline;
   const funnelMoveIns: StatValue =
-    isCurrent && live?.propoly
+    live?.propoly
       ? {
           value: live.propoly.moveInsThisMonth,
           source: "live-propoly",
@@ -636,21 +662,21 @@ export default function Overview({ month }: { month: string }) {
   // Month-bound REX counts — applications by date_received (proven field);
   // listings by created-this-month (validate via /api/admin/rex-validate).
   const funnelApplications =
-    isCurrent && live?.monthCounts?.applications != null
+    live?.monthCounts?.applications != null
       ? asLive(
           live.monthCounts.applications,
           "Live from REX — applications ACCEPTED this month (Susan's definition — validated vs her June final: 24 vs 25)."
         )
       : kpiPeriod.funnel.applications;
   const funnelListings =
-    isCurrent && live?.monthCounts?.newListings != null
+    live?.monthCounts?.newListings != null
       ? asLive(
           live.monthCounts.newListings,
           "Live from REX — rental listings created this month, drafts excluded (June check: 38 vs Susan's 35)."
         )
       : kpiPeriod.funnel.listings;
   const funnelViewings =
-    isCurrent && live?.monthCounts?.viewings != null
+    live?.monthCounts?.viewings != null
       ? asLive(
           live.monthCounts.viewings,
           "Live from REX — TLE viewing appointments this month, cancellations excluded (June check: 221 vs Susan's 202)."
@@ -661,7 +687,9 @@ export default function Overview({ month }: { month: string }) {
   // Stored live figures (validated definitions) replace the snapshot, with a
   // single red dot wherever they differ from Susan's report — James checks
   // each dot to work out why, so the dot NEVER hides the live number.
-  const histMonths = !isCurrent ? (PERIOD_MONTHS[kpiKey] ?? null) : null;
+  // One month, the selected one. The pills used to map a 3-letter key to a
+  // month list; the picker gives the month directly.
+  const histMonths = !isCurrent ? [sel] : null;
   const histSum = (
     metric: "marketAppraisals" | "combinedMas" | "listings" | "viewings" | "applications" | "moveIns"
   ): number | null => {
@@ -672,27 +700,20 @@ export default function Overview({ month }: { month: string }) {
       if (v == null) return null;
       total += v;
     }
-    if (kpiKey === "ytd") {
-      // Susan's YTD includes the current month-to-date — add live July.
-      const liveNow =
-        metric === "moveIns"
-          ? live?.propoly?.moveInsThisMonth
-          : metric === "marketAppraisals"
-            ? live?.monthCounts?.marketAppraisals
-            : metric === "combinedMas"
-              ? live?.monthCounts?.combinedMas
-              : metric === "listings"
-                ? live?.monthCounts?.newListings
-                : metric === "viewings"
-                  ? live?.monthCounts?.viewings
-                  : live?.monthCounts?.applications;
-      if (liveNow == null) return null;
-      total += liveNow;
-    }
     return total;
   };
+  /**
+   * The red "differs from Susan's report" dot.
+   *
+   * Susan's captured figures describe ONE window — her June-2026 year-to-date
+   * report. Comparing them against an arbitrary month lights the dot on every
+   * tile and tells you nothing except that June is not August, which is how a
+   * useful signal becomes noise people learn to ignore. The dot now only
+   * appears where the two are answers to the same question.
+   */
+  const comparableToSusan = sel === "2026-06";
   const flagIf = (liveVal: number, susan: StatValue): string | null =>
-    susan.value != null && susan.value !== liveVal
+    comparableToSusan && susan.value != null && susan.value !== liveVal
       ? `Differs from Susan's report — her figure: ${susan.display ?? formatNum(susan.value)}. Hover the tile for our definition, then reconcile.`
       : null;
   const histUpgrade = (
@@ -708,8 +729,7 @@ export default function Overview({ month }: { month: string }) {
       flag: flagIf(v, susan),
     };
   };
-  const periodLabelBit =
-    kpiKey === "ytd" ? "Jan 1 to today" : kpiPeriod.label.replace(/\s*MTD$/, "");
+  const periodLabelBit = selLabel;
   const hMas = histUpgrade(
     "combinedMas",
     kpiPeriod.funnel.marketAppraisals,
@@ -799,13 +819,40 @@ export default function Overview({ month }: { month: string }) {
    * row yet, being unfinished — so August YTD is Jan–Jul stored plus August so
    * far, which is what "year to date" means on the 10th.
    */
-  const ytdThrough = kpiKey === "ytd" ? LIVE : (PERIOD_MONTHS[kpiKey]?.[0] ?? LIVE);
-  /** "August" — the month the year-to-date window runs up to. */
-  const ytdLabel = MONTH_NAMES[Number(ytdThrough.slice(5, 7)) - 1] ?? "";
-  const ytdMonths = [
-    ...CLOSED.filter((m) => m <= ytdThrough),
-  ].reverse();
+  const ytdThrough = sel;
+  /**
+   * Year to date runs from January OF THE SELECTED YEAR up to the selected
+   * month — clamped at HISTORY_FLOOR, because there is nothing trustworthy
+   * before it. So picking Nov 2025 gives Sept–Nov 2025, not Jan–Nov: the
+   * earlier months would be zero-viewing months masquerading as quiet ones.
+   *
+   * CLOSED was no use here — it only ever held months of the CURRENT year, so
+   * any 2025 selection produced an empty window and a blank band.
+   */
+  const ytdMonths = (() => {
+    const year = ytdThrough.slice(0, 4);
+    const out: string[] = [];
+    for (let i = 1; i <= 12; i++) {
+      const m = `${year}-${String(i).padStart(2, "0")}`;
+      if (m < HISTORY_FLOOR) continue;
+      if (m > ytdThrough) break;
+      // The live (unfinished) month has no stored row — added below.
+      if (m < LIVE) out.push(m);
+    }
+    return out;
+  })();
   const includesLive = ytdThrough >= LIVE;
+  /**
+   * What the band should CALL its window. "January YTD" over a window that
+   * starts in September is a false label, so when the floor bites the band
+   * names its true start instead.
+   */
+  const ytdLabel = MONTH_NAMES[Number(ytdThrough.slice(5, 7)) - 1] ?? "";
+  const ytdStart = ytdMonths[0] ?? (includesLive ? LIVE : ytdThrough);
+  const ytdIsPartial = ytdStart > `${ytdThrough.slice(0, 4)}-01`;
+  const ytdWindowLabel = ytdIsPartial
+    ? `${monthLabel(ytdStart)} → ${monthLabel(ytdThrough)}`
+    : `Jan → ${monthLabel(ytdThrough)}`;
 
   const closedSum = (
     metric: "combinedMas" | "listings" | "applications" | "moveIns"
@@ -890,7 +937,10 @@ export default function Overview({ month }: { month: string }) {
     kpiPeriod.conversions.maToListing
   );
   // RLP conversion — fully-managed share of this month's Propoly move-ins.
-  const rlp = isCurrent ? (live?.rlpMtd ?? null) : null;
+  // No isCurrent gate: the live-business route is now called with the selected
+  // month, so rlpMtd already describes that month. Gating it here was the only
+  // reason a past month fell back to July's percentage.
+  const rlp = live?.rlpMtd ?? null;
   const liveRlp = rlp && rlp.total > 0 ? pct(rlp.fullyManaged, rlp.total) : null;
   const convRlp: StatValue =
     liveRlp != null && rlp
@@ -910,7 +960,9 @@ export default function Overview({ month }: { month: string }) {
 
   // MAs by partner type — live REX per-agent MAs split by the Team Hub's
   // dual-brand flag. Lettings Lite has no hub category → snapshot.
-  const mbt = isCurrent ? (live?.masByType ?? null) : null;
+  // Same again — masByType is computed from the selected month's per-agent MAs
+  // crossed with the Team Hub's dual-brand flag, so it answers for any month.
+  const mbt = live?.masByType ?? null;
   const masTiles = {
     // The same combined-MA figure as the funnel tile above, whichever month is
     // selected — these two disagreeing was one of the things that made the
@@ -1033,7 +1085,7 @@ export default function Overview({ month }: { month: string }) {
         <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide">KPI Metrics</h2>
           <span className="text-[11px] text-muted">
-            Year to date · {ytdLabel} · live tiles refresh on load
+            Year to date · {ytdWindowLabel} · live tiles refresh on load
           </span>
           <button
             type="button"
@@ -1111,8 +1163,7 @@ export default function Overview({ month }: { month: string }) {
       </Section>
 
       {/* ---- 3. Business KPIs — Sales Funnel ---- */}
-      <Section title="Business KPIs" source={d.sources.businessFunnel}>
-        <PeriodPills options={pillOptions} active={kpiKey} onChange={setKpiKey} />
+      <Section title={`Business KPIs — ${selLabel}`} source={d.sources.businessFunnel}>
         <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Sales Funnel</h3>
         <div className={TILE_GRID}>
           <Tile label="Market Appraisals" stat={effMas} flag={hMas?.flag} />

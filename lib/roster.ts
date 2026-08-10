@@ -28,6 +28,24 @@ export const SNAPSHOT_NOTE =
 export const LIVE_START = "2026-08";
 
 /**
+ * The earliest month the business can be reported on at all — a hard floor.
+ *
+ * Rex answers listings and appraisals back into early 2025, but the TLE viewing
+ * appointment types (953/956) only came into use in AUGUST 2025. Before that a
+ * viewings query succeeds and returns nothing, and the counts helper returns
+ * null only when a call FAILS — never when Rex legitimately holds nothing. So
+ * a pre-August-2025 month would print "0 viewings" as a trading fact.
+ * August 2025 is itself a part-month (21 viewings vs 60 in September), so the
+ * floor is September. Measured 10 Aug 2026.
+ */
+export const HISTORY_FLOOR = "2025-09";
+
+/** Clamp a requested month up to the floor. */
+export function withinHistory(month: string): string {
+  return month < HISTORY_FLOOR ? HISTORY_FLOOR : month;
+}
+
+/**
  * The month the portal is standing in — the ONE month a current-state figure
  * (on the market now, in progression now, the portfolio) may answer for.
  *

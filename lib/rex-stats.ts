@@ -514,7 +514,14 @@ export async function getBusinessMonthCounts(
   const range = monthRange(month);
   if (!range) return null;
 
-  const cached = monthCountsCache.get(month);
+  // Keyed on the AGENT LIST as well as the month. It used to be month alone,
+  // which meant a caller passing a different set of agents got served another
+  // caller's figures — and force=true skipped the read but still wrote, so a
+  // forced refresh poisoned the cache for everyone else. Harmless while every
+  // caller passed rexLettingsAgents(), and a live hazard the moment that list
+  // changed (it just did) or a per-office variant appears.
+  const cacheKey = `${month}:${[...agentIds].sort().join(",")}`;
+  const cached = monthCountsCache.get(cacheKey);
   if (!force && cached && Date.now() - cached.at < MONTH_COUNTS_TTL_MS) return cached.data;
 
   const work = (async (): Promise<BusinessMonthCounts | null> => {
@@ -601,7 +608,7 @@ export async function getBusinessMonthCounts(
       return null;
     }
     const data = { applications, newListings, viewings, marketAppraisals, combinedMas };
-    monthCountsCache.set(month, { at: Date.now(), data });
+    monthCountsCache.set(cacheKey, { at: Date.now(), data });
     return data;
   })();
 
