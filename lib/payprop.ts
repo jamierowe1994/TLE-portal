@@ -229,6 +229,20 @@ async function fetchToken(account: PayPropAccountId): Promise<string | null> {
   }
 }
 
+/**
+ * A live access token for an account.
+ *
+ * Exported because TLE OS borrows tokens from here rather than refreshing
+ * for itself. PayProp mints a NEW refresh token on every refresh, so two
+ * apps refreshing independently would race and one would end up holding a
+ * dead credential — and the likely casualty is this portal, the thing
+ * actually in daily use. Keeping ONE refresher and lending out short-lived
+ * access tokens removes the race entirely.
+ */
+export async function payPropAccessToken(account: PayPropAccountId): Promise<string | null> {
+  return accessToken(account);
+}
+
 async function accessToken(account: PayPropAccountId): Promise<string | null> {
   const held = tokens.get(account);
   if (held && Date.now() < held.expiresAt) return held.token;

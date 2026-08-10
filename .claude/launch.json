@@ -4,8 +4,23 @@
     {
       "name": "tle-portal",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3100,
+      "autoPort": false
+    },
+    {
+      "name": "tle-os",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "/Users/jamesrowe/Projects/TLE-OS"
+      ],
+      "port": 3200,
       "autoPort": false
     }
   ]
