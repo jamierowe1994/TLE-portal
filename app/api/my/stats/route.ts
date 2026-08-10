@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import {
   getAgentAppraisals,
+  getAgentCompliance,
   getAgentListings,
   getAgentPortfolio,
   getAgentRampCounts,
@@ -24,6 +25,7 @@ import {
   SNAPSHOT_DATE,
   SNAPSHOT_MONTH,
 } from "@/lib/seed-data";
+import { LIVE_START, isLiveEra, liveMonth } from "@/lib/roster";
 import { formatGBP, formatPct, monthLabel } from "@/lib/format";
 import type {
   ActualOverride,
@@ -167,17 +169,26 @@ function periodPhrase(months: string[]): string {
 /**
  * The months the caller asked for, cleaned up: `?months=` first, `?month=` as
  * the single-month case so the layout prefetch and the forecast page keep
- * working. Anything that hasn't happened yet is split off rather than counted
- * as a zero — an empty August would otherwise drag every average down.
+ * working.
+ *
+ * Three things get split off rather than counted, because each is a different
+ * kind of nothing and a zero would be a lie in all three cases:
+ *   future  — hasn't happened; an empty August would drag every average down
+ *   preLive — before LIVE_START, so the portal was not measuring yet. These
+ *             are NOT zeros and NOT gaps in the data; they're months that were
+ *             only ever recorded by hand in Susan's spreadsheet.
+ *   months  — what's actually countable, and the only thing we go and fetch
  */
-function resolveMonths(params: URLSearchParams, liveMonth: string) {
+function resolveMonths(params: URLSearchParams, live: string) {
   const raw = params.get("months") ?? params.get("month") ?? "";
   const asked = [...new Set(raw.split(",").map((m) => m.trim()).filter((m) => MONTH_RE.test(m)))].sort();
-  const requested = asked.length ? asked : [liveMonth];
+  const requested = asked.length ? asked : [live];
+  const happened = requested.filter((m) => m <= live);
   return {
     requested,
-    months: requested.filter((m) => m <= liveMonth),
-    future: requested.filter((m) => m > liveMonth),
+    months: happened.filter(isLiveEra),
+    preLive: happened.filter((m) => !isLiveEra(m)),
+    future: requested.filter((m) => m > live),
   };
 }
 
@@ -241,24 +252,21 @@ export async function GET(req: NextRequest) {
   }
 
   // "The live month" — the one month a current-state figure may answer for.
-  // It has to be the month the CLIENT anchors to (ANCHOR in
-  // app/dashboard/page.tsx and components/PeriodPicker.tsx, both "2026-07"),
-  // never the wall clock: every month the picker can offer is derived from that
-  // anchor, and the anchor doesn't advance with real time. Reading the clock
-  // here meant that from 1 Aug 2026 no selection any partner could make would
-  // ever BE the live month — pipeline, the on-market listings definition and
-  // Lead → MA would all have gone permanently unavailable on the default view.
-  // Keep this pinned to the seed capture the rest of the portal is written
-  // against; when the data moves on, SNAPSHOT_MONTH and the two ANCHORs move
-  // together.
-  const liveMonth = SNAPSHOT_MONTH;
-  const { requested, months, future } = resolveMonths(req.nextUrl.searchParams, liveMonth);
+  //
+  // Now one shared constant off the clock (lib/roster.ts), floored at
+  // LIVE_START. It used to be pinned to SNAPSHOT_MONTH so it would agree with
+  // the two hand-typed client ANCHORs; the cost of that was that from 1 Aug
+  // 2026 the portal believed August hadn't happened, dropped it into `future`,
+  // and served July's snapshot figures under an August heading. Susan read
+  // last month's numbers as this month's for a fortnight.
+  const live = liveMonth();
+  const { requested, months, future, preLive } = resolveMonths(req.nextUrl.searchParams, live);
   // The month the response is "about" — kept for the callers that still pass
   // ?month= and read the echo back.
-  const month = months[months.length - 1] ?? requested[requested.length - 1] ?? liveMonth;
+  const month = months[months.length - 1] ?? requested[requested.length - 1] ?? live;
   // The ONE test for "may a current-state figure answer this?". Everything
   // else keys off it rather than string-comparing months in five places.
-  const isLiveMonth = months.length === 1 && months[0] === liveMonth;
+  const isLiveMonth = months.length === 1 && months[0] === live;
   const canFanOut = months.length > 0 && months.length <= MAX_FANOUT_MONTHS;
   const phrase = periodPhrase(months);
   const single = months.length === 1;
@@ -302,6 +310,16 @@ export async function GET(req: NextRequest) {
     detail:
       "Move-ins are matched to you through PayProp's property book, and nothing in it is filed under your name — usually because PayProp spells the name differently from the portal. Ask the admin to check the name mapping and this fills in.",
   };
+  // The honest answer for anything before the portal started measuring. Not a
+  // gap and not a zero: those months were only ever counted by hand.
+  const BEFORE_WE_STARTED: Reason = {
+    short: `Before ${monthLabel(LIVE_START)}.`,
+    detail: `The portal started pulling its own figures from REX and PayProp in ${monthLabel(
+      LIVE_START
+    )}. ${periodPhrase(preLive)} was only ever counted by hand on Susan's spreadsheet, and those numbers were captured once — as the ${monthLabel(
+      SNAPSHOT_MONTH
+    )} snapshot — rather than rebuilt per partner. Rather than show a hand-typed figure beside a measured one as though they were the same thing, this is left blank.`,
+  };
 
   const rangeStart = months.length ? `${months[0]}-01` : null;
   const rangeEnd = months.length ? monthEnd(months[months.length - 1]) : null;
@@ -315,8 +333,16 @@ export async function GET(req: NextRequest) {
   // leg is getAgentAppraisals (which we call per month anyway) and its listings
   // and pipeline legs are current-state counts that ignored the month — the
   // exact leak this route exists to close.
-  const [livePortfolio, meta, overridesByMonth, propolyDeals, liveListings, appraisalsByMonth, instructed] =
-    await Promise.all([
+  const [
+    livePortfolio,
+    meta,
+    overridesByMonth,
+    propolyDeals,
+    liveListings,
+    appraisalsByMonth,
+    instructed,
+    liveCompliance,
+  ] = await Promise.all([
       rexUserId ? getAgentPortfolio(rexUserId).catch(() => null) : Promise.resolve(null),
       // Meta's lead count is a rolling 30-day window, so it can only speak for
       // the month we're standing in. Don't even ask for a past period.
@@ -339,12 +365,27 @@ export async function GET(req: NextRequest) {
       rexUserId && rangeStart && rangeEnd
         ? getAgentRampCounts(rexUserId, rangeStart, rangeEnd).catch(() => null)
         : Promise.resolve(null),
+      // Compliance is a STATE, not a flow — no period, always "as at now".
+      // Live from REX so the card survives the snapshot being retired; it's
+      // the same short-cached call /api/my/compliance already makes, so on a
+      // warm cache this costs nothing.
+      rexUserId ? getAgentCompliance(rexUserId).catch(() => null) : Promise.resolve(null),
     ]);
 
-  // The seed KPI rows describe July 2026 month-to-date and nothing else, so
-  // they may only answer for a single-month July window. Handing them to a
-  // range would report one month's figures as three.
-  const snapshot = agentKey && single ? agentSeedStats(agentKey, months[0]) : nullFunnel();
+  // The seed KPI rows describe July 2026 month-to-date and nothing else.
+  //
+  // They may therefore answer for exactly one window: a single pre-live month
+  // that IS July. `months` now holds live-era months only, so the snapshot can
+  // no longer reach a live-era figure by any path — which is the whole point.
+  // It was the fallback under every field, so when the live pull came back
+  // empty for August the July numbers simply stood there wearing August's
+  // heading, with a "snapshot" badge nobody reads as "last month's".
+  const showSnapshot =
+    agentKey != null &&
+    months.length === 0 &&
+    preLive.length === 1 &&
+    preLive[0] === SNAPSHOT_MONTH;
+  const snapshot = showSnapshot ? agentSeedStats(agentKey!, preLive[0]) : nullFunnel();
 
   // ---- Funnel: field-by-field manual → snapshot base ----
   // The live layer is applied per field below, where each one can say which
@@ -368,8 +409,24 @@ export async function GET(req: NextRequest) {
   }
 
   const basis: Record<string, FigureMeta> = {};
-  /** Reason a period figure can't be answered at all, before we even ask. */
-  const blocked = months.length === 0 ? NOTHING_YET : !canFanOut ? TOO_LONG : null;
+  /**
+   * Reason a period figure can't be answered at all, before we even ask.
+   *
+   * Order matters. "Nothing countable" has two quite different causes and the
+   * pre-live one is far more likely now: asking for July returns no live-era
+   * months, and calling that "hasn't happened yet" about a month that has very
+   * much happened would read as a bug.
+   */
+  const blocked =
+    months.length === 0
+      ? preLive.length > 0 && !showSnapshot
+        ? BEFORE_WE_STARTED
+        : preLive.length > 0
+          ? null // the July snapshot is standing in, and badges itself as such
+          : NOTHING_YET
+      : !canFanOut
+        ? TOO_LONG
+        : null;
 
   /* ------------------------------- as at today ------------------------------ */
   // Computed once, whatever the period, because the portfolio mix is honestly
@@ -778,6 +835,36 @@ export async function GET(req: NextRequest) {
           } as StatValue),
   };
 
+  /* ------------------------------- compliance ------------------------------- */
+  // The July capture's three numbers, rebuilt from REX so the card keeps
+  // working once the snapshot stops answering. Same shape the dashboard
+  // already renders (ComplianceAgentRow).
+  //
+  // "Expired" and "missing" both count as overdue — a certificate nobody ever
+  // recorded is not in better standing than one that lapsed, and counting only
+  // the lapsed ones would have made a property with no gas record at all look
+  // compliant. Properties REX couldn't fully read are excluded from the
+  // denominator rather than assumed clear, and reported separately.
+  const complianceRow =
+    liveCompliance && liveCompliance.length > 0
+      ? (() => {
+          const checked = liveCompliance.filter((p) => p.checked);
+          const items = checked.flatMap((p) => p.items);
+          const counted = items.filter((i) => i.state !== "not-required");
+          const overdue = counted.filter(
+            (i) => i.state === "expired" || i.state === "missing"
+          ).length;
+          const upcoming = counted.filter((i) => i.state === "expiring").length;
+          return {
+            agent: user.name ?? "",
+            total: counted.length,
+            overdue,
+            upcoming,
+            pctOverdue: counted.length ? Math.round((overdue / counted.length) * 100) : 0,
+          };
+        })()
+      : null;
+
   return NextResponse.json({
     month,
     // What the response actually covers: `months` is what was counted, and
@@ -787,7 +874,12 @@ export async function GET(req: NextRequest) {
       months,
       requested,
       future,
-      liveMonth,
+      // Asked for, real, but before the portal measured anything. The dashboard
+      // needs this separately from `future` — both are months with no figures,
+      // and telling a partner July "hasn't happened yet" would be absurd.
+      preLive,
+      liveMonth: live,
+      liveStart: LIVE_START,
       isLiveMonth,
       label: phrase,
       maxMonths: MAX_FANOUT_MONTHS,
@@ -823,13 +915,29 @@ export async function GET(req: NextRequest) {
       onMarket: onMarketNow,
       pipeline: pipelineNow,
     },
-    // Seed rows, July 2026 only — agentMoveIns answers for no other month, so
-    // the "My move-ins" list can't show July's tenancies under June's heading.
-    moveIns: agentKey && single ? agentMoveIns(agentKey, months[0]) : [],
-    // Forward-looking by nature (July + Aug–Sep seed rows): not a period figure
-    // at all, so it isn't filtered by one.
-    pipeline: agentKey ? agentPipeline(agentKey) : [],
-    compliance: agentKey ? agentCompliance(agentKey) : null,
-    netIncomeYtd: agentKey ? agentNetIncomeYtd(agentKey) : null,
+    // Seed rows, July 2026 only. Gated on the same test as the snapshot funnel
+    // rather than on `single`, so the list and the tiles above it can never
+    // disagree about which month is being described. From August the live
+    // `funnelRows.moveIns` is the only move-in list.
+    moveIns: showSnapshot ? agentMoveIns(agentKey!, preLive[0]) : [],
+    // All three below are hand-keyed snapshot rows, and all three used to ship
+    // unconditionally because they aren't period figures — which quietly made
+    // them permanent. They are now gated on the same snapshot test as
+    // everything else: from LIVE_START the live sources answer, or nothing
+    // does. The dashboard prefers `funnelRows.pipeline` (Propoly, live) and
+    // falls back to these only while they're still being sent.
+    pipeline: showSnapshot ? agentPipeline(agentKey!) : [],
+    // Live REX roll-up first, the July capture only where it's still standing
+    // in. `complianceLive` tells the dashboard which it got, so the badge can
+    // say "as at today" instead of stamping live counts with the snapshot date.
+    compliance: complianceRow ?? (showSnapshot ? agentCompliance(agentKey!) : null),
+    complianceLive: complianceRow != null,
+    /** Properties REX couldn't fully answer for — never counted as compliant. */
+    complianceUnchecked: liveCompliance?.filter((p) => !p.checked).length ?? 0,
+    // Year-to-date, and the year now starts at LIVE_START. The seed figure is a
+    // Jan–Jul total: shown beside live August figures it would read as one
+    // continuous year, when it's the hand-keyed era and the measured era added
+    // together. /api/my/earnings answers this live, per month, from PayProp.
+    netIncomeYtd: showSnapshot ? agentNetIncomeYtd(agentKey!) : null,
   });
 }

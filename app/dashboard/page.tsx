@@ -15,6 +15,7 @@ import Loader from "@/components/Loader";
 import ForecastBuilder, { type SavedForecast } from "@/components/ForecastBuilder";
 import PeriodPicker, { type ResolvedPeriod, resolvePreset } from "@/components/PeriodPicker";
 import { formatDate, formatDateShort, formatGBP, formatNum, monthLabel } from "@/lib/format";
+import { LIVE_START, liveMonth } from "@/lib/roster";
 import type {
   AppraisalsDrillRow,
   ConversionStats,
@@ -70,7 +71,10 @@ interface StatsResponse {
     months: string[];
     requested: string[];
     future: string[];
+    /** Real months, but before the portal measured anything. Not the future. */
+    preLive: string[];
     liveMonth: string;
+    liveStart: string;
     isLiveMonth: boolean;
     label: string;
     maxMonths: number;
@@ -91,6 +95,10 @@ interface StatsResponse {
   moveIns: MoveInRow[];
   pipeline: PipelineRow[];
   compliance: ComplianceAgentRow | null;
+  /** True when `compliance` was rolled up live from REX, not the July capture. */
+  complianceLive?: boolean;
+  /** Properties REX couldn't fully read — excluded, never assumed compliant. */
+  complianceUnchecked?: number;
   netIncomeYtd: PartnerNetIncomeRow | null;
 }
 
@@ -128,16 +136,15 @@ interface ForecastResponse {
 /* --------------------------------- helpers -------------------------------- */
 
 const YEAR = "2026";
-// The latest month the portal has anything for, and the month every current-
-// state figure answers for. FOUR copies of this value must agree:
-// components/PeriodPicker.tsx and app/dashboard/forecast/page.tsx (their own
-// ANCHORs), SNAPSHOT_MONTH in lib/seed-data.ts, and this. /api/my/stats and
-// /api/my/earnings now derive their live month from SNAPSHOT_MONTH rather than
-// the clock — if this one drifts from that one, the page asks for a month the
-// API calls the future and every tile empties out.
-// One exported constant is the fix; it needs a client-safe home (lib/roster.ts,
-// since lib/seed-data.ts is server-only) and that file is another workstream's.
-const ANCHOR = "2026-07";
+// The month every current-state figure answers for.
+//
+// This used to be a hand-typed "2026-07" and there were FOUR copies of it that
+// had to agree. They didn't: the period picker read the clock while this and
+// the stats API stayed pinned to July, so on 1 August the page asked for a
+// month the API classed as the future — tiles emptied, and where the snapshot
+// stood in behind them, July's figures appeared under an August heading.
+// Now one exported constant, off the clock, floored at LIVE_START.
+const ANCHOR = liveMonth();
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_KEYS = MONTH_LABELS.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
 const SNAP = "2026-07-11";
@@ -402,7 +409,16 @@ export default function MyDashboardPage() {
   // "Last 3 months · May–Jul 2026" — the preset's name plus the months it came
   // out as, so nobody has to work out which three.
   const periodHeading = period.label === phrase ? phrase : `${period.label} · ${phrase}`;
-  const isSnapshotPeriod = periodMonths.length === 1 && periodMonths[0] === ANCHOR;
+  // The selected period IS the single month we're standing in — the one window
+  // a current-state figure may answer for. Was called isLiveMonthPeriod back
+  // when that month and the snapshot's month were the same thing; they are not
+  // any more, and the old name is exactly the confusion to avoid.
+  const isLiveMonthPeriod = periodMonths.length === 1 && periodMonths[0] === ANCHOR;
+  // Asked for real months that pre-date the portal measuring anything. Distinct
+  // from `nothingYet`: both have no figures, but one hasn't happened and the
+  // other was only ever counted by hand.
+  const preLiveMonths = stats?.period.preLive ?? [];
+  const beforeWeStarted = periodMonths.length === 0 && preLiveMonths.length > 0;
   const asAtLabel = formatDateShort(stats?.asAtToday.asOf) || "today";
 
   /* -------------------------------- earnings -------------------------------- */
@@ -470,7 +486,7 @@ export default function MyDashboardPage() {
   // July's tenancies under June's heading is the exact mistake this page is
   // being fixed for.
   const moveInsStat: StatValue =
-    moveInDrillRows || !isSnapshotPeriod
+    moveInDrillRows || !isLiveMonthPeriod
       ? (stats?.funnel.moveIns ?? { value: null, source: "live-payprop" })
       : snapStat(
           stats?.moveIns.length ?? 0,
@@ -538,6 +554,24 @@ export default function MyDashboardPage() {
     { key: "twelveMonthValue", label: "12m value", align: "right", render: (r) => formatGBP(r.twelveMonthValue) },
   ];
 
+  /** PayProp's live tenancy starts. Fewer columns than the seed table because
+   *  fewer things are actually known — no invented setup fee or 12m value. */
+  const liveMoveInColumns: DataTableColumn<Rowify<MoveInsDrillRow>>[] = [
+    { key: "property", label: "Property" },
+    { key: "tenant", label: "Tenant" },
+    { key: "from", label: "Move-in", render: (r) => formatDateShort(r.from) || "—" },
+    { key: "rent", label: "Rent pcm", align: "right", render: (r) => formatGBP(r.rent) },
+  ];
+
+  /** Propoly's live deals in progression. */
+  const livePipelineColumns: DataTableColumn<Rowify<PipelineDrillRow>>[] = [
+    { key: "property", label: "Property" },
+    { key: "tenant", label: "Tenant" },
+    { key: "stage", label: "Stage" },
+    { key: "moveIn", label: "Move-in", render: (r) => formatDateShort(r.moveIn) || "—" },
+    { key: "rent", label: "Rent pcm", align: "right", render: (r) => formatGBP(r.rent) },
+  ];
+
   const pipelineColumns: DataTableColumn<Rowify<PipelineRow>>[] = [
     { key: "property", label: "Property" },
     { key: "expectedMoveIn", label: "Expected move-in" },
@@ -575,10 +609,20 @@ export default function MyDashboardPage() {
           <h1 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
             Your {periodMonths.length === 1 ? "month" : "period"} · {phrase}
           </h1>
+          {/* Two different reasons a month in the selection has no figures, and
+              they must not be worded the same. July hasn't "not happened yet";
+              the portal simply wasn't measuring then. */}
           {futureMonths.length ? (
             <p className="mt-1 text-[12px] text-muted">
               {phraseOf(futureMonths)} hasn&apos;t happened yet
               {nothingYet ? "." : ` — showing ${phrase}.`}
+            </p>
+          ) : null}
+          {preLiveMonths.length ? (
+            <p className="mt-1 text-[12px] text-muted">
+              {phraseOf(preLiveMonths)} pre-dates the portal&apos;s own figures, which start in{" "}
+              {monthLabel(LIVE_START)}
+              {beforeWeStarted ? "." : ` — showing ${phrase}.`}
             </p>
           ) : null}
         </div>
@@ -661,7 +705,11 @@ export default function MyDashboardPage() {
                       <Sparkline values={earningsSeries} />
                     </div>
                   </div>
-                  {nothingYet ? (
+                  {beforeWeStarted ? (
+                    <p className="mt-1.5 text-[12px] text-muted">
+                      {phrase} pre-dates the portal&apos;s own figures.
+                    </p>
+                  ) : nothingYet ? (
                     <p className="mt-1.5 text-[12px] text-muted">
                       {phrase} hasn&apos;t happened yet.
                     </p>
@@ -865,23 +913,13 @@ export default function MyDashboardPage() {
                     // Prefer the live PayProp count when we also hold its rows,
                     // so the tile and the list it opens never disagree.
                     ["moveIns", "Move-ins", moveInsStat, stats.funnelSeries?.moveIns ?? []],
-                    // Pipeline is a live view. The seed row count is only a
-                    // stand-in for the month the seed describes — for any other
-                    // period the API says it can't be answered, and it isn't.
-                    [
-                      "pipeline",
-                      "Pipeline",
-                      stats.funnel.pipeline?.value != null
-                        ? stats.funnel.pipeline
-                        : isSnapshotPeriod
-                          ? snapStat(
-                              stats.pipeline.length,
-                              "Forward pipeline properties",
-                              formatNum(stats.pipeline.length)
-                            )
-                          : stats.funnel.pipeline,
-                      [],
-                    ],
+                    // Pipeline is a live view of Propoly and nothing else may
+                    // answer for it. The seed row count used to stand in
+                    // whenever the selected period was the live month — which
+                    // was harmless while that month WAS July, and became a
+                    // July count wearing an August label the moment it wasn't.
+                    // If Propoly doesn't answer, the API's reason is shown.
+                    ["pipeline", "Pipeline", stats.funnel.pipeline, []],
                   ] as const
                 ).map(([key, label, stat, series]) => {
                   const open = drill === key;
@@ -1206,31 +1244,72 @@ export default function MyDashboardPage() {
                 </div>
               </div>
             ) : null}
+            {/* Two possible sources and they are NOT interchangeable: PayProp's
+                live tenancy starts for the selected period, or the July seed
+                list. The heading names whichever one is actually below it, so
+                the old failure — July's seven rows sitting under an August
+                title because the seed was the unconditional fallback — can't
+                recur. */}
             <Collapsible
-              title={`My move-ins · ${monthLabel(ANCHOR)}`}
-              badge={stats.moveIns.length}
+              title={`My move-ins · ${moveInDrillRows ? phrase : monthLabel(ANCHOR)}`}
+              badge={moveInDrillRows ? moveInDrillRows.length : stats.moveIns.length}
               icon="key"
             >
-              {stats.moveIns.length ? (
+              {moveInDrillRows ? (
+                moveInDrillRows.length ? (
+                  <DataTable
+                    columns={liveMoveInColumns}
+                    rows={moveInDrillRows as Rowify<MoveInsDrillRow>[]}
+                    compact
+                  />
+                ) : (
+                  <p className="text-[13px] text-muted">
+                    Nothing started on your properties in {phrase}.
+                  </p>
+                )
+              ) : stats.moveIns.length ? (
                 <DataTable columns={moveInColumns} rows={stats.moveIns as Rowify<MoveInRow>[]} compact />
-              ) : isSnapshotPeriod ? (
-                <p className="text-[13px] text-muted">No move-ins recorded for you this month yet.</p>
-              ) : (
-                // The seed list only ever described July. Point at the figure
-                // that does answer for the selected period instead of showing
-                // July's rows under its heading.
+              ) : beforeWeStarted ? (
                 <p className="text-[13px] text-muted">
-                  This list comes from the {monthLabel(ANCHOR)} snapshot and only covers that month —
-                  your move-ins for {phrase} are behind the Move-ins figure above.
+                  {phraseOf(preLiveMonths)} pre-dates the portal pulling its own figures, which
+                  started in {monthLabel(LIVE_START)} — there's no per-partner move-in list for it.
+                </p>
+              ) : (
+                // No live rows yet and no seed for this window. Say which,
+                // rather than printing an authoritative-looking "none".
+                <p className="text-[13px] text-muted">
+                  Still gathering your move-ins for {phrase} from PayProp — the figure above fills
+                  in first.
                 </p>
               )}
             </Collapsible>
 
-            <Collapsible title="My pipeline" badge={stats.pipeline.length} icon="list">
-              {stats.pipeline.length ? (
+            {/* Propoly's live deals in progression where we have them; the seed
+                forward-pipeline rows only where the API still ships them (the
+                July window). "Right now" is the honest framing for the live
+                list — it's a stock, not a period figure. */}
+            <Collapsible
+              title="My pipeline"
+              badge={pipelineDrillRows ? pipelineDrillRows.length : stats.pipeline.length}
+              icon="list"
+            >
+              {pipelineDrillRows ? (
+                pipelineDrillRows.length ? (
+                  <DataTable
+                    columns={livePipelineColumns}
+                    rows={pipelineDrillRows as Rowify<PipelineDrillRow>[]}
+                    compact
+                  />
+                ) : (
+                  <p className="text-[13px] text-muted">Nothing in progression on Propoly right now.</p>
+                )
+              ) : stats.pipeline.length ? (
                 <DataTable columns={pipelineColumns} rows={stats.pipeline as Rowify<PipelineRow>[]} compact />
               ) : (
-                <p className="text-[13px] text-muted">Nothing in your forward pipeline right now.</p>
+                <p className="text-[13px] text-muted">
+                  {stats.funnelBasis?.pipeline?.unavailable ??
+                    "Still reading your deals in progression from Propoly."}
+                </p>
               )}
             </Collapsible>
 
@@ -1298,9 +1377,31 @@ export default function MyDashboardPage() {
                     <div className="stat-value text-[22px]">{formatNum(stats.compliance.total)}</div>
                     <div className="mt-0.5 text-xs text-muted">Total tracked</div>
                   </div>
+                  {stats.complianceUnchecked ? (
+                    <div>
+                      <div className="stat-value text-[22px] text-muted">
+                        {formatNum(stats.complianceUnchecked)}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted">
+                        Couldn&apos;t check
+                        <span className="block text-[11px]">not counted above</span>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="ml-auto self-start text-right">
-                    {/* Compliance is a state, not a flow — it has no period. */}
-                    <SourceBadge source="snapshot" asOf={SNAP} note="Compliance counts from REX PM via the snapshot." />
+                    {/* Compliance is a state, not a flow — it has no period. The
+                        badge must say WHICH state, though: a live REX roll-up
+                        stamped with the snapshot date would date today's
+                        certificates to July. */}
+                    {stats.complianceLive ? (
+                      <SourceBadge
+                        source="live-rex"
+                        asOf={stats.asAtToday.asOf}
+                        note="Counted live from REX across your properties. Expired and never-recorded certificates both count as overdue; properties REX couldn't fully read are left out rather than assumed compliant."
+                      />
+                    ) : (
+                      <SourceBadge source="snapshot" asOf={SNAP} note="Compliance counts from REX PM via the snapshot." />
+                    )}
                     <div className="mt-1 text-[11px] text-muted">Where things stand today</div>
                   </div>
                 </div>

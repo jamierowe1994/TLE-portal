@@ -16,6 +16,7 @@ import Bars from "@/components/charts/Bars";
 import type { SeedData, PeriodKpis } from "@/lib/seed-data";
 import type { StatValue } from "@/lib/types";
 import { exVat, formatNum } from "@/lib/format";
+import { liveMonth } from "@/lib/roster";
 
 
 interface LiveBusiness {
@@ -68,21 +69,87 @@ interface OverviewPayload {
   periods: Record<string, PeriodKpis>;
 }
 
-// Period order exactly as on Susan's dashboard.
-const PERIOD_ORDER = ["jul", "jun", "may", "apr", "q2", "mar", "feb", "jan", "q1", "ytd"] as const;
+/* --------------------------- the live month pill --------------------------- */
+// This page used to hardcode July as "the current month" in five places: the
+// pill order, the default selection, the `isCurrent` test and both live
+// fetches. On 1 August that made the live layer pull July's figures and badge
+// them live, under a pill labelled "July MTD" — which is what Susan was
+// looking at when she said she couldn't see the updated month.
+//
+// Now the current month comes off the clock. The pill for it is SYNTHETIC: the
+// seed has no entry for it and must never be allowed to supply one, because
+// the fallback (`?? d.periods.jul`) would quietly put July's KPIs under it.
 
-// Which stored months make up each period pill (ytd adds live July on top).
+const LIVE = liveMonth();
+const SHORT_KEYS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const monthKey = (m: string) => SHORT_KEYS[Number(m.slice(5, 7)) - 1];
+/** The pill for the month we're standing in. */
+const LIVE_KEY = monthKey(LIVE);
+const LIVE_YEAR = LIVE.slice(0, 4);
+const liveIdx = Number(LIVE.slice(5, 7)) - 1;
+
+/** Every CLOSED month of this year, newest first — the history pills. */
+const CLOSED = Array.from({ length: liveIdx }, (_, i) => `${LIVE_YEAR}-${String(i + 1).padStart(2, "0")}`).reverse();
+
+// Period order: the live month first, then closed months newest-first, then
+// the quarters that have completed, then year to date.
+const PERIOD_ORDER = [
+  LIVE_KEY,
+  ...CLOSED.map(monthKey),
+  "q2",
+  "q1",
+  "ytd",
+] as const;
+
+// Which stored months make up each period pill. Built from the closed months
+// rather than typed out, so it can't fall behind the calendar the way the
+// hardcoded list did — a quarter only appears once all three of its months
+// have actually closed.
+const quarter = (months: string[]) => (months.every((m) => CLOSED.includes(m)) ? months : null);
 const PERIOD_MONTHS: Record<string, string[]> = {
-  jun: ["2026-06"],
-  may: ["2026-05"],
-  apr: ["2026-04"],
-  mar: ["2026-03"],
-  feb: ["2026-02"],
-  jan: ["2026-01"],
-  q2: ["2026-04", "2026-05", "2026-06"],
-  q1: ["2026-01", "2026-02", "2026-03"],
-  ytd: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
+  ...Object.fromEntries(CLOSED.map((m) => [monthKey(m), [m]])),
+  ...(quarter([`${LIVE_YEAR}-04`, `${LIVE_YEAR}-05`, `${LIVE_YEAR}-06`])
+    ? { q2: [`${LIVE_YEAR}-04`, `${LIVE_YEAR}-05`, `${LIVE_YEAR}-06`] }
+    : {}),
+  ...(quarter([`${LIVE_YEAR}-01`, `${LIVE_YEAR}-02`, `${LIVE_YEAR}-03`])
+    ? { q1: [`${LIVE_YEAR}-01`, `${LIVE_YEAR}-02`, `${LIVE_YEAR}-03`] }
+    : {}),
+  // Closed months only — the live month is added on top where a period needs it.
+  ytd: [...CLOSED].reverse(),
 };
+
+/**
+ * A period with no stored figures — every tile reads "—" until the live layer
+ * supplies one. Used for the current month, which by definition has no seed
+ * entry: the alternative was falling back to July, i.e. printing last month's
+ * numbers under this month's heading.
+ */
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+function emptyPeriod(key: string): PeriodKpis {
+  const idx = SHORT_KEYS.indexOf(key);
+  const label = idx >= 0 ? `${MONTH_NAMES[idx]} MTD` : key.toUpperCase();
+  const none = (): StatValue => ({
+    value: null,
+    display: "—",
+    source: "live-rex",
+    note: "No figure for this month yet — it fills in as the live sweep of REX, Propoly and PayProp completes.",
+  });
+  return {
+    label,
+    funnel: {
+      marketAppraisals: none(), listings: none(), viewings: none(),
+      applications: none(), moveIns: none(), liveListings: none(), pipeline: none(),
+    },
+    conversions: {
+      maToListing: none(), listingToMoveIn: none(), rlpConversion: none(),
+      gciPerMoveIn: none(), gciPerAgent: none(),
+    },
+    ramp: {
+      newStarters: none(), maInMonths1To2: none(),
+      listingInMonths1To2: none(), moveInWithin60Days: none(),
+    },
+  };
+}
 
 interface HistoryFunnel {
   month: string;
@@ -347,14 +414,14 @@ export default function Overview({ month }: { month: string }) {
   const [ramp, setRamp] = useState<RampPayload | null>(null);
   // Working period pills — one per pill-driven section, exactly like hers.
   const [rampKey, setRampKey] = useState<string>("ytd");
-  const [kpiKey, setKpiKey] = useState<string>("jul");
+  const [kpiKey, setKpiKey] = useState<string>(LIVE_KEY);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
     (async () => {
       try {
-        const res = await fetch(`/api/admin/overview?month=2026-07`, { cache: "no-store" });
+        const res = await fetch(`/api/admin/overview?month=${LIVE}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`Overview fetch failed (${res.status})`);
         const payload = (await res.json()) as OverviewPayload;
         if (!cancelled) setData(payload);
@@ -375,7 +442,7 @@ export default function Overview({ month }: { month: string }) {
   const loadLive = useCallback(async (refresh = false) => {
     setLiveLoading(true);
     try {
-      const res = await fetch(`/api/admin/live-business?month=2026-07${refresh ? "&refresh=1" : ""}`, {
+      const res = await fetch(`/api/admin/live-business?month=${LIVE}${refresh ? "&refresh=1" : ""}`, {
         cache: "no-store",
       });
       const j = (await res.json()) as LiveBusiness & { configured?: boolean; stale?: boolean };
@@ -489,7 +556,7 @@ export default function Overview({ month }: { month: string }) {
 
   const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
   // Live only makes sense against the current month's figures.
-  const liveForThisPeriod = kpiKey === "jul" ? liveMoney : null;
+  const liveForThisPeriod = kpiKey === LIVE_KEY ? liveMoney : null;
 
   const liveGciPerMoveIn: StatValue | null =
     liveForThisPeriod && liveForThisPeriod.moveIns
@@ -522,13 +589,17 @@ export default function Overview({ month }: { month: string }) {
   const d = data;
 
   // Per-period figures (from Susan's dashboard, all the way back to January).
-  const kpiPeriod = d.periods[kpiKey] ?? d.periods.jul;
-
-  const rampPeriod = d.periods[rampKey] ?? d.periods.jul;
+  // The live month has NO seed entry and must never borrow one. The old
+  // `?? d.periods.jul` fallback is exactly how July's KPIs would end up under
+  // an August pill: every tile would render a plausible number sourced from a
+  // month nobody selected. An empty period renders "—" until the live layer
+  // fills it in, which is the honest state.
+  const kpiPeriod = d.periods[kpiKey] ?? emptyPeriod(kpiKey);
+  const rampPeriod = d.periods[rampKey] ?? emptyPeriod(rampKey);
 
   // Upgrade a snapshot stat to live when the live layer carries the same
   // figure — current month (July) only; history months are final numbers.
-  const isCurrent = kpiKey === "jul";
+  const isCurrent = kpiKey === LIVE_KEY;
   const asLive = (value: number, note: string, display?: string): StatValue => ({
     value,
     display,
@@ -830,9 +901,11 @@ export default function Overview({ month }: { month: string }) {
       : d.headcount.varianceYtd,
   };
 
-  const pillOptions = PERIOD_ORDER.filter((k) => d.periods[k]).map((k) => ({
+  // The live pill is offered even though the seed has no entry for it — it is
+  // the whole point of the page now. Everything else still needs stored KPIs.
+  const pillOptions = PERIOD_ORDER.filter((k) => k === LIVE_KEY || d.periods[k]).map((k) => ({
     key: k,
-    label: d.periods[k].label,
+    label: d.periods[k]?.label ?? emptyPeriod(k).label,
   }));
   // Her ramp pills say "July" rather than "July MTD".
   const rampPillOptions = pillOptions.map((p) => ({
@@ -847,9 +920,9 @@ export default function Overview({ month }: { month: string }) {
   // they're skipped, and the tile carries a live badge off the real totals.
   const rampMonths =
     rampKey === "ytd"
-      ? [...(PERIOD_MONTHS.ytd ?? []), "2026-07"]
-      : rampKey === "jul"
-        ? ["2026-07"]
+      ? [...(PERIOD_MONTHS.ytd ?? []), LIVE]
+      : rampKey === LIVE_KEY
+        ? [LIVE]
         : (PERIOD_MONTHS[rampKey] ?? []);
   const rampMonthSet = new Set(rampMonths);
   const liveCohort =

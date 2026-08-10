@@ -50,7 +50,30 @@ interface Payload {
   masByType: { total: number; tle: number; tleDual: number; unmatched: number } | null;
   /** RLP input: this month's Propoly move-ins split by service level. */
   rlpMtd: { total: number; fullyManaged: number } | null;
+  /**
+   * The same rows `totals` is summed from, kept rather than thrown away.
+   *
+   * The sweep has always computed per-agent figures and then discarded them
+   * into five totals, which meant "the same numbers, but per partner" read as
+   * a second build when it is really just this array not being deleted. It
+   * answers Howard's per-agent portfolio question, and it is the ONE place a
+   * per-person figure should come from: filtering this is guaranteed to
+   * reconcile with the headline, whereas a separate per-agent fetch is a
+   * second definition that will eventually disagree with the first.
+   *
+   * `managed`/`rentRoll` are as-at-today stocks; the rest are for `month`.
+   */
+  byAgent: AgentRow[];
   generatedAt: string;
+}
+
+interface AgentRow {
+  email: string;
+  marketAppraisals: number;
+  onMarketListings: number;
+  pipeline: number;
+  managed: number;
+  rentRoll: number;
 }
 
 const cache = new Map<string, { at: number; data: Payload }>();
@@ -216,6 +239,8 @@ async function compute(month: string, force: boolean): Promise<Payload> {
     monthCounts,
     masByType,
     rlpMtd,
+    // Biggest book first — the order anyone reading a partner table wants.
+    byAgent: [...counted].sort((a, b) => b.managed - a.managed),
     generatedAt: new Date().toISOString(),
   };
   // Only cache/persist a COMPLETE payload — a Propoly/TEG timeout on a cold

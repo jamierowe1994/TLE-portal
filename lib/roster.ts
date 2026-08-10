@@ -3,11 +3,55 @@
 // WITHOUT pulling the (server-only) business/tenant seed data into the bundle.
 // Contains no tenant personal data and no owner-only financials.
 
+import { currentMonth } from "@/lib/format";
 import type { RosterEntry, SourceInfo, SourceKey } from "@/lib/seed-types";
 
 export const SNAPSHOT_DATE = "2026-07-11";
 export const SNAPSHOT_NOTE =
   "Figure from Susan's TLE Business Dashboard — we couldn't match a live stat for this yet";
+
+/* ============================ THE LIVE MONTH ============================ */
+
+/**
+ * The first month the portal reports its OWN figures for.
+ *
+ * Everything before this is Susan's hand-keyed spreadsheet, captured once as
+ * the July snapshot. Everything from here on is pulled live from REX and
+ * PayProp on demand. The two are not the same measurement and must never be
+ * added together or drawn on one line — a trend that is half typed and half
+ * measured tells you about the change of method, not the business.
+ *
+ * There is deliberately NO backfill of Jan–Jul. Year-to-date therefore starts
+ * here, and every screen that shows it says "since August 2026" out loud so a
+ * partial year can't be read as a full one.
+ */
+export const LIVE_START = "2026-08";
+
+/**
+ * The month the portal is standing in — the ONE month a current-state figure
+ * (on the market now, in progression now, the portfolio) may answer for.
+ *
+ * Read from the clock, floored at LIVE_START. This replaces four hand-typed
+ * copies of "2026-07" that had to agree and, once August began, didn't: the
+ * period picker rolled forward with the calendar while the dashboard and the
+ * stats API stayed pinned to July, so August was classed as "the future" and
+ * every tile either emptied out or — worse — kept showing July's numbers under
+ * an August heading. Anything that needs the live month imports this.
+ */
+export function liveMonth(): string {
+  const now = currentMonth();
+  return now < LIVE_START ? LIVE_START : now;
+}
+
+/** Is this month one the portal reports live figures for at all? */
+export function isLiveEra(month: string): boolean {
+  return month >= LIVE_START;
+}
+
+/** Months of the live era within a requested set, oldest first. */
+export function liveEraMonths(months: string[]): string[] {
+  return months.filter(isLiveEra);
+}
 
 /* ============================== ROSTER ============================== */
 

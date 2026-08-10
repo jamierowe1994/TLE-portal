@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { currentMonth, monthLabel } from "@/lib/format";
+import { LIVE_START, liveMonth } from "@/lib/roster";
 
 // Compact period selector for the earnings view: one dropdown of preset
 // windows (default "This month"), a "By month" dropdown beside it, and a
@@ -19,15 +20,27 @@ export interface ResolvedPeriod {
 // the month the partner is actually in — a fixed anchor meant every agent's
 // "this month" silently stayed July once August began.
 const YEAR = Number(currentMonth().slice(0, 4));
-const ANCHOR = currentMonth();
+const ANCHOR = liveMonth();
 const SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const ALL_MONTHS = SHORT.map((_, i) => `${YEAR}-${String(i + 1).padStart(2, "0")}`);
 
 const idx = (m: string) => Number(m.slice(5, 7)) - 1;
 const key = (i: number) => `${YEAR}-${String(i + 1).padStart(2, "0")}`;
 
+/**
+ * The earliest month a preset may reach back to.
+ *
+ * Presets are shorthand for "the recent past", and a partner picking one is
+ * not asking to be shown the hand-keyed spreadsheet era. Ranges are clamped to
+ * LIVE_START so "Last 6 months" in August means August, not Mar–Aug with five
+ * blank months in it. The explicit From/To range below is deliberately NOT
+ * clamped — asking for July by name is a fair thing to do, and the API answers
+ * it with the July snapshot, badged.
+ */
+const FLOOR = LIVE_START.slice(0, 4) === String(YEAR) ? idx(LIVE_START) : 0;
+
 function range(fromIdx: number, toIdx: number): string[] {
-  const a = Math.max(0, Math.min(fromIdx, toIdx));
+  const a = Math.max(FLOOR, Math.min(fromIdx, toIdx));
   const b = Math.min(11, Math.max(fromIdx, toIdx));
   const out: string[] = [];
   for (let i = a; i <= b; i++) out.push(key(i));
@@ -42,19 +55,40 @@ function rangeLabel(months: string[]): string {
   return `${SHORT[a]}–${SHORT[b]} ${YEAR}`;
 }
 
+/**
+ * What a clamped preset should CALL itself.
+ *
+ * "Year to date" over a window that starts in August is a false label — it
+ * reads as twelve months of trading and it's one. Whenever the floor bites,
+ * the preset renames itself after the month it actually starts from, so the
+ * partial year is visible on the control rather than buried in a footnote.
+ */
+function presetLabel(intended: string, months: string[]): string {
+  if (months.length === 0) return intended;
+  return months[0] > `${YEAR}-01` && idx(months[0]) === FLOOR && FLOOR > 0
+    ? `Since ${monthLabel(months[0])}`
+    : intended;
+}
+
 export function resolvePreset(presetKey: string): ResolvedPeriod {
   const a = idx(ANCHOR);
+  const preset = (key: string, intended: string, months: string[]): ResolvedPeriod => ({
+    key,
+    label: presetLabel(intended, months),
+    months,
+    forecastMonth: ANCHOR,
+  });
   switch (presetKey) {
     case "this-month":
       return { key: presetKey, label: "This month", months: [ANCHOR], forecastMonth: ANCHOR };
     case "last-3m":
-      return { key: presetKey, label: "Last 3 months", months: range(a - 2, a), forecastMonth: ANCHOR };
+      return preset(presetKey, "Last 3 months", range(a - 2, a));
     case "last-6m":
-      return { key: presetKey, label: "Last 6 months", months: range(a - 5, a), forecastMonth: ANCHOR };
+      return preset(presetKey, "Last 6 months", range(a - 5, a));
     case "ytd":
-      return { key: presetKey, label: "Year to date", months: range(0, a), forecastMonth: ANCHOR };
+      return preset(presetKey, "Year to date", range(0, a));
     case "full-year":
-      return { key: presetKey, label: "Full year", months: range(0, 11), forecastMonth: ANCHOR };
+      return preset(presetKey, "Full year", range(0, 11));
     default:
       return { key: "this-month", label: "This month", months: [ANCHOR], forecastMonth: ANCHOR };
   }

@@ -3,7 +3,7 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { payPropConfigured } from "@/lib/payprop";
 import { getAgentEarningsForMonths, describeAgentMatch, payPropRefreshing, exVat } from "@/lib/payprop-income";
-import { SNAPSHOT_MONTH } from "@/lib/seed-data";
+import { liveMonth } from "@/lib/roster";
 import type { AgentEarnings } from "@/lib/payprop-income";
 
 // The signed-in partner's own commission, live from PayProp. Matched on their
@@ -44,23 +44,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ connected: false, earnings: null });
   }
 
-  // The snapshot the portal is written against, never the wall clock — exactly
-  // as /api/my/stats does it. The two routes have to agree about which month is
-  // live: on the clock, a selection including a month past the snapshot had
-  // this route walk PayProp for it (~40 sequential calls each) while stats put
-  // the same month in `future` and returned nothing for it. And with no ?month
-  // at all, the default asked PayProp for a month the portal has nothing for.
-  const liveMonth = SNAPSHOT_MONTH;
+  // The same live month /api/my/stats uses — one shared constant off the clock
+  // now, rather than two routes each pinned to the snapshot and hoping to stay
+  // in step. They have to agree: when they didn't, a selection past the anchor
+  // had this route walk PayProp for real (~40 sequential calls a month) while
+  // stats classed the very same month as the future and returned nothing.
+  //
+  // Note this is NOT floored at LIVE_START. Earnings are the one figure with a
+  // genuine live source before August — PayProp holds the payment history — so
+  // asking it for July is a real question with a real answer, not the
+  // spreadsheet era. The floor belongs to the REX-derived funnel, not here.
+  const live = liveMonth();
   const params = req.nextUrl.searchParams;
   const raw = params.get("months") ?? params.get("month") ?? "";
   const asked = [
     ...new Set(raw.split(",").map((m) => m.trim()).filter((m) => MONTH_RE.test(m))),
   ].sort();
-  const requested = asked.length ? asked : [liveMonth];
+  const requested = asked.length ? asked : [live];
   // A month that hasn't started has no payments — counting it as £0 would drag
   // the period's average down as though the partner had earned nothing.
-  const future = requested.filter((m) => m > liveMonth);
-  const months = requested.filter((m) => m <= liveMonth);
+  const future = requested.filter((m) => m > live);
+  const months = requested.filter((m) => m <= live);
   const tooLong = months.length > MAX_MONTHS;
 
   // One walk for the whole period, not one per month. Per month meant a
