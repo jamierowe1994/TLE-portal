@@ -190,9 +190,30 @@ async function rexAllAccountUsers(): Promise<Array<Record<string, unknown>>> {
   return all;
 }
 
-// The lettings agents on the Rex account — everyone with a @thelettingexperts
-// email (excluding shared inboxes). Their Rex user ids are what we sum the
-// business-wide live stats over. Cached ~10 min.
+/**
+ * The lettings agents on the Rex account — whose ids every business-wide
+ * figure is summed over. Cached ~10 min.
+ *
+ * TWO WAYS IN, and the second one exists because the first was quietly wrong.
+ *
+ * The original test was "has a @thelettingexperts.co.uk email". Six businesses
+ * share this Rex account, so a domain looked like the natural divider — but
+ * several TLE partners are filed in Rex under @thepropertyexperts.co.uk
+ * addresses (Bernadine Williams, Shane Yu, James Crumpton, Rovena Buci,
+ * Zilvinas Navickis, measured 10 Aug 2026). They are TLE partners on the
+ * roster and their rental instructions are TLE business, but every
+ * business-wide figure silently dropped them: July's listings came out at 34
+ * instead of 44, a 23% under-report that looked entirely plausible.
+ *
+ * So an agent qualifies on EITHER the email domain OR a roster name match.
+ *
+ * The consequence to keep in mind: some of the roster-matched partners also
+ * sell for TPE, so their Rex user id now carries sales work as well as
+ * lettings. Every query over this list must therefore narrow to lettings by
+ * its own means — the listings queries filter on rental category, and
+ * `rentalPropertyIds` below is how the appraisals query does it. Widening this
+ * list without that narrowing would swap an under-report for an over-report.
+ */
 let lettingsAgentsCache: { at: number; agents: Array<{ id: string; email: string }> } | null = null;
 const LETTINGS_TTL_MS = 10 * 60 * 1000;
 
@@ -201,6 +222,7 @@ export async function rexLettingsAgents(): Promise<Array<{ id: string; email: st
   if (lettingsAgentsCache && Date.now() - lettingsAgentsCache.at < LETTINGS_TTL_MS) {
     return lettingsAgentsCache.agents;
   }
+  const { agentKeysForName } = await import("@/lib/roster");
   const agents: Array<{ id: string; email: string }> = [];
   const seen = new Set<string>();
   try {
@@ -208,8 +230,12 @@ export async function rexLettingsAgents(): Promise<Array<{ id: string; email: st
       const email = String(r.email_address ?? r.email ?? "").trim().toLowerCase();
       const id = String(r.id ?? r.user_id ?? "");
       if (!id || seen.has(id)) continue;
-      if (!email.endsWith("@thelettingexperts.co.uk")) continue;
+      // Shared inboxes are never a partner, whichever domain they're on.
       if (/^(info|support|no-?reply|admin|hello|accounts|hr)@/.test(email)) continue;
+      const name = String(r.name ?? `${r.first_name ?? ""} ${r.last_name ?? ""}`).trim();
+      const onDomain = email.endsWith("@thelettingexperts.co.uk");
+      const onRoster = name.length > 0 && agentKeysForName(name).length > 0;
+      if (!onDomain && !onRoster) continue;
       seen.add(id);
       agents.push({ id, email });
     }

@@ -26,7 +26,25 @@ export interface HistoryFunnel {
   applications: number | null; // accepted in month
   moveIns: number | null; // Propoly completed deals, move-in in month
   computedAt: string; // ISO
+  /** Which DEFINITION produced these figures — see DEFINITION_VERSION. */
+  definitionVersion?: number;
 }
+
+/**
+ * Bump this whenever the meaning of a stored figure changes, so months frozen
+ * under the old definition recompute instead of being served forever.
+ *
+ * A closed month's DATA can't change, which is why these are stored — but the
+ * definition applied to it can, and when it does the stored row is no longer
+ * an answer to the same question.
+ *
+ * 2 — 10 Aug 2026. The lettings-agent list widened to include TLE partners
+ *     filed under @thepropertyexperts.co.uk, and appraisals narrowed to
+ *     `appraisal_type = rent`. July's listings go 34 → 44 and combined MAs
+ *     36 → 47. June is unchanged at 41 (it gained 3 listings and lost 3 sales
+ *     appraisals, which happened to cancel) so Susan's reconciliation holds.
+ */
+const DEFINITION_VERSION = 2;
 
 /* ------------------------------- storage -------------------------------- */
 
@@ -102,12 +120,15 @@ async function computeMonth(month: string): Promise<HistoryFunnel | null> {
     applications: counts?.applications ?? null,
     moveIns,
     computedAt: new Date().toISOString(),
+    definitionVersion: DEFINITION_VERSION,
   };
 }
 
 // A month worth storing has every REX metric present (a partial pull — REX
 // timeout mid-run — must not be frozen forever as the "final" figures).
 function complete(h: HistoryFunnel): boolean {
+  // Stale-definition rows are treated as incomplete so they recompute once.
+  if ((h.definitionVersion ?? 1) < DEFINITION_VERSION) return false;
   return (
     h.marketAppraisals != null &&
     h.combinedMas != null && // added later — forces a one-off recompute of early stores

@@ -258,8 +258,12 @@ export async function getAgentAppraisals(
     ]);
     // Null here is "couldn't ask", not "none" — the caller keeps the snapshot.
     if (!recordedRows) return null;
+    // Lettings only. A partner who also sells for TPE files both books against
+    // the same Rex user id, so an unfiltered count puts their sales
+    // appraisals in their lettings MA figure.
+    const lettingsRows = recordedRows.filter(isLettingsAppraisal);
 
-    const recorded: AgentAppraisal[] = recordedRows.map((r) => ({
+    const recorded: AgentAppraisal[] = lettingsRows.map((r) => ({
       propertyId: propertyIdOf(r),
       address: propertyAddress(r.property as Record<string, unknown> | undefined),
       date: typeof r.appraisal_date === "string" ? r.appraisal_date.slice(0, 10) : null,
@@ -309,7 +313,9 @@ export async function getAgentAppraisals(
         { name: "appraisal_date", type: "<=", value: range.end },
       ]);
       if (!overlap) return recordedOnly();
-      const withMa = new Set(overlap.map(propertyIdOf));
+      // Lettings appraisals only — a same-month SALE appraisal doesn't mean the
+      // property had a lettings MA, so the instruction must still count.
+      const withMa = new Set(overlap.filter(isLettingsAppraisal).map(propertyIdOf));
       listingOnly = perListing.filter((l) => !withMa.has(l.propertyId));
     }
 
@@ -475,6 +481,30 @@ function epoch(date: string): string {
   return String(Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000));
 }
 
+/**
+ * Is this appraisal a LETTINGS appraisal?
+ *
+ * Rex stamps every appraisal with `appraisal_type` — "sale" or "rent". This
+ * became load-bearing on 10 Aug 2026, when the lettings-agent list widened to
+ * include TLE partners filed under @thepropertyexperts.co.uk addresses (see
+ * rexLettingsAgents). Several of them sell for TPE as well, so their Rex user
+ * id now carries both books: counting every appraisal against their id would
+ * have put 6 of June's sales appraisals and 4 of July's into the lettings MA
+ * figure.
+ *
+ * Measured on the same day, this ALSO corrects an existing over-count on the
+ * narrow list — June's 7 "market appraisals" were only 4 lettings appraisals
+ * and 3 sales ones. The old number was wrong in both directions at once.
+ *
+ * Unknown/absent types are excluded: an appraisal Rex won't classify is not
+ * evidence of lettings work, and guessing inflates the headline figure.
+ */
+function isLettingsAppraisal(r: Record<string, unknown>): boolean {
+  const t = r.appraisal_type as { id?: string } | string | null;
+  const id = typeof t === "object" && t ? t.id : t;
+  return String(id ?? "").toLowerCase() === "rent";
+}
+
 export async function getBusinessMonthCounts(
   month: string,
   agentIds: string[],
@@ -488,13 +518,15 @@ export async function getBusinessMonthCounts(
   if (!force && cached && Date.now() - cached.at < MONTH_COUNTS_TTL_MS) return cached.data;
 
   const work = (async (): Promise<BusinessMonthCounts | null> => {
-    const [applications, marketAppraisals, listingRows, viewingRows] = await Promise.all([
+    const [applications, appraisalRows, listingRows, viewingRows] = await Promise.all([
       countSearch("TenancyApplications", [
         { name: "application.agent_id", type: "in", value: agentIds },
         { name: "application.date_accepted", type: ">=", value: range.start },
         { name: "application.date_accepted", type: "<=", value: range.end },
       ]),
-      countSearch("Appraisals", [
+      // Rows, not a count — the lettings/sale split is only visible per row,
+      // and counting first would count both books.
+      pagedSearch("Appraisals", [
         { name: "agent_1_id", type: "in", value: agentIds },
         { name: "appraisal_date", type: ">=", value: range.start },
         { name: "appraisal_date", type: "<=", value: range.end },
@@ -522,9 +554,14 @@ export async function getBusinessMonthCounts(
       : null;
     const newListings = keptListings ? keptListings.length : null;
 
+    // Lettings appraisals only — see isLettingsAppraisal. On the widened agent
+    // list this is what separates a partner's lettings book from their sales
+    // one; on the old narrow list it also removes sales appraisals that were
+    // being counted as MAs.
+    const marketAppraisals = appraisalRows ? appraisalRows.filter(isLettingsAppraisal).length : null;
+
     // Combined MAs (Susan's definition): recorded appraisals + this month's
-    // listings whose property has NO same-month recorded appraisal. Validated
-    // June: 7 recorded + 34 listing-only = 41 vs her 40.
+    // listings whose property has NO same-month recorded appraisal.
     let combinedMas: number | null = null;
     if (marketAppraisals != null && keptListings) {
       // Per-listing property ids (dupes kept — two listings on one property
@@ -541,8 +578,14 @@ export async function getBusinessMonthCounts(
           { name: "appraisal_date", type: "<=", value: range.end },
         ]);
         if (overlapRows) {
+          // Same lettings-only test as above. A property whose only same-month
+          // appraisal was a SALE appraisal has not had a lettings MA, so it
+          // must still count as listing-only — otherwise widening the agent
+          // list would quietly SUPPRESS instructions from the combined figure.
           const withMa = new Set(
-            overlapRows.map((r) => String(((r.property as { id?: unknown }) ?? {}).id ?? ""))
+            overlapRows
+              .filter(isLettingsAppraisal)
+              .map((r) => String(((r.property as { id?: unknown }) ?? {}).id ?? ""))
           );
           listingOnly = perListing.filter((p) => !withMa.has(p)).length;
         }
@@ -606,7 +649,8 @@ export async function getAgentRampCounts(
 
   const work = (async (): Promise<AgentRampCounts | null> => {
     const [maCount, listingRows] = await Promise.all([
-      countSearch("Appraisals", [
+      // Rows not a count, so sales appraisals can be excluded per row.
+      pagedSearch("Appraisals", [
         { name: "agent_1_id", type: "=", value: rexUserId },
         { name: "appraisal_date", type: ">=", value: startISO },
         { name: "appraisal_date", type: "<=", value: endISO },
@@ -618,8 +662,9 @@ export async function getAgentRampCounts(
       ]),
     ]);
     const listings = listingRows ? listingRows.filter(isRentalListing).length : null;
-    if (maCount == null && listings == null) return null;
-    return { marketAppraisals: maCount, listings };
+    const mas = maCount ? maCount.filter(isLettingsAppraisal).length : null;
+    if (mas == null && listings == null) return null;
+    return { marketAppraisals: mas, listings };
   })();
 
   const deadline = new Promise<null>((resolve) =>
