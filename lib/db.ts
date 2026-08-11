@@ -238,6 +238,22 @@ CREATE TABLE IF NOT EXISTS gci_months (
   data             TEXT NOT NULL,             -- JSON MonthlyGci
   computed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- WHO WAS BEHIND, AND WHEN. PayProp reports a tenant's balance as it stands
+-- today and keeps no history of it, so the arrears figure was identical under
+-- every month on the dashboard and "how long has this one been behind?" had no
+-- answer at all. Rebuilding it from invoices minus payments was measured and
+-- rejected (67% precision, 22% recall on a CLOSED month), so the only honest
+-- way to get a history is to start keeping one: today's live read is captured
+-- daily, and prior months are loaded from PayProp's own exports.
+--
+-- ADMIN-ONLY DATA: rows name tenants and properties.
+CREATE TABLE IF NOT EXISTS arrears_snapshots (
+  as_at            DATE PRIMARY KEY,          -- the day the balances were true
+  source           TEXT NOT NULL,             -- 'payprop-live' | 'upload'
+  data             TEXT NOT NULL,             -- JSON ArrearsSnapshot
+  captured_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
 
 // Schema is created lazily on first query; the promise is cached and reset on
