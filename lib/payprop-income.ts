@@ -201,7 +201,14 @@ const running = new Set<string>();
  * for an hour, so a classifier change that isn't accompanied by a bump ships
  * to production and stays completely invisible behind the old result.
  */
-const CACHE_VERSION = "v13"; // v13: "Other" paid to the agency counts as fee income
+// v14: E&W (the "uk" agency) re-authorised 11 Aug 2026 after its OAuth refresh
+// token was rejected. Every payload stored before that moment was computed with
+// E&W contributing nothing — Scotland alone, against 488 E&W properties and
+// 1,158 E&W payment rows in a single month. Those are not stale figures, they
+// are figures missing the larger half of the business, and they would have been
+// served for the full hour-long TTL. Same cached-shape rule as the Payment
+// shape below: when what a stored payload MEANS changes, the key must change.
+const CACHE_VERSION = "v14";
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -342,7 +349,7 @@ const rangeRead = new Set<string>();
 /** Bump with the Payment shape. A stored range the readers no longer
  *  understand isn't an error, it's a wrong money figure — see the cached-shape
  *  rule; forgetting this has cost this project four misdiagnoses. */
-const RANGE_CACHE_VERSION = "v4"; // v4: adds the batch transfer date
+const RANGE_CACHE_VERSION = "v5"; // v5: E&W re-authorised — v4 rows hold Scotland only
 const rangeKey = (range: string) => `payprop:payments:${RANGE_CACHE_VERSION}:${range}`;
 
 /** Past this, in-memory is enough: a multi-megabyte jsonb round-trip on every
