@@ -198,6 +198,11 @@ export interface AgencyIncome {
    * A property that changed hands is credited to whoever holds it now.
    */
   byAgentProperty: AgentSlice[];
+  /** DISTINCT properties that took any payment this month. A flow, so it is
+   *  real history — unlike the property book, which cannot be rewound. */
+  propertiesPaying: number;
+  /** DISTINCT tenants who paid this month. */
+  tenantsPaying: number;
   /** Agencies we could not reach at all. Non-empty = the total is INCOMPLETE. */
   unreachable: PayPropAccountId[];
   paymentCount: number;
@@ -697,6 +702,12 @@ async function computeIncomeRange(
       a.rent += r.a;
     }
   }
+  const allProps = new Set<string>();
+  const allTenants = new Set<string>();
+  for (const r of rows) {
+    if (r.p) allProps.add(r.p);
+    if (r.tn) allTenants.add(r.tn);
+  }
   const byAgentProperty: AgentSlice[] = [...agentAcc.entries()]
     .map(([key, a]) => ({
       key,
@@ -777,6 +788,8 @@ async function computeIncomeRange(
       .sort((a, b) => b.amount - a.amount),
     byAccount,
     byAgentProperty,
+    propertiesPaying: allProps.size,
+    tenantsPaying: allTenants.size,
     unreachable,
     paymentCount: rows.length,
     accounts,

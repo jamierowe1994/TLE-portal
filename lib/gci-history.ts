@@ -45,6 +45,20 @@ export interface MonthlyGci {
    * whole because they ARE the whole, split.
    */
   byAgent: AgentSlice[];
+  /* ---------------------- rent collection, per month ----------------------
+   * Deliberately NOT an arrears figure. Rebuilding arrears from invoices minus
+   * payments was measured against PayProp's own balances and failed in both
+   * directions — 67% precision and 22% recall on a closed month, far worse
+   * mid-month — so it was rejected rather than shipped. These three are pure
+   * FLOWS out of the payment rows: nothing is inferred, nothing can name the
+   * wrong tenant, and month against month is a real trend.
+   */
+  /** Rent passed through to landlords this month. */
+  rentCollected: number;
+  /** DISTINCT properties that took any payment. */
+  propertiesPaying: number;
+  /** DISTINCT tenants who paid. */
+  tenantsPaying: number;
   /** Agencies PayProp wouldn't let us read. Non-empty = this month is SHORT. */
   unreachable: PayPropAccountId[];
   computedAt: string;
@@ -65,7 +79,12 @@ export interface MonthlyGci {
  *     Scotland agent regardless of performance, because Scotland's fees go
  *     straight to the agency and there is no beneficiary payment to match.
  */
-const DEFINITION_VERSION = 2;
+/*
+ * 3 — 11 Aug 2026. Adds rent collection per month (rentCollected,
+ *     propertiesPaying, tenantsPaying) — the honest month-scoped answer for
+ *     the Arrears tab, after the arrears REBUILD was tested and rejected.
+ */
+const DEFINITION_VERSION = 3;
 
 /**
  * How far back the MONEY reaches — deliberately NOT HISTORY_FLOOR.
@@ -128,6 +147,9 @@ function toMonthly(month: string, income: AgencyIncome): MonthlyGci {
       combinedGci: a.combinedGci,
     })),
     byAgent: income.byAgentProperty ?? [],
+    rentCollected: income.ownerPayments ?? 0,
+    propertiesPaying: income.propertiesPaying ?? 0,
+    tenantsPaying: income.tenantsPaying ?? 0,
     unreachable: income.unreachable ?? [],
     computedAt: new Date().toISOString(),
     definitionVersion: DEFINITION_VERSION,

@@ -49,6 +49,22 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
   // PayProp gathers in the background, so poll until it lands rather than
   // sitting on the snapshot for the whole session.
   const [live, setLive] = useState<LiveArrears | null>(null);
+  /** Rent collection per month — the honest month-scoped figure on this tab. */
+  const [collection, setCollection] = useState<
+    Array<{ month: string; rentCollected: number; propertiesPaying: number; tenantsPaying: number; avgPerProperty: number | null; incomplete: boolean }>
+  >([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/admin/rent-collection?month=${encodeURIComponent(month)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { months?: typeof collection } | null) => {
+        if (!cancelled && d?.months) setCollection(d.months);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
   // Rent roll comes from the portfolio walk — needed for "% of rent roll".
   const [rentRoll, setRentRoll] = useState<number | null>(null);
   useEffect(() => {
@@ -125,6 +141,70 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
           month can&apos;t be rebuilt. Live figures carry their own date; anything still on the
           snapshot is badged and dated 11 Jul 2026.
         </div>
+      ) : null}
+
+      {/* ------------------- rent collection, month by month -------------------
+          The month-scoped half of this tab. Arrears itself cannot be rewound —
+          a rebuild from invoices minus payments was measured against PayProp's
+          own balances and agreed on only 2 of 9 real cases while inventing 1,
+          so it was rejected. These are pure flows out of the payment rows:
+          nothing inferred, and no individual can be wrongly named. */}
+      {collection.length ? (
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            <h2 className="text-sm font-semibold">Rent collection — month by month</h2>
+            <span className="text-[11px] text-muted">
+              Live from PayProp · what came in, from how many properties and tenants ·
+              this DOES follow the month picker
+            </span>
+          </div>
+          <DataTable
+            columns={[
+              { key: "month", label: "Month", render: (r) => monthLabel(String(r.month)) },
+              {
+                key: "rentCollected",
+                label: "Rent collected",
+                align: "right",
+                render: (r) => `£${Number(r.rentCollected).toLocaleString("en-GB")}`,
+              },
+              { key: "propertiesPaying", label: "Properties paying", align: "right" },
+              { key: "tenantsPaying", label: "Tenants paying", align: "right" },
+              {
+                key: "avgPerProperty",
+                label: "Avg per property",
+                align: "right",
+                render: (r) =>
+                  r.avgPerProperty == null
+                    ? "—"
+                    : `£${Number(r.avgPerProperty).toLocaleString("en-GB")}`,
+              },
+              {
+                key: "incomplete",
+                label: "",
+                render: (r) =>
+                  r.incomplete ? (
+                    <span
+                      className="text-[11px] font-semibold text-red-600"
+                      title="An agency was unreachable when this month was computed, so these figures are short by a whole agency."
+                    >
+                      short
+                    </span>
+                  ) : (
+                    ""
+                  ),
+              },
+            ]}
+            rows={collection as unknown as Record<string, unknown>[]}
+            compact
+          />
+          <p className="text-[11px] text-muted">
+            Counts what actually transacted each month, so it is lower than the book
+            wherever a property took no payment. This is deliberately NOT an arrears
+            figure: rebuilding arrears per month was tested against PayProp&rsquo;s own
+            balances and missed 7 of 9 real cases while inventing 1, so it isn&rsquo;t
+            shown. Arrears above stays a live, as-at-today read.
+          </p>
+        </section>
       ) : null}
 
       {live ? (
