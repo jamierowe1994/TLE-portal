@@ -7,6 +7,7 @@ import { rexConfigured, rexLettingsAgents } from "@/lib/rex";
 import { getBusinessMonthCounts } from "@/lib/rex-stats";
 import { getPropolyMoveInsInRange } from "@/lib/propoly-deals";
 import { HISTORY_FLOOR, withinHistory } from "@/lib/roster";
+import { readCache, writeCache } from "@/lib/integration-cache";
 
 // Live funnel figures for CLOSED months, computed once with the validated
 // definitions and stored forever (a finished month can't change, so we don't
@@ -232,7 +233,45 @@ export interface YoYLive {
  * (James: "measure it from this time last year, 21st of the 7th to 21st of
  * the 7th"). Move-ins from Propoly, whose history reaches back to 2023.
  */
+const YOY_CACHE_KEY = "business:yoy:v1";
+const YOY_TTL_MS = 60 * 60_000;
+let yoyMemo: { at: number; data: YoYLive } | null = null;
+
 export async function getYoYLive(): Promise<YoYLive> {
+  /*
+   * DURABLY CACHED, because the underlying call is fragile in a way no amount
+   * of warming fully removes.
+   *
+   * Both halves race a 15s deadline over one cold Propoly cache of every
+   * completed deal. Concurrently they time each other out; sequentially they
+   * both still timed out (measured 30,002ms — two deadlines back to back)
+   * because the cold fill alone exceeds one deadline. A warm-up call fixes it
+   * locally, but on a colder/slower environment the warm-up can itself lose,
+   * and then the tile silently falls back to a 2025 snapshot — which is what
+   * "82 → 162" on the dashboard was.
+   *
+   * So: once a good answer is obtained, keep it. An hour of staleness is
+   * invisible on a year-to-date move-in count, and a stored good answer beats
+   * a fresh failure every time.
+   */
+  if (yoyMemo && Date.now() - yoyMemo.at < YOY_TTL_MS) return yoyMemo.data;
+  const stored = await readCache<YoYLive>(YOY_CACHE_KEY).catch(() => null);
+  if (stored?.data?.moveIns && Date.now() - stored.at < YOY_TTL_MS) {
+    yoyMemo = { at: stored.at, data: stored.data };
+    return stored.data;
+  }
+  const fresh = await computeYoYLive();
+  if (fresh.moveIns) {
+    yoyMemo = { at: Date.now(), data: fresh };
+    await writeCache(YOY_CACHE_KEY, fresh).catch(() => undefined);
+    return fresh;
+  }
+  // Couldn't compute. A previously stored answer, even an old one, is a far
+  // better tile than falling through to a 2025 snapshot.
+  return stored?.data ?? fresh;
+}
+
+async function computeYoYLive(): Promise<YoYLive> {
   const today = new Date().toISOString().slice(0, 10);
   const year = Number(today.slice(0, 4));
   const sameDayLastYear = `${year - 1}${today.slice(4)}`;

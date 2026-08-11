@@ -716,6 +716,20 @@ export async function payPropGetAll<T = Record<string, unknown>>(
     const totalPages = res.pagination?.total_pages;
     if (totalPages != null) {
       if (page >= totalPages) break;
+      // Ran out of page budget while PayProp says there is more. This used to
+      // fall out of the loop with `short` still false, returning a partial
+      // figure and saying nothing — the documented known defect above. It has
+      // become far more likely to bite now E&W is authenticating again: it
+      // carries ~84% of the payment volume (1,158 rows a month against
+      // Scotland's 223), so it is the agency that would truncate first.
+      //
+      // Treated as a dropped page, which throws below. A money figure that is
+      // quietly 30% short is worse than no figure at all, because nobody can
+      // tell by looking.
+      if (page === MAX_PAGES) {
+        short = true;
+        break;
+      }
     } else if (res.items.length < PAGE_ROWS) {
       break; // no pagination block to trust — fall back to the short page
     }
@@ -727,7 +741,7 @@ export async function payPropGetAll<T = Record<string, unknown>>(
   // nothing and retries.
   if (short) {
     throw new Error(
-      `[payprop] ${path}: a page could not be fetched after retries — refusing to report a partial figure.`
+      `[payprop] ${path}: incomplete walk (a page failed after retries, or the ${MAX_PAGES}-page ceiling was reached while more pages remained) — refusing to report a partial figure.`
     );
   }
 
