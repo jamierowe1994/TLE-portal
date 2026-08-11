@@ -1,7 +1,6 @@
 import "server-only";
 import { hasDb, q } from "@/lib/db";
 import { getAgencyIncome, type AgencyIncome } from "@/lib/payprop-income";
-import { HISTORY_FLOOR, withinHistory } from "@/lib/roster";
 import { currentMonth } from "@/lib/format";
 import type { PayPropAccountId } from "@/lib/payprop";
 
@@ -53,6 +52,20 @@ export interface MonthlyGci {
  *     before that point, but if it ever is, bump this rather than trusting it.
  */
 const DEFINITION_VERSION = 1;
+
+/**
+ * How far back the MONEY reaches — deliberately NOT HISTORY_FLOOR.
+ *
+ * That floor exists because Rex's viewing appointment types didn't exist before
+ * Aug 2025, which has nothing to do with PayProp. PayProp's payment history
+ * runs back to at least January 2022, so the commission chart is free to go
+ * back further than the funnel can.
+ */
+export const MONEY_FLOOR = "2022-01";
+
+/** Patience per month when explicitly backfilling. One cold month is ~1,400
+ *  rows at PayProp's 25-row page cap, i.e. ~56 sequential requests. */
+const PER_MONTH_WAIT_MS = 180_000;
 
 /* ------------------------------- storage -------------------------------- */
 
@@ -144,10 +157,11 @@ function monthsBetween(from: string, to: string): string[] {
  * result, and callers must treat absence as "not known", never as zero.
  */
 export async function getGciHistory(
-  fromMonth = HISTORY_FLOOR,
-  toMonth = currentMonth()
+  fromMonth = MONEY_FLOOR,
+  toMonth = currentMonth(),
+  opts: { wait?: boolean } = {}
 ): Promise<Record<string, MonthlyGci>> {
-  const from = withinHistory(fromMonth);
+  const from = fromMonth;
   const live = currentMonth();
   const months = monthsBetween(from, toMonth);
   const stored = await loadStored().catch(() => ({}) as Record<string, MonthlyGci>);
@@ -159,10 +173,26 @@ export async function getGciHistory(
       out[m] = stored[m];
       continue;
     }
-    const income = await getAgencyIncome(m).catch(() => null);
+    /*
+     * getAgencyIncome is NON-BLOCKING on a cold key: it returns null at once
+     * and computes in the background. That is right for a page load and wrong
+     * for a backfill — asking for eight cold months returns eight nulls, so
+     * nothing is stored and every tile stays blank until the walks happen to
+     * finish and somebody reloads. That is exactly what happened.
+     *
+     * On a page load we still fire-and-forget (the call above starts the work,
+     * and the next load picks it up). With `wait`, we poll until it lands, so
+     * an explicit backfill actually backfills.
+     */
+    let income = await getAgencyIncome(m).catch(() => null);
+    if (!income && opts.wait) {
+      const deadline = Date.now() + PER_MONTH_WAIT_MS;
+      while (!income && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        income = await getAgencyIncome(m).catch(() => null);
+      }
+    }
     if (!income) {
-      // getAgencyIncome is non-blocking on a cold key — it returns null and
-      // computes behind. Absence is "ask again shortly", not zero.
       if (stored[m]) out[m] = stored[m];
       continue;
     }
@@ -197,7 +227,9 @@ export interface GciSeries {
  */
 export async function getGciSeries(month = currentMonth()): Promise<GciSeries> {
   const year = month.slice(0, 4);
-  const start = withinHistory(`${year}-01`);
+  // January of the selected year. Not clamped to HISTORY_FLOOR: that floor is
+  // about Rex viewings, and money has its own, much longer reach.
+  const start = `${year}-01`;
   const hist = await getGciHistory(start, month);
   const asked = monthsBetween(start, month);
   const months = asked.map((m) => hist[m]).filter(Boolean);
