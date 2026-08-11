@@ -1,7 +1,7 @@
 import "server-only";
 import { payPropAccounts, payPropCanAuth, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
 import { readCache, writeCache } from "@/lib/integration-cache";
-import { normaliseAgentName, propertyKey } from "@/lib/payprop-portfolio";
+import { getPortfolioBook, normaliseAgentName, propertyKey } from "@/lib/payprop-portfolio";
 
 // Live money out of PayProp, replacing the figures the admin centre has been
 // reading off the 11 Jul 2026 dashboard snapshot.
@@ -80,6 +80,11 @@ interface Payment {
   /** reconciliation date — when the money actually landed and was matched.
    *  Truer than `d` (due date) for "has this been paid". */
   rd: string;
+  /** PayProp tenant id — lets a month's DISTINCT tenancies be counted per
+   *  agent from the payments themselves, which is real history, unlike the
+   *  property book (PayProp never populates listed_until, so the book cannot
+   *  be rewound to a past month). */
+  tn: string;
   /** outgoing batch status; "not approved" means in but not yet paid out. */
   bs: string;
   /** Batch transfer date — when the money actually left. THIS is the month the
@@ -107,10 +112,31 @@ function reduceRows(rows: PaymentRow[]): Payment[] {
       d: r.due_date ?? "",
       p: r.incoming_transaction?.property?.id ?? "",
       pk: propertyKey(r.incoming_transaction?.property?.name ?? ""),
+      tn: r.incoming_transaction?.tenant?.id ?? "",
       rd: r.incoming_transaction?.reconciliation_date ?? "",
       bs: r.payment_batch?.status ?? "",
       td: r.payment_batch?.transfer_date ?? "",
     }));
+}
+
+export interface AgentSlice {
+  /** Normalised name — the key the portfolio book uses. */
+  key: string;
+  /** As PayProp spells it, for display. */
+  name: string;
+  /** Fees earned on their properties, VAT-inclusive as PayProp reports it. */
+  gciGross: number;
+  /** The same net of VAT — what the accounts sheet reports. */
+  gciNet: number;
+  /** Rent passed through to landlords on their properties. Not income; the
+   *  volume behind it, and the figure "rent per month" means. */
+  rent: number;
+  /** DISTINCT properties with any payment this month — real occupancy of the
+   *  book in that month, not a projection of today's book backwards. */
+  properties: number;
+  /** DISTINCT tenants who paid this month. */
+  tenancies: number;
+  payments: number;
 }
 
 export interface AgencyIncome {
@@ -154,6 +180,24 @@ export interface AgencyIncome {
      */
     reachable: boolean;
   }>;
+  /**
+   * Per agent, attributed by PROPERTY rather than by beneficiary.
+   *
+   * This is the honest basis and the beneficiary one is not. Scotland's fees go
+   * straight to the agency — paidToBeneficiaries is £0 and byPartner is empty
+   * in every month measured — so a per-beneficiary lookup reports £0 earned for
+   * every Scotland agent however well their book performs. That is not a
+   * matching failure; there is simply no beneficiary payment to match.
+   *
+   * Joining each payment to its property, and the property to its responsible
+   * agent, works for both agencies. It also guarantees the drill-downs SUM to
+   * the business total, because they are the same rows split rather than a
+   * second query that will eventually disagree.
+   *
+   * CAVEAT, stated wherever this is shown: the property→agent map is TODAY's.
+   * A property that changed hands is credited to whoever holds it now.
+   */
+  byAgentProperty: AgentSlice[];
   /** Agencies we could not reach at all. Non-empty = the total is INCOMPLETE. */
   unreachable: PayPropAccountId[];
   paymentCount: number;
@@ -349,7 +393,7 @@ const rangeRead = new Set<string>();
 /** Bump with the Payment shape. A stored range the readers no longer
  *  understand isn't an error, it's a wrong money figure — see the cached-shape
  *  rule; forgetting this has cost this project four misdiagnoses. */
-const RANGE_CACHE_VERSION = "v5"; // v5: E&W re-authorised — v4 rows hold Scotland only
+const RANGE_CACHE_VERSION = "v6"; // v6: adds the tenant id, for per-agent tenancy counts
 const rangeKey = (range: string) => `payprop:payments:${RANGE_CACHE_VERSION}:${range}`;
 
 /** Past this, in-memory is enough: a multi-megabyte jsonb round-trip on every
@@ -603,6 +647,69 @@ async function computeIncomeRange(
   }));
   const unreachable = byAccount.filter((a) => !a.reachable).map((a) => a.account);
 
+  /* ---------------- per agent, attributed by PROPERTY ---------------- */
+  // Join each payment to its property, and the property to the agent responsible
+  // for it. See the AgencyIncome.byAgentProperty comment for why beneficiary
+  // attribution cannot work for Scotland.
+  /*
+   * WAIT for the book. getPortfolioBook is another cachedAsync, so on a cold
+   * key it returns null immediately and fills behind — and a null book here
+   * doesn't fail loudly, it silently attributes every payment to nobody and
+   * reports zero agents. That is the third time this pattern has bitten in one
+   * day (the GCI backfill and the Propoly warm-up were the others), so it is
+   * worth naming: anything COMPOSING a cachedAsync must poll for it.
+   *
+   * We are already inside a multi-minute background walk, so a few seconds of
+   * patience costs nothing.
+   */
+  let book = await getPortfolioBook().catch(() => null);
+  for (let i = 0; i < 20 && !book; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    book = await getPortfolioBook().catch(() => null);
+  }
+  const propertyToAgent = new Map<string, { key: string; name: string }>();
+  for (const [key, ab] of Object.entries(book?.byAgent ?? {})) {
+    // `names` holds every spelling PayProp used; the first is fine for display.
+    const name = ab.names?.[0] ?? key;
+    for (const id of ab.propertyIds ?? []) propertyToAgent.set(id, { key, name });
+  }
+  const agentAcc = new Map<
+    string,
+    { name: string; gciGross: number; rent: number; props: Set<string>; tenants: Set<string>; payments: number }
+  >();
+  for (const r of rows) {
+    const who = r.p ? propertyToAgent.get(r.p) : undefined;
+    if (!who) continue; // house accounts and unmatched properties — counted in
+    // the business total but belonging to no partner, so never invented onto one.
+    let a = agentAcc.get(who.key);
+    if (!a) {
+      a = { name: who.name, gciGross: 0, rent: 0, props: new Set(), tenants: new Set(), payments: 0 };
+      agentAcc.set(who.key, a);
+    }
+    a.payments += 1;
+    if (r.p) a.props.add(r.p);
+    if (r.tn) a.tenants.add(r.tn);
+    const cat = r.c || "Other";
+    if (FEE_CATEGORIES.has(cat) || (AGENCY_ONLY_FEE_CATEGORIES.has(cat) && r.t === "agency")) {
+      a.gciGross += r.a;
+    } else if (cat === "Owner") {
+      // Rent on its way to the landlord — the volume behind the fee.
+      a.rent += r.a;
+    }
+  }
+  const byAgentProperty: AgentSlice[] = [...agentAcc.entries()]
+    .map(([key, a]) => ({
+      key,
+      name: a.name,
+      gciGross: Math.round(a.gciGross * 100) / 100,
+      gciNet: exVat(a.gciGross),
+      rent: Math.round(a.rent * 100) / 100,
+      properties: a.props.size,
+      tenancies: a.tenants.size,
+      payments: a.payments,
+    }))
+    .sort((x, y) => y.gciNet - x.gciNet);
+
   let agencyIncome = 0;
   let paidToBeneficiaries = 0;
   let ownerPayments = 0;
@@ -669,6 +776,7 @@ async function computeIncomeRange(
       .map(([name, v]) => ({ name, amount: v.amount, payments: v.payments }))
       .sort((a, b) => b.amount - a.amount),
     byAccount,
+    byAgentProperty,
     unreachable,
     paymentCount: rows.length,
     accounts,

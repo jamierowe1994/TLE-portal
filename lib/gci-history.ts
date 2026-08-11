@@ -1,6 +1,6 @@
 import "server-only";
 import { hasDb, q } from "@/lib/db";
-import { getAgencyIncome, type AgencyIncome } from "@/lib/payprop-income";
+import { getAgencyIncome, type AgencyIncome, type AgentSlice } from "@/lib/payprop-income";
 import { currentMonth } from "@/lib/format";
 import type { PayPropAccountId } from "@/lib/payprop";
 
@@ -37,6 +37,14 @@ export interface MonthlyGci {
   /** Partners who earned a fee — the honest denominator for "per agent". */
   agentsEarning: number;
   byAccount: Array<{ account: PayPropAccountId; label: string; combinedGci: number }>;
+  /**
+   * Per agent for THIS month, attributed by property. Stored alongside the
+   * total deliberately: a drill-down computed from the same rows as the
+   * headline cannot drift from it, whereas a separate per-agent query
+   * eventually will. This is the reconciliation check — the parts sum to the
+   * whole because they ARE the whole, split.
+   */
+  byAgent: AgentSlice[];
   /** Agencies PayProp wouldn't let us read. Non-empty = this month is SHORT. */
   unreachable: PayPropAccountId[];
   computedAt: string;
@@ -51,7 +59,13 @@ export interface MonthlyGci {
  *     a figure missing the larger half of the business. Nothing is stored from
  *     before that point, but if it ever is, bump this rather than trusting it.
  */
-const DEFINITION_VERSION = 1;
+/*
+ * 2 — 11 Aug 2026. Adds the per-agent split (byAgent), attributed by PROPERTY
+ *     rather than by beneficiary. Beneficiary attribution reported £0 for every
+ *     Scotland agent regardless of performance, because Scotland's fees go
+ *     straight to the agency and there is no beneficiary payment to match.
+ */
+const DEFINITION_VERSION = 2;
 
 /**
  * How far back the MONEY reaches — deliberately NOT HISTORY_FLOOR.
@@ -113,6 +127,7 @@ function toMonthly(month: string, income: AgencyIncome): MonthlyGci {
       label: a.label,
       combinedGci: a.combinedGci,
     })),
+    byAgent: income.byAgentProperty ?? [],
     unreachable: income.unreachable ?? [],
     computedAt: new Date().toISOString(),
     definitionVersion: DEFINITION_VERSION,
