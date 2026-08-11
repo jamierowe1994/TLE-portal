@@ -81,12 +81,23 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
       {/* Source + privacy banner */}
       {live ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-800">
-          <span className="font-semibold">Live from PayProp.</span>{" "}
+          <span className="font-semibold">
+            Live from PayProp — as at today, {formatDate(new Date().toISOString())}.
+          </span>{" "}
           {live.tenants.length} of {live.checked} tenancies in arrears, owing{" "}
           <span className="font-semibold">
             £{live.totalOwed.toLocaleString("en-GB", { maximumFractionDigits: 0 })}
           </span>
           .{" "}
+          {month !== liveMonth() ? (
+            <span className="font-semibold">
+              This is NOT {monthLabel(month)} — PayProp reports a tenant&rsquo;s balance as it
+              stands now and keeps no history of it, so the same figure appears under every
+              month. Rebuilding a past month means recomputing what was due against what was
+              paid, tenant by tenant, which is an accounting exercise rather than a query —
+              and a wrong answer means chasing someone who doesn&rsquo;t owe.
+            </span>
+          ) : null}{" "}
           <span className="font-semibold">
             This view is admin-only — it contains tenant personal data.
           </span>
