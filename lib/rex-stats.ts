@@ -1,6 +1,6 @@
 import "server-only";
 import type { FunnelStats } from "./types";
-import { rexCall, rexRows, rexConfigured } from "./rex";
+import { rexCall, rexRows, rexConfigured, rexLettingsAgents } from "./rex";
 
 // Per-agent funnel stats from REX — live pulls confirmed against the live
 // account (3517, "The Property Experts" — Property + Lettings share it) via the
@@ -760,6 +760,13 @@ export interface AgentListing {
   imageCount: number;
   /** Every photo in REX order, 800x600 thumbs — feeds the drawer carousel. */
   images: string[];
+  /**
+   * The listing agent REX has on the record. Carried so a business-wide walk
+   * can attribute anything that hangs off a property — compliance especially —
+   * to a partner WITHOUT one search per agent. Null when REX holds none.
+   */
+  agentId: string | null;
+  agentName: string | null;
 }
 
 // REX returns lookups as { id, text } and plain values elsewhere — normalise.
@@ -863,6 +870,14 @@ function toListing(r: Record<string, unknown>): AgentListing {
     image: hero.url,
     imageCount: hero.count,
     images: hero.all,
+    agentId: (() => {
+      const a = (r.listing_agent_1 ?? {}) as { id?: unknown };
+      return a.id == null ? null : String(a.id);
+    })(),
+    agentName: (() => {
+      const a = (r.listing_agent_1 ?? {}) as { name?: unknown };
+      return typeof a.name === "string" && a.name.trim() ? a.name.trim() : null;
+    })(),
   };
 }
 
@@ -2709,124 +2724,438 @@ export async function getListingDocuments(listingId: string): Promise<RexDocumen
 
 /* ----------------------- business-wide compliance ------------------------ */
 
-export interface BusinessCompliance {
+/**
+ * WHAT COMPLIANCE CAN AND CANNOT ANSWER — measured 11 Aug 2026, on the live
+ * account, before any of this was written. Read this before "making it live
+ * for the selected month", because the obvious version of that is wrong.
+ *
+ * 1. A COMPLIANCE ENTRY IS EDITED IN PLACE WHEN A CERTIFICATE IS RENEWED.
+ *    Of 6,467 (parent, type) pairs in the account, 6,426 hold exactly ONE
+ *    entry; only 41 hold more. So REX does not keep the superseded row. A
+ *    property whose gas certificate expired in February and was renewed in
+ *    March carries ONE entry, dated 2027 — and rewinding "overdue" by
+ *    comparing today's expiry date against a past date would report that
+ *    property as compliant in February, which is precisely backwards. Past
+ *    overdue would come out systematically too LOW, on a compliance figure.
+ *
+ * 2. THE RECORD ONLY STARTS IN NOVEMBER 2025. Entries by creation month:
+ *    Mar 2025: 87, then nothing until Nov 2025: 2,554 (the EPC bulk import),
+ *    Dec: 353, and ~400–570 a month since. "As at September 2025" would
+ *    therefore show a nearly empty book with almost nothing overdue — an
+ *    artefact of when data entry began, rendered as a trading fact.
+ *
+ * So the STOCK (how many certificates are valid / expiring / overdue) is only
+ * ever answerable as at TODAY, and the tab says so. What IS honestly
+ * month-scoped are two FLOWS, both of which come straight off dates REX holds
+ * and neither of which needs a history REX doesn't keep:
+ *
+ *   • RECORDED in the month  — system_ctime falls in it. Compliance admin
+ *     actually done that month.
+ *   • EXPIRING in the month  — expiry_date falls in it. Work that lands in
+ *     that month, and the only one of the three that can be read FORWARD.
+ *
+ * Those two follow the month picker. The stock does not, and is stamped.
+ */
+
+/** One compliance entry, flattened to what any figure on the tab needs. */
+export interface ComplianceCensusRow {
+  /** REX parent_object_id — a property, a listing, or a contact. */
+  parent: string;
+  /** Raw REX type_id, e.g. "gas_safety". */
+  type: string;
+  /** Expiry, epoch ms. Null when REX holds no date (3,072 of 6,500 entries). */
+  expiry: number | null;
+  /** When the entry was created in REX, epoch ms. Populated on every row. */
+  created: number;
+  /** Is the certificate itself attached, or only a record that one exists? */
+  hasFile: boolean;
+}
+
+export interface ComplianceCensus {
+  at: number;
+  rows: ComplianceCensusRow[];
+}
+
+const censusMem = { at: 0, data: null as ComplianceCensus | null };
+let censusInflight: Promise<ComplianceCensus | null> | null = null;
+/** The sweep is ~65 pages at ~13s each; six hours is generous and it is still
+ *  refreshed behind the request as soon as it is stale. */
+const CENSUS_TTL_MS = 6 * 60 * 60_000;
+const CENSUS_KEY = "rex:compliance:census:v1";
+
+/**
+ * Every active compliance entry in REX, in one paged sweep.
+ *
+ * Two things make this work where the old aggregate didn't:
+ *
+ * • PAGES RUN IN PARALLEL. Measured: one page 12.4s, six pages together 14.7s —
+ *   REX's latency here is per-request overhead, not throughput, so batching
+ *   takes the whole account from ~14 minutes to ~2.
+ * • THE 8s CALL TIMEOUT IS LIFTED for this sweep. Every ComplianceEntries page
+ *   takes 12–13s, so the old walk was aborting on its FIRST page, returning
+ *   null every time, and the Compliance tab had silently been showing the July
+ *   snapshot rather than anything live. That is the bug behind "make it live".
+ *
+ * Returns the RAW entries rather than a summary, so the same sweep can answer
+ * the as-at-today stock and both month flows without going back to REX.
+ */
+async function sweepCompliance(): Promise<ComplianceCensus | null> {
+  const PAGE_BATCH = 8;
+  const MAX_PAGES = 400;
+  const PAGE_TIMEOUT_MS = 45_000;
+
+  const fetchPage = (page: number) =>
+    rexCall(
+      "ComplianceEntries",
+      "search",
+      {
+        criteria: [{ name: "system_record_state", type: "=", value: "active" }],
+        limit: COUNT_LIMIT,
+        offset: page * COUNT_LIMIT,
+      },
+      { timeoutMs: PAGE_TIMEOUT_MS }
+    ).catch(() => null);
+
+  const rows: Array<Record<string, unknown>> = [];
+  let done = false;
+  let walked = 0;
+  for (let start = 0; start < MAX_PAGES && !done; start += PAGE_BATCH) {
+    const pages: number[] = [];
+    for (let i = 0; i < PAGE_BATCH && start + i < MAX_PAGES; i++) pages.push(start + i);
+    const results = await Promise.all(pages.map(fetchPage));
+    // Consumed IN ORDER, stopping at the first failed or short page, so an
+    // overshooting batch contributes nothing rather than leaving a hole.
+    for (const res of results) {
+      walked++;
+      if (!res || !res.ok) return null; // a hole in the middle is not a total
+      const batch = rexRows(res.result);
+      rows.push(...batch);
+      if (batch.length < COUNT_LIMIT) {
+        done = true;
+        break;
+      }
+    }
+  }
+  // Still full at the ceiling: the account is bigger than the walk. Reporting
+  // that as a total is how "6,000 entries" got mistaken for the whole book
+  // once already.
+  if (!done && walked >= MAX_PAGES) return null;
+  if (rows.length === 0) return null;
+
+  const data: ComplianceCensus = {
+    at: Date.now(),
+    rows: rows.map((r) => {
+      const type = String(label(r.type_id) ?? "unknown");
+      const details = (r.details ?? {}) as Record<string, unknown>;
+      // Type key first, sole block as the fallback — taking whichever block
+      // sorted first dates an entry from the wrong certificate.
+      const block = complianceDetailBlock(details, type) as { expiry_date?: string | null };
+      const expiry = block.expiry_date ? Date.parse(String(block.expiry_date)) : NaN;
+      const created = Number(r.system_ctime);
+      return {
+        parent: String(r.parent_object_id ?? ""),
+        type,
+        expiry: Number.isFinite(expiry) ? expiry : null,
+        created: Number.isFinite(created) ? created * 1000 : 0,
+        hasFile: !!complianceFileUrl(r),
+      };
+    }),
+  };
+  return data;
+}
+
+export async function getComplianceCensus(): Promise<ComplianceCensus | null> {
+  if (censusMem.data && Date.now() - censusMem.at < CENSUS_TTL_MS) return censusMem.data;
+  if (!rexConfigured()) return null;
+
+  const { readCache, writeCache } = await import("@/lib/integration-cache");
+  if (!censusMem.data) {
+    const stored = await readCache<ComplianceCensus>(CENSUS_KEY).catch(() => null);
+    if (stored?.data?.rows?.length) {
+      censusMem.at = stored.at;
+      censusMem.data = stored.data;
+    }
+  }
+  const fresh = censusMem.data && Date.now() - censusMem.at < CENSUS_TTL_MS;
+  if (fresh) return censusMem.data;
+
+  // Stale but present: serve it and refresh behind the request. A six-hour-old
+  // expiry date is not meaningfully different from a fresh one, and two minutes
+  // of waiting is.
+  if (!censusInflight) {
+    censusInflight = sweepCompliance()
+      .then(async (data) => {
+        if (data) {
+          censusMem.at = data.at;
+          censusMem.data = data;
+          await writeCache(CENSUS_KEY, data).catch(() => undefined);
+        }
+        return data;
+      })
+      .catch(() => null)
+      .finally(() => {
+        censusInflight = null;
+      });
+  }
+  if (censusMem.data) return censusMem.data;
+  return censusInflight;
+}
+
+/* ------------------------------ summarising ------------------------------ */
+
+export interface ComplianceBucketRow {
+  key: string;
+  label: string;
+  total: number;
+  overdue: number;
+  upcoming: number;
+}
+
+export interface ComplianceAgentRowLive extends ComplianceBucketRow {
+  pctOverdue: number;
+  /** Certificates recorded by / against this partner in the selected month. */
+  recorded: number;
+  /** Certificates of theirs that expire in the selected month. */
+  expiring: number;
+}
+
+export interface ComplianceSummary {
+  /** When the STOCK below was read. Always now — see the note at the top. */
+  asAt: string;
+  /** The month the FLOWS below cover — this one does follow the picker. */
+  month: string;
+  /* ---- stock, as at today ---- */
   totalItems: number;
   overdue: number;
   upcoming: number;
   valid: number;
-  byType: Array<{ type: string; total: number; overdue: number; upcoming: number }>;
+  /** Entries REX holds no expiry date for — counted, never flagged either way. */
+  noExpiry: number;
+  byType: ComplianceBucketRow[];
+  byAgent: ComplianceAgentRowLive[];
+  /* ---- flows, for `month` ---- */
+  recordedInMonth: number;
+  expiringInMonth: number;
+  overdueAtMonthEnd: null;
+  /** Recorded per month for the twelve months ending at `month` — the trend. */
+  recordedSeries: Array<{ month: string; recorded: number; expiring: number }>;
+  /* ---- what the figures above do NOT cover ---- */
+  /**
+   * Certificates on lettings properties belonging to ANOTHER business in this
+   * shared REX account. Excluded from every figure above — see the scoping
+   * note in getComplianceAsAt.
+   */
+  otherBusinesses: number;
+  /** Property certificates on a property no current lettings listing claims. */
+  unattributed: number;
+  /** Contact-level checks (ID, AML, right to rent) — a different job entirely. */
+  contactEntries: number;
+  /** Expiry dates REX holds that are not real years — 3033, 8203. Typos. */
+  impossibleDates: number;
+  /** Was the partner map available? False = byAgent is empty, not zero. */
+  agentsResolved: boolean;
+  /**
+   * Did the TLE partner list resolve, so the figures are TLE's own book? False
+   * means REX wouldn't name the partners and the figures cover every lettings
+   * property in the shared account — a much bigger number, and the tab has to
+   * say so rather than let it read as TLE's.
+   */
+  tleScoped: boolean;
 }
 
-const businessComplianceCache = { at: 0, data: null as BusinessCompliance | null };
-const BUSINESS_COMPLIANCE_TTL_MS = 60 * 60_000;
-// Bumped from "rex:compliance" when byType started keying on the entry's real
-// type (label(type_id), and the expiry read from details[type] rather than
-// whichever block sorted first). The durable Postgres row survives deploys, so
-// the key has to change or the old numbers keep being served for an hour and
-// the fix looks like it did nothing.
-const BUSINESS_COMPLIANCE_KEY = "rex:compliance:v2";
+const UPCOMING_DAYS = 60;
+const MONTH_RE_STATS = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function monthBounds(month: string): { start: number; end: number } {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  return {
+    start: Date.UTC(y, m - 1, 1),
+    end: Date.UTC(y, m, 1), // exclusive
+  };
+}
 
 /**
- * Every compliance entry in REX, classified. Queried across the account in one
- * paged sweep rather than per agent: ComplianceEntries is superlinearly slow
- * on large id sets, so thirty per-agent fetches would take minutes.
+ * The Compliance tab's figures, live from the census.
  *
- * The expiry date sits inside `details` under a key named after the entry type
- * (details.epc.expiry_date, details.gas_safety.expiry_date, …), so it's read
- * generically rather than by listing every type we know about today.
+ * `month` scopes the FLOWS only. The stock is as at now, by necessity — see
+ * the note at the top of this section for the two measurements that rule out
+ * rebuilding it.
  */
-export async function getBusinessCompliance(): Promise<BusinessCompliance | null> {
-  if (
-    businessComplianceCache.data &&
-    Date.now() - businessComplianceCache.at < BUSINESS_COMPLIANCE_TTL_MS
-  ) {
-    return businessComplianceCache.data;
-  }
-  if (!rexConfigured()) return null;
+export async function getComplianceAsAt(month: string): Promise<ComplianceSummary | null> {
+  const census = await getComplianceCensus();
+  if (!census) return null;
+  const sel = MONTH_RE_STATS.test(month) ? month : new Date().toISOString().slice(0, 7);
 
-  // 64 pages of ComplianceEntries is the slowest walk we do, so a fresh
-  // process serves the last stored result rather than re-sweeping REX.
-  const { readCache, writeCache } = await import("@/lib/integration-cache");
-  if (!businessComplianceCache.data) {
-    const stored = await readCache<BusinessCompliance>(BUSINESS_COMPLIANCE_KEY).catch(() => null);
-    if (stored) {
-      businessComplianceCache.at = stored.at;
-      businessComplianceCache.data = stored.data;
-      if (Date.now() - stored.at < BUSINESS_COMPLIANCE_TTL_MS) return stored.data;
-    }
+  /*
+   * SCOPING — why this is not simply "every compliance entry in REX".
+   *
+   * Six businesses share this REX account. Swept raw on 11 Aug 2026 it holds
+   * 4,496 property certificates, of which only ~1,550 sit on a property a TLE
+   * partner has listed: 3,004 of them are EPCs, mostly against The Property
+   * Experts' sales stock. A headline of "4,496 certificates, 448 overdue" on
+   * Susan's dashboard is therefore not a big number about TLE — it is mostly
+   * somebody else's book, and 213 of those overdue certificates are nobody
+   * here's to chase.
+   *
+   * So the figures are scoped to properties whose listing agent is a TLE
+   * partner, and the two excluded groups are counted and shown rather than
+   * quietly dropped.
+   *
+   * Compliance hangs off a property (sometimes off the listing), so both ids
+   * are mapped.
+   */
+  const [listings, tleAgents] = await Promise.all([
+    getBusinessListings().catch(() => null),
+    rexLettingsAgents().catch(() => [] as Array<{ id: string; email: string }>),
+  ]);
+  const tleIds = new Set(tleAgents.map((a) => a.id));
+  // An empty partner list is a FAILURE, not "no TLE partners". Falling through
+  // with it would classify the entire book as another business's and render
+  // zeros — so scoping is dropped instead, and the flag says the figures are
+  // account-wide.
+  const tleScoped = tleIds.size > 0;
+  const agentOf = new Map<string, { name: string; tle: boolean }>();
+  for (const l of listings ?? []) {
+    const name = l.agentName;
+    if (!name) continue;
+    const entry = { name, tle: !tleScoped || (!!l.agentId && tleIds.has(l.agentId)) };
+    if (l.propertyId) agentOf.set(l.propertyId, entry);
+    if (l.id) agentOf.set(l.id, entry);
   }
 
-  // 60 pages returned exactly 6,000 rows on the first run — i.e. the cap, not
-  // the end of the data. Raised well clear of the real total, and a run that
-  // still hits it returns null rather than reporting a truncated count as
-  // though it were the whole account.
-  const MAX_PAGES = 400;
-  const rows: Array<Record<string, unknown>> = [];
-  let capped = true;
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await rexCall("ComplianceEntries", "search", {
-      criteria: [{ name: "system_record_state", type: "=", value: "active" }],
-      limit: 100,
-      offset: (page - 1) * 100,
-    }).catch(() => null);
-    if (!res || !res.ok) break;
-    const batch = rexRows(res.result);
-    rows.push(...batch);
-    if (batch.length < 100) {
-      capped = false;
-      break;
-    }
-  }
-  if (rows.length === 0 || capped) return null;
-
-  const UPCOMING_DAYS = 60;
   const now = Date.now();
-  const byType = new Map<string, { total: number; overdue: number; upcoming: number }>();
+  const { start, end } = monthBounds(sel);
+  // Anything past this is a typo, not a date. Measured: three entries expire in
+  // 3033 and one in 8203.
+  const ABSURD = Date.UTC(2100, 0, 1);
+
+  const byType = new Map<string, ComplianceBucketRow>();
+  const byAgent = new Map<string, ComplianceAgentRowLive>();
+  let totalItems = 0;
   let overdue = 0;
   let upcoming = 0;
   let valid = 0;
+  let noExpiry = 0;
+  let contactEntries = 0;
+  let otherBusinesses = 0;
+  let unattributed = 0;
+  let impossibleDates = 0;
+  let recordedInMonth = 0;
+  let expiringInMonth = 0;
 
-  for (const r of rows) {
-    const type = String(label(r.type_id) ?? "unknown");
-    // Same rule as the per-property path — type key first, sole block as the
-    // fallback. This used to take Object.values(details)[0] unconditionally,
-    // which dates an entry from whichever block happened to sort first.
-    const details = (r.details ?? {}) as Record<string, unknown>;
-    const block = complianceDetailBlock(details, type) as { expiry_date?: string | null };
-    const expiry = block.expiry_date ? Date.parse(block.expiry_date) : NaN;
+  const series = new Map<string, { month: string; recorded: number; expiring: number }>();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(Date.UTC(Number(sel.slice(0, 4)), Number(sel.slice(5, 7)) - 1 - i, 1));
+    const key = d.toISOString().slice(0, 7);
+    series.set(key, { month: key, recorded: 0, expiring: 0 });
+  }
 
-    const bucket = byType.get(type) ?? { total: 0, overdue: 0, upcoming: 0 };
+  for (const r of census.rows) {
+    // Contact-level checks (ID, proof of address, AML, NRL, right to rent,
+    // referencing) live in the same table and are a different job. Counted so
+    // the difference from REX's own 6,400-entry total is explainable, then set
+    // aside — the old tile added them to "compliance items", which is why it
+    // read 6,397 against a book of ~1,100 properties.
+    if (!PROPERTY_COMPLIANCE[r.type]) {
+      contactEntries++;
+      continue;
+    }
+
+    const owner = agentOf.get(r.parent) ?? null;
+    // Counted, then set aside. Both of these are real certificates — they are
+    // simply not TLE's to chase, and mixing them in is what made the old
+    // headline four times the size of the book it claimed to describe.
+    if (!owner) {
+      unattributed++;
+      continue;
+    }
+    if (!owner.tle) {
+      otherBusinesses++;
+      continue;
+    }
+    const agent = owner.name;
+    totalItems++;
+
+    const bucket =
+      byType.get(r.type) ??
+      { key: r.type, label: PROPERTY_COMPLIANCE[r.type], total: 0, overdue: 0, upcoming: 0 };
     bucket.total++;
 
-    if (Number.isFinite(expiry)) {
-      const days = (expiry - now) / 86_400_000;
+    const agentRow: ComplianceAgentRowLive = byAgent.get(agent) ?? {
+      key: agent,
+      label: agent,
+      total: 0,
+      overdue: 0,
+      upcoming: 0,
+      pctOverdue: 0,
+      recorded: 0,
+      expiring: 0,
+    };
+    agentRow.total++;
+
+    if (r.expiry != null && r.expiry < ABSURD) {
+      const days = (r.expiry - now) / 86_400_000;
       if (days < 0) {
         overdue++;
         bucket.overdue++;
+        agentRow.overdue++;
       } else if (days <= UPCOMING_DAYS) {
         upcoming++;
         bucket.upcoming++;
+        agentRow.upcoming++;
       } else {
         valid++;
       }
+      if (r.expiry >= start && r.expiry < end) {
+        expiringInMonth++;
+        agentRow.expiring++;
+      }
+      const em = new Date(r.expiry).toISOString().slice(0, 7);
+      const eBucket = series.get(em);
+      if (eBucket) eBucket.expiring++;
     } else {
-      // No expiry recorded — counted but not flagged either way.
-      valid++;
+      if (r.expiry != null) impossibleDates++;
+      // No usable expiry — counted, flagged neither way. Same rule as the
+      // per-property view, where it renders as "no date recorded".
+      noExpiry++;
     }
-    byType.set(type, bucket);
+
+    if (r.created >= start && r.created < end) {
+      recordedInMonth++;
+      agentRow.recorded++;
+    }
+    const cm = r.created ? new Date(r.created).toISOString().slice(0, 7) : null;
+    const cBucket = cm ? series.get(cm) : null;
+    if (cBucket) cBucket.recorded++;
+
+    byType.set(r.type, bucket);
+    byAgent.set(agent, agentRow);
   }
 
-  const data: BusinessCompliance = {
-    totalItems: rows.length,
+  return {
+    asAt: new Date(census.at).toISOString(),
+    month: sel,
+    totalItems,
     overdue,
     upcoming,
     valid,
-    byType: [...byType.entries()]
-      .map(([type, v]) => ({ type, ...v }))
+    noExpiry,
+    byType: [...byType.values()].sort((a, b) => b.overdue - a.overdue || b.total - a.total),
+    byAgent: [...byAgent.values()]
+      .map((a) => ({ ...a, pctOverdue: a.total ? (a.overdue / a.total) * 100 : 0 }))
       .sort((a, b) => b.overdue - a.overdue || b.total - a.total),
+    recordedInMonth,
+    expiringInMonth,
+    // Deliberately null and deliberately present: the tab asks for it, and the
+    // answer is "this cannot be known", not zero.
+    overdueAtMonthEnd: null,
+    recordedSeries: [...series.values()],
+    otherBusinesses,
+    unattributed,
+    contactEntries,
+    impossibleDates,
+    agentsResolved: !!listings && listings.length > 0,
+    tleScoped,
   };
-  businessComplianceCache.at = Date.now();
-  businessComplianceCache.data = data;
-  await writeCache(BUSINESS_COMPLIANCE_KEY, data);
-  return data;
 }

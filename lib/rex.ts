@@ -64,10 +64,11 @@ function isTokenError(res: RexResponse): boolean {
 async function rexPost(
   path: string,
   body: unknown,
-  token?: string
+  token?: string,
+  timeoutMs = CALL_TIMEOUT_MS
 ): Promise<RexResponse> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(`${base()}/v1/rex/${path}`, {
@@ -134,7 +135,18 @@ async function getToken(accountId: string | null, force = false): Promise<string
 export async function rexCall(
   service: string,
   method: string,
-  body?: unknown
+  body?: unknown,
+  /**
+   * Per-call timeout override, in ms.
+   *
+   * The 8s default is a page-render guarantee and it is right for anything a
+   * user is waiting on. It is WRONG for a background sweep: ComplianceEntries
+   * pages measured 12–13s each on 11 Aug 2026 (every page, repeatedly), so the
+   * whole business-compliance walk was aborting on its FIRST page and the tab
+   * had been quietly serving the July snapshot ever since. A slow call that
+   * nobody is blocked on should be allowed to finish.
+   */
+  opts?: { timeoutMs?: number }
 ): Promise<RexResponse> {
   if (!rexConfigured()) {
     throw new Error("Rex isn't connected yet (missing REX_API_EMAIL/PASSWORD).");
@@ -142,10 +154,10 @@ export async function rexCall(
   const accountId = rexAccountId();
   const path = `${service}/${method}`;
   let token = await getToken(accountId);
-  let res = await rexPost(path, body, token);
+  let res = await rexPost(path, body, token, opts?.timeoutMs);
   if (isTokenError(res)) {
     token = await getToken(accountId, true); // force re-login
-    res = await rexPost(path, body, token);
+    res = await rexPost(path, body, token, opts?.timeoutMs);
   }
   return res;
 }
