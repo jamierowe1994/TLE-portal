@@ -227,6 +227,17 @@ CREATE TABLE IF NOT EXISTS history_funnels (
   data             TEXT NOT NULL,             -- JSON HistoryFunnel
   computed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- The same idea for MONEY. A closed month's commission cannot change, and
+-- walking it is expensive: PayProp clamps every page to 25 rows, so one month
+-- across both agencies is ~1,400 rows / ~56 requests, and a year-to-date walk
+-- is ~9,000 rows — which is what made the year-to-date GCI tile unreachable.
+-- Stored per month, year-to-date becomes a SUM of stored months instead.
+CREATE TABLE IF NOT EXISTS gci_months (
+  month            TEXT PRIMARY KEY,          -- "YYYY-MM"
+  data             TEXT NOT NULL,             -- JSON MonthlyGci
+  computed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
 
 // Schema is created lazily on first query; the promise is cached and reset on

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
 import { SEED, PERIOD_KPIS } from "@/lib/seed-data";
+import { getGciSeries } from "@/lib/gci-history";
 import { getOverrides } from "@/lib/actuals-store";
 import { resolveStat } from "@/lib/stats";
 import type { StatValue } from "@/lib/types";
@@ -61,15 +62,54 @@ export async function GET(req: NextRequest) {
   const gciRow = SEED.income.monthlyTable.find(
     (r) => r.metric === "Combined GCI (exc VAT)"
   );
-  const gciByMonth = {
-    labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-    actual: gciRow
-      ? [gciRow.jan, gciRow.feb, gciRow.mar, gciRow.apr, gciRow.may, gciRow.jun]
-      : [],
-    budget: null, // 2026 budget series not captured from the source dashboard
-    budgetNote:
-      "2026 budget series was not captured from the Base44 dashboard — actual GCI only.",
-  };
+  /*
+   * Monthly GCI, live from the per-month store — the chart GROWS as months
+   * close rather than being a fixed Jan–Jun literal reading one seed row.
+   *
+   * Falls back to the seed only when the store has nothing yet (a cold
+   * environment mid-backfill), so the chart is never blank.
+   */
+  const SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const series = await getGciSeries(month).catch(() => null);
+  const live = series?.months ?? [];
+  const gciByMonth = live.length
+    ? {
+        labels: live.map((m) => SHORT[Number(m.month.slice(5, 7)) - 1]),
+        // NET of VAT — PayProp's amounts are VAT-inclusive and the accounts
+        // sheet is not. Charting the gross figure would overstate every bar
+        // by 20%.
+        actual: live.map((m) => Math.round(m.combinedGciNet)),
+        budget: null,
+        budgetNote:
+          series && !series.complete
+            ? `Live from PayProp, net of VAT — ${
+                series.missing.length ? `${series.missing.length} month(s) still computing. ` : ""
+              }${
+                series.unreachable.length
+                  ? `${series.unreachable.join(", ")} unreachable, so these bars are SHORT by a whole agency.`
+                  : ""
+              }`.trim()
+            : "Live from PayProp, net of VAT. No budget series exists in the source data — actual GCI only.",
+        live: true,
+        ytdNet: series?.ytdNet ?? null,
+        ytdGross: series?.ytdGross ?? null,
+        complete: series?.complete ?? false,
+        unreachable: series?.unreachable ?? [],
+      }
+    : {
+        labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+        actual: gciRow
+          ? [gciRow.jan, gciRow.feb, gciRow.mar, gciRow.apr, gciRow.may, gciRow.jun]
+          : [],
+        budget: null,
+        budgetNote:
+          "Still gathering the live monthly commission from PayProp — showing the captured 2026 actuals meanwhile.",
+        live: false,
+        ytdNet: null,
+        ytdGross: null,
+        complete: false,
+        unreachable: [],
+      };
 
   return NextResponse.json({
     month,

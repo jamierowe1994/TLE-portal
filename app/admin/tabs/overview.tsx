@@ -64,7 +64,21 @@ interface OverviewPayload {
   conversions: SeedData["conversions"];
   masByPartnerType: SeedData["masByPartnerType"];
   yoyGrowth: SeedData["yoyGrowth"];
-  gciByMonth: { labels: string[]; actual: (number | null)[]; budget: null; budgetNote: string };
+  gciByMonth: {
+    labels: string[];
+    actual: (number | null)[];
+    budget: null;
+    budgetNote: string;
+    /** True when the series came from the live per-month store. */
+    live?: boolean;
+    /** Year-to-date commission NET of VAT, summed from the same stored months
+     *  the chart plots — so the tile and the chart cannot disagree. */
+    ytdNet?: number | null;
+    ytdGross?: number | null;
+    /** False when a month is missing or an agency was unreachable. */
+    complete?: boolean;
+    unreachable?: string[];
+  };
   sources: SeedData["sources"];
   periods: Record<string, PeriodKpis>;
 }
@@ -663,7 +677,7 @@ export default function Overview({ month }: { month: string }) {
   const liveForThisPeriod = liveMoney;
 
   const liveGciPerMoveIn: StatValue | null =
-    liveForThisPeriod && liveForThisPeriod.moveIns
+    (liveForThisPeriod && liveForThisPeriod.moveIns
       ? {
           // exc VAT, same basis as the accounts spreadsheet the rest of this
           // page's history is seeded from — PayProp's wire amounts include it.
@@ -672,7 +686,7 @@ export default function Overview({ month }: { month: string }) {
           source: "live-payprop",
           note: `${gbp(exVat(liveForThisPeriod.combinedGci))} commission exc VAT ÷ ${liveForThisPeriod.moveIns} tenancies starting this month — live from PayProp.`,
         }
-      : null;
+      : null);
 
   const liveGciPerAgent: StatValue | null =
     liveForThisPeriod && liveForThisPeriod.agentsEarning
@@ -871,6 +885,33 @@ export default function Overview({ month }: { month: string }) {
   const effViewings = hViewings?.stat ?? funnelViewings;
   const effApplications = hApplications?.stat ?? funnelApplications;
   const effMoveIns = hMoveIns?.stat ?? funnelMoveIns;
+
+  /**
+   * GCI PER MOVE-IN, for the selected month, from the SAME stored monthly
+   * commission the chart and the year-to-date tile use.
+   *
+   * Preferred over the on-demand `liveMoney` walk, which is slower, cold more
+   * often, and was pinned to whatever month it last fetched. Divided by
+   * `effMoveIns` — the very figure the funnel tile above shows — so the rate
+   * and the count it came from cannot contradict each other, which is the
+   * class of bug this page has produced repeatedly.
+   */
+  const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const selMonthGciNet = d.gciByMonth.live
+    ? (d.gciByMonth.actual[
+        d.gciByMonth.labels.indexOf(MONTH_ABBR[Number(sel.slice(5, 7)) - 1])
+      ] ?? null)
+    : null;
+  const gciPerMoveInFromStore: StatValue | null =
+    selMonthGciNet != null && effMoveIns.value != null && effMoveIns.value > 0
+      ? {
+          value: Math.round(selMonthGciNet / effMoveIns.value),
+          display: gbp(selMonthGciNet / effMoveIns.value),
+          source: "live-payprop",
+          note: `${gbp(selMonthGciNet)} commission exc VAT ÷ ${effMoveIns.value} move-ins in ${selLabel} — both from the figures shown above, so they agree by construction.`,
+          asOf: new Date().toISOString().slice(0, 10),
+        }
+      : null;
 
   /** Measured (live or stored-live), as opposed to a hand-keyed snapshot. */
   const measured = (s: StatValue | undefined): s is StatValue =>
@@ -1247,23 +1288,56 @@ export default function Overview({ month }: { month: string }) {
           <Tile label={`${ytdLabel} YTD Listings`} stat={hlListings.stat} flag={hlListings.flag} compact />
           <Tile label={`${ytdLabel} YTD Applications`} stat={hlApplications.stat} flag={hlApplications.flag} compact />
           <Tile label={`${ytdLabel} YTD Move-ins`} stat={hlMoveIns.stat} flag={hlMoveIns.flag} compact />
+          {/* Summed from the SAME stored months the chart below plots, so the
+              tile and the chart cannot disagree. Prefer the store over the
+              on-demand walk: PayProp caps its report at 94 days, so a
+              year-to-date walk was rejected outright and this tile could never
+              populate by that route. */}
           <Tile
             label={`${ytdLabel} YTD GCI exc VAT`}
             stat={
-              ytdMoney
+              d.gciByMonth.ytdNet != null
                 ? {
-                    value: Math.round(ytdMoney.combinedGci),
-                    display: `£${Math.round(ytdMoney.combinedGci).toLocaleString("en-GB")}`,
+                    value: Math.round(d.gciByMonth.ytdNet),
+                    display: `£${Math.round(d.gciByMonth.ytdNet).toLocaleString("en-GB")}`,
                     source: "live-payprop",
-                    note: `Live from PayProp — every fee charged since 1 January across both agencies, ${ytdMoney.paymentCount} payments.`,
+                    note: `Live from PayProp, net of VAT — every fee charged across ${ytdWindowLabel}, summed from the stored monthly figures the chart below plots.${
+                      d.gciByMonth.ytdGross
+                        ? ` £${Math.round(d.gciByMonth.ytdGross).toLocaleString("en-GB")} including VAT.`
+                        : ""
+                    }`,
+                    asOf: new Date().toISOString().slice(0, 10),
                   }
-                : d.headline.gciExcVat
+                : d.gciByMonth.live
+                  ? {
+                      value: null,
+                      display: "—",
+                      source: "derived",
+                      note: `Year-to-date needs every month in ${ytdWindowLabel}. ${
+                        d.gciByMonth.unreachable?.length
+                          ? "An agency is unreachable, so a total would be short by a whole agency."
+                          : "Still walking the missing months from PayProp — it fills in once they land, then stays stored."
+                      }`,
+                    }
+                  : d.headline.gciExcVat
             }
             compact
           />
-          {/* Seed constant describing ONE window — the June-2026 year-to-date
-              capture. It has no live source on this route, so rather than wear
-              the selected month's label it only appears under its own. */}
+          {/*
+            TOTAL INCOME — deliberately NOT inferred.
+
+            I tested the obvious hypothesis and the data killed it. Susan's
+            captured pair is £213,317 GCI exc VAT against £240,434 total income,
+            a ratio of 1.127 — so if total income were simply the VAT-inclusive
+            twin it would read £255,980. Measured across every stored month,
+            PayProp's VAT is a flat 20% (gross/net = 1.200 in Jan, Feb, Mar, Apr
+            and May alike), which rules that reading out entirely.
+
+            That leaves ~£27,117 over the June year-to-date window that PayProp
+            does not hold — joining fees or other revenue, most likely. Rather
+            than dress a commission figure up as total income, this shows the
+            June capture under its own label and nothing under any other.
+          */}
           <Tile
             label={sel === "2026-06" ? "Jun YTD Total Income" : "Total Income"}
             stat={
@@ -1273,7 +1347,7 @@ export default function Overview({ month }: { month: string }) {
                     value: null,
                     display: "—",
                     source: "snapshot",
-                    note: "Total income was captured once, as a June 2026 year-to-date figure. There is no live source for it on this page, so it is not shown for any other window rather than repeated under one.",
+                    note: "PayProp holds COMMISSION, not total business income. Susan's captured total is about £27k above year-to-date commission over the same window, and that gap is not VAT (PayProp's VAT is a flat 20%) — so it is revenue from somewhere PayProp cannot see. Needs a definition before it can be computed live.",
                   }
             }
             compact
@@ -1344,8 +1418,8 @@ export default function Overview({ month }: { month: string }) {
           <Tile label="RLP Conversion" stat={convRlp} sub={subNote(convRlp)} />
           <Tile
             label="GCI per Move-in"
-            stat={liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn}
-            sub={subNote(liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn)}
+            stat={gciPerMoveInFromStore ?? liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn}
+            sub={subNote(gciPerMoveInFromStore ?? liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn)}
           />
           <Tile
             label="GCI per Agent"
@@ -1400,6 +1474,26 @@ export default function Overview({ month }: { month: string }) {
                 display: `${g.from} → ${live.totals.managed}`,
                 source: "live-rex",
                 note: `Live from REX — ${live.totals.managed} managed (let) properties across every lettings agent, as at today, against ${g.from} at the baseline.`,
+                asOf: new Date().toISOString().slice(0, 10),
+              };
+              return <Tile key={g.label} label={g.label} stat={stat} />;
+            }
+            // GCI per move-in, year on year: the live side is now reachable —
+            // year-to-date commission from the stored months over year-to-date
+            // move-ins from Propoly. Held back until E&W authenticated, because
+            // Scotland-only money over whole-business move-ins would have
+            // understated it by roughly five times.
+            if (
+              g.label === "GCI per move-in" &&
+              d.gciByMonth.ytdNet != null &&
+              hist?.yoy.moveIns?.currYtd
+            ) {
+              const per = Math.round(d.gciByMonth.ytdNet / hist.yoy.moveIns.currYtd);
+              const stat: StatValue = {
+                value: per,
+                display: `${g.from ? `£${g.from.toLocaleString("en-GB")} → ` : ""}£${per.toLocaleString("en-GB")}`,
+                source: "live-payprop",
+                note: `£${Math.round(d.gciByMonth.ytdNet).toLocaleString("en-GB")} commission exc VAT across ${ytdWindowLabel} ÷ ${hist.yoy.moveIns.currYtd} move-ins year to date. Baseline ${g.from} is the 2025 average from the capture.`,
                 asOf: new Date().toISOString().slice(0, 10),
               };
               return <Tile key={g.label} label={g.label} stat={stat} />;
