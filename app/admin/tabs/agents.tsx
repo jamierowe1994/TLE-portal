@@ -15,6 +15,7 @@ import type { SeedData } from "@/lib/seed-data"; // type-only — erased at buil
 import { ROSTER, agentKeysForName } from "@/lib/roster";
 import type { AgentForecast, UserProfile } from "@/lib/types";
 import { formatDate, formatGBP, formatNum, formatPct, monthLabel } from "@/lib/format";
+import type { StatValue } from "@/lib/types";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -325,11 +326,36 @@ function UserRow({
 
 /* --------------------------------- tab --------------------------------- */
 
+interface AgentLive {
+  name: string;
+  agentKey: string | null;
+  marketAppraisals: number | null;
+  listings: number | null;
+  pipeline: number | null;
+  managed: number | null;
+  rentRoll: number | null;
+}
+
 interface LivePayload {
   month: string;
   linkedCount: number;
   totalAgents: number;
   totals: { marketAppraisals: number; listings: number; pipeline: number; managed: number; rentRoll: number };
+  /** Per agent from REX, for the selected month. Fetched all along and never
+   *  read — the table below was built entirely from the July seed. */
+  perAgent?: AgentLive[];
+}
+
+/** Per agent from PayProp for the selected month, attributed by property. */
+interface AgentMoney {
+  key: string;
+  name: string;
+  gciGross: number;
+  gciNet: number;
+  rent: number;
+  properties: number;
+  tenancies: number;
+  payments: number;
 }
 
 export default function Agents({ month, seed }: { month: string; seed: SeedData }) {
@@ -339,6 +365,7 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
   const [error, setError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [live, setLive] = useState<LivePayload | null>(null);
+  const [agentMoney, setAgentMoney] = useState<AgentMoney[]>([]);
   const [liveLoading, setLiveLoading] = useState(true);
   // Each partner's managed book and commission, live from PayProp.
   const [book, setBook] = useState<{
@@ -352,10 +379,19 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
     const ask = () => {
       fetch(`/api/admin/payprop-live?month=${encodeURIComponent(month)}`, { cache: "no-store" })
         .then((r) => r.json())
-        .then((d: { portfolio?: { byAgent: Record<string, { names: string[]; properties: number; rentRoll: number; activeTenancies: number }> } | null; income?: { byPartner?: Array<{ name: string; amount: number; payments: number }> } | null }) => {
+        .then((d: {
+          portfolio?: { byAgent: Record<string, { names: string[]; properties: number; rentRoll: number; activeTenancies: number }> } | null;
+          income?: { byPartner?: Array<{ name: string; amount: number; payments: number }> } | null;
+          byAgent?: AgentMoney[];
+        }) => {
           if (cancelled) return;
           if (d.portfolio) setBook(d.portfolio);
           if (d.income?.byPartner) setEarnings(d.income.byPartner);
+          // Property-attributed money for the selected month. byPartner above
+          // is beneficiary-attributed and is £0 for every Scotland agent,
+          // because Scotland's fees go straight to the agency — so this is the
+          // figure the table actually uses.
+          if (d.byAgent?.length) setAgentMoney(d.byAgent);
           if ((!d.portfolio || !d.income) && tries++ < 40) setTimeout(ask, 5000);
         })
         .catch(() => {});
@@ -440,31 +476,89 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
     return null;
   }
 
-  const kpiRows = [...seed.agentKpisJulyMtd.rows, seed.agentKpisJulyMtd.totals].map(
-    (row) => {
-      const linked = row.tier === "TOTAL" ? null : linkedUserForName(row.agent);
-      const forecast = row.tier === "TOTAL" ? null : forecastForName(row.agent);
-      return {
-        tier: row.tier,
-        agent: row.tier === "TOTAL" ? "TOTAL" : row.agent,
-        portal: linked
-          ? forecast?.gciTarget != null
-            ? `Linked · forecast ${formatGBP(forecast.gciTarget)}`
-            : "Linked"
-          : row.tier === "TOTAL"
-            ? ""
-            : "No portal account",
-        isLinked: !!linked,
-        gci: row.gci,
-        ma: row.ma,
-        li: row.li,
-        vw: row.vw,
-        ap: row.ap,
-        mi: row.mi,
-        pn: row.pn,
-      };
-    }
-  );
+  /*
+   * THE PER-AGENT TABLE, built from live sources for the SELECTED month.
+   *
+   * It used to be built entirely from seed.agentKpisJulyMtd — one captured
+   * month, one fixed list of people. Anyone not in that capture simply did not
+   * exist on this page, which is why "pull each individual person's figures,
+   * even if they're not starting up" wasn't possible.
+   *
+   * Now the row set is the UNION of everyone the live sources know about, so a
+   * partner appears the moment they transact. Two sources, joined on the
+   * normalised name:
+   *   REX      (live.perAgent)  — market appraisals, listings, pipeline
+   *   PayProp  (agentMoney)     — GCI, rent, properties, tenancies
+   * The seed fills only what neither can answer (viewings, applications), and
+   * is badged so it can't be mistaken for the selected month.
+   */
+  const norm = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const rexByName = new Map((live?.perAgent ?? []).map((a) => [norm(a.name), a]));
+  const moneyByName = new Map(agentMoney.map((a) => [norm(a.name), a]));
+  const seedByName = new Map(seed.agentKpisJulyMtd.rows.map((r) => [norm(r.agent), r]));
+
+  // Everyone any source knows, not just whoever was in the July capture.
+  const everyName = new Map<string, string>();
+  for (const a of agentMoney) everyName.set(norm(a.name), a.name);
+  for (const a of live?.perAgent ?? []) everyName.set(norm(a.name), a.name);
+  for (const r of seed.agentKpisJulyMtd.rows) if (!everyName.has(norm(r.agent))) everyName.set(norm(r.agent), r.agent);
+
+  const isSeedMonth = month === "2026-07";
+  const liveRows = [...everyName.entries()].map(([key, displayName]) => {
+    const rex = rexByName.get(key);
+    const cash = moneyByName.get(key);
+    const sd = seedByName.get(key);
+    const linked = linkedUserForName(displayName);
+    const forecast = forecastForName(displayName);
+    return {
+      tier: sd?.tier ?? "—",
+      agent: displayName,
+      portal: linked
+        ? forecast?.gciTarget != null
+          ? `Linked · forecast ${formatGBP(forecast.gciTarget)}`
+          : "Linked"
+        : "No portal account",
+      isLinked: !!linked,
+      // Money and REX counts are for the SELECTED month.
+      gci: cash ? Math.round(cash.gciNet) : null,
+      rent: cash ? Math.round(cash.rent) : null,
+      props: cash?.properties ?? null,
+      tens: cash?.tenancies ?? null,
+      ma: rex?.marketAppraisals ?? null,
+      li: rex?.listings ?? null,
+      pn: rex?.pipeline ?? null,
+      // No live per-agent source exists for these two. Shown only for the month
+      // the capture describes, rather than under every heading.
+      vw: isSeedMonth ? (sd?.vw ?? null) : null,
+      ap: isSeedMonth ? (sd?.ap ?? null) : null,
+      mi: isSeedMonth ? (sd?.mi ?? null) : null,
+    };
+  });
+  // Biggest earner first; unmatched people fall to the bottom rather than
+  // being hidden, because "who has no figures" is itself worth seeing.
+  liveRows.sort((a, b) => (b.gci ?? -1) - (a.gci ?? -1));
+
+  // TOTAL row summed from the very rows above it, so the table proves its own
+  // arithmetic — the reconciliation check this page exists for.
+  const sum = (k: "gci" | "rent" | "props" | "tens" | "ma" | "li" | "pn") =>
+    liveRows.reduce((t, r) => t + ((r[k] as number | null) ?? 0), 0);
+  const totalRow = {
+    tier: "TOTAL",
+    agent: "TOTAL",
+    portal: "",
+    isLinked: false,
+    gci: sum("gci"),
+    rent: sum("rent"),
+    props: sum("props"),
+    tens: sum("tens"),
+    ma: sum("ma"),
+    li: sum("li"),
+    pn: sum("pn"),
+    vw: null,
+    ap: null,
+    mi: null,
+  };
+  const kpiRowsLive = [...liveRows, totalRow];
 
   const netIncomeRows = [
     ...seed.partnerNetIncome.rows,
@@ -586,11 +680,21 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
 
       {/* ----------------------- per-agent KPI table ----------------------- */}
       <SectionTitle source={seed.agentKpisJulyMtd.source}>
-        Per-Agent KPIs — July 2026
+        Per-Agent KPIs — {monthLabel(month)}
       </SectionTitle>
       <p className="mb-2 text-xs text-muted">
         Click an agent&rsquo;s row to open their drill-down (forecast, ads,
-        portfolio, compliance).
+        portfolio, compliance). GCI, rent, properties and tenancies are{" "}
+        {monthLabel(month)} from PayProp, attributed by property — so the TOTAL row
+        is the same figure the Overview shows, split. MA, listings and pipeline are
+        live from Rex.{" "}
+        {month === "2026-07"
+          ? "Viewings and applications come from the July capture."
+          : "Viewings and applications have no live per-partner source, so they are blank for any month but July 2026."}{" "}
+        Properties and tenancies count what actually transacted that month, which
+        is lower than a partner&rsquo;s book where a property took no payment.
+        Attribution uses today&rsquo;s property map, so a property that changed
+        hands counts to whoever holds it now.
       </p>
       {error ? (
         <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
@@ -623,7 +727,10 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
                 ""
               ),
           },
-          { key: "gci", label: "GCI", align: "right", render: (row) => money(row.gci as number | null) },
+          { key: "gci", label: "GCI exc VAT", align: "right", render: (row) => money(row.gci as number | null) },
+          { key: "rent", label: "Rent pcm", align: "right", render: (row) => money(row.rent as number | null) },
+          { key: "props", label: "Props", align: "right", render: (row) => num(row.props) },
+          { key: "tens", label: "Tenancies", align: "right", render: (row) => num(row.tens) },
           { key: "ma", label: "MA", align: "right", render: (row) => num(row.ma) },
           { key: "li", label: "Li", align: "right", render: (row) => num(row.li) },
           { key: "vw", label: "Vw", align: "right", render: (row) => num(row.vw) },
@@ -631,7 +738,7 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
           { key: "mi", label: "MI", align: "right", render: (row) => num(row.mi) },
           { key: "pn", label: "Pn", align: "right", render: (row) => num(row.pn) },
         ]}
-        rows={kpiRows as unknown as Record<string, unknown>[]}
+        rows={kpiRowsLive as unknown as Record<string, unknown>[]}
         compact
         onRowClick={(row) => {
           const name = String(row.agent);
@@ -652,6 +759,7 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
           name={selectedAgent}
           month={month}
           seed={seed}
+          live={liveRows.find((r) => norm(r.agent) === norm(selectedAgent)) ?? null}
           user={linkedUserForName(selectedAgent)}
           forecast={forecastForName(selectedAgent)}
           onClose={() => setSelectedAgent(null)}
@@ -760,6 +868,16 @@ export default function Agents({ month, seed }: { month: string; seed: SeedData 
 
 /* ------------------------------ drill-down ------------------------------ */
 
+/** Live StatValue wrapper — carries the source so the badge is honest. */
+function liveStat(
+  value: number | null,
+  display: string | undefined,
+  source: "live-payprop" | "live-rex",
+  note: string
+): StatValue {
+  return { value, display, source, note, asOf: new Date().toISOString().slice(0, 10) };
+}
+
 /** Snapshot StatValue wrapper for seed figures shown in the drill-down. */
 function snapStat(
   value: number | null,
@@ -773,6 +891,7 @@ function AgentDrilldown({
   name,
   month,
   seed,
+  live,
   user,
   forecast,
   onClose,
@@ -780,6 +899,13 @@ function AgentDrilldown({
   name: string;
   month: string;
   seed: SeedData;
+  /** This partner's row from the live table above — the SAME object, so the
+   *  drill-down cannot disagree with the row that opened it. */
+  live: {
+    gci: number | null; rent: number | null; props: number | null; tens: number | null;
+    ma: number | null; li: number | null; pn: number | null;
+    vw: number | null; ap: number | null; mi: number | null;
+  } | null;
   user: (UserProfile & { adminNotes?: { at: string; text: string }[] }) | null;
   forecast: AgentForecast | null;
   onClose: () => void;
@@ -856,23 +982,58 @@ function AgentDrilldown({
         </p>
       )}
 
-      {/* July KPIs */}
+      {/* This partner's figures for the SELECTED month — the same row object
+          the table above rendered, so the two cannot disagree. Was a fixed July
+          seed block, which meant a drill-down showed July whatever month was
+          picked, and showed nothing at all for anyone outside that capture. */}
       <h4 className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">
-        KPIs — July 2026 only (snapshot)
+        KPIs — {monthLabel(month)}
       </h4>
-      {kpi ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
-          <StatCard label="GCI" stat={snapStat(kpi.gci, formatGBP(kpi.gci))} />
-          <StatCard label="MAs" stat={snapStat(kpi.ma)} />
-          <StatCard label="Listings" stat={snapStat(kpi.li)} />
-          <StatCard label="Viewings" stat={snapStat(kpi.vw)} />
-          <StatCard label="Applications" stat={snapStat(kpi.ap)} />
-          <StatCard label="Move-ins" stat={snapStat(kpi.mi)} />
-          <StatCard label="Pipeline" stat={snapStat(kpi.pn)} />
-        </div>
+      {live ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+            <StatCard
+              label="GCI exc VAT"
+              stat={liveStat(live.gci, live.gci != null ? formatGBP(live.gci) : undefined, "live-payprop",
+                "Fees charged on this partner's properties, net of VAT, in the selected month.")}
+            />
+            <StatCard
+              label="Rent pcm"
+              stat={liveStat(live.rent, live.rent != null ? formatGBP(live.rent) : undefined, "live-payprop",
+                "Rent passed through to landlords on this partner's properties in the selected month. Volume, not income.")}
+            />
+            <StatCard
+              label="Properties"
+              stat={liveStat(live.props, undefined, "live-payprop",
+                "Properties that actually transacted in the selected month — lower than the book where a property took no payment.")}
+            />
+            <StatCard
+              label="Tenancies"
+              stat={liveStat(live.tens, undefined, "live-payprop",
+                "Distinct tenants who paid in the selected month.")}
+            />
+            <StatCard label="MAs" stat={liveStat(live.ma, undefined, "live-rex", "Market appraisals recorded in Rex for the selected month.")} />
+            <StatCard label="Listings" stat={liveStat(live.li, undefined, "live-rex", "Rental listings instructed in the selected month.")} />
+            <StatCard label="Pipeline" stat={liveStat(live.pn, undefined, "live-rex", "Deals in progression right now — a current-state figure, not a month figure.")} />
+          </div>
+          {live.vw != null || live.ap != null || live.mi != null ? (
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <StatCard label="Viewings" stat={snapStat(live.vw)} />
+              <StatCard label="Applications" stat={snapStat(live.ap)} />
+              <StatCard label="Move-ins" stat={snapStat(live.mi)} />
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-muted">
+              Viewings, applications and move-ins have no live per-partner source — they
+              exist only in the July 2026 capture, so they aren&rsquo;t shown for{" "}
+              {monthLabel(month)}.
+            </p>
+          )}
+        </>
       ) : (
         <p className="text-xs text-muted">
-          Not in the July 2026 Agent Detail table (no activity recorded).
+          No figures for {monthLabel(month)} — this partner had no PayProp or Rex activity
+          that month.
         </p>
       )}
 

@@ -92,6 +92,13 @@ export async function GET(req: NextRequest) {
         } as T);
 
   return NextResponse.json({
+    /**
+     * Per agent for THIS month, attributed by property (see
+     * AgencyIncome.byAgentProperty). These SUM to the headline commission
+     * because they are the same rows split, which is what makes the Agents
+     * page a reconciliation check rather than a second opinion.
+     */
+    byAgent: income?.byAgentProperty ?? [],
     // Which agencies PayProp wouldn't let us read. The Overview needs this to
     // say a total is INCOMPLETE rather than presenting one agency's money as
     // the whole business — E&W's OAuth refresh token is currently rejected,
