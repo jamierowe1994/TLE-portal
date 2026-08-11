@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Bars from "@/components/charts/Bars";
 import type { SeedData, PeriodKpis } from "@/lib/seed-data";
 import type { StatValue } from "@/lib/types";
-import { exVat, formatNum, monthLabel } from "@/lib/format";
+import { exVat, formatGBPCompact, formatGBPExact, formatNum, monthLabel } from "@/lib/format";
 import { HISTORY_FLOOR, liveMonth, withinHistory } from "@/lib/roster";
 
 
@@ -216,6 +216,7 @@ function Tile({
   sub,
   flag,
   compact = false,
+  money,
 }: {
   label: string;
   stat: StatValue;
@@ -224,10 +225,27 @@ function Tile({
   flag?: string | null;
   /** Denser tile for the headline band — smaller number so £ figures fit. */
   compact?: boolean;
+  /**
+   * A money figure to SHORTEN on the face of the tile (£280k) while keeping
+   * the exact amount, to the penny, in the hover alongside the source note.
+   *
+   * "£280,105" overflows a headline tile and reads as noise — nobody decides
+   * anything on the last three digits of a year-to-date total. But the precise
+   * figure must never become unreachable, because someone will eventually need
+   * to tie it back to the accounts.
+   */
+  money?: number | null;
 }) {
   const isLive = stat.source.startsWith("live-");
   const isManual = stat.source === "manual";
-  const value = stat.display ?? (stat.value != null ? formatNum(stat.value) : "—");
+  const value =
+    money != null
+      ? formatGBPCompact(money)
+      : (stat.display ?? (stat.value != null ? formatNum(stat.value) : "—"));
+  // Exact amount first, then where it came from — read in that order on hover.
+  const hover = [money != null ? formatGBPExact(money) : null, stat.note]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div
       className={`relative rounded-xl border text-center transition ${compact ? "p-2.5" : "p-3"} ${
@@ -237,7 +255,7 @@ function Tile({
             ? "border-amber-200 bg-white"
             : "border-line bg-page/70"
       }`}
-      title={stat.note ?? undefined}
+      title={hover || undefined}
     >
       {isLive ? (
         <span className={`absolute inline-flex items-center gap-1 font-semibold text-green-600 ${compact ? "right-1.5 top-1.5 text-[8px]" : "right-2 top-2 text-[9px]"}`}>
@@ -1295,6 +1313,7 @@ export default function Overview({ month }: { month: string }) {
               populate by that route. */}
           <Tile
             label={`${ytdLabel} YTD GCI exc VAT`}
+            money={d.gciByMonth.ytdNet ?? null}
             stat={
               d.gciByMonth.ytdNet != null
                 ? {
@@ -1311,7 +1330,7 @@ export default function Overview({ month }: { month: string }) {
                 : d.gciByMonth.live
                   ? {
                       value: null,
-                      display: "—",
+                      display: "\u2014",
                       source: "derived",
                       note: `Year-to-date needs every month in ${ytdWindowLabel}. ${
                         d.gciByMonth.unreachable?.length
@@ -1340,6 +1359,7 @@ export default function Overview({ month }: { month: string }) {
           */}
           <Tile
             label={sel === "2026-06" ? "Jun YTD Total Income" : "Total Income"}
+            money={sel === "2026-06" ? (d.headline.totalIncome.value ?? null) : null}
             stat={
               sel === "2026-06"
                 ? d.headline.totalIncome
@@ -1416,8 +1436,12 @@ export default function Overview({ month }: { month: string }) {
           <Tile label="MA → Listing" stat={convMaToListing} sub={subNote(convMaToListing)} />
           <Tile label="Listing → Move-in" stat={convListingToMoveIn} sub={subNote(convListingToMoveIn)} />
           <Tile label="RLP Conversion" stat={convRlp} sub={subNote(convRlp)} />
+          {/* Left EXACT, not shortened: these land in the hundreds or low
+              thousands, where "£1.1k" would lose detail that fits anyway.
+              `money` is still passed so the penny figure reaches the hover. */}
           <Tile
             label="GCI per Move-in"
+            money={(gciPerMoveInFromStore ?? liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn)?.value ?? null}
             stat={gciPerMoveInFromStore ?? liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn}
             sub={subNote(gciPerMoveInFromStore ?? liveGciPerMoveIn ?? kpiPeriod.conversions.gciPerMoveIn)}
           />

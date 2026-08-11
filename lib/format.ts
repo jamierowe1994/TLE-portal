@@ -158,3 +158,38 @@ export const exVat = (gross: number): number => {
   const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
   return round2(gross - round2(gross / 6));
 };
+
+/**
+ * Money, shortened for a tile: £280k, £1.24m.
+ *
+ * A headline tile has room for a shape, not a ledger entry — "£280,105"
+ * overflows and reads as noise, and nobody makes a decision on the last three
+ * digits of a year-to-date figure. The exact amount is never lost: callers put
+ * `formatGBPExact` in the hover, so precision is one mouse-move away.
+ *
+ * Small figures are left alone. £4,903 is already short, and rounding it to
+ * £4.9k would throw away detail that fits perfectly well.
+ */
+export function formatGBPCompact(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const neg = n < 0;
+  const v = Math.abs(n);
+  let out: string;
+  if (v >= 1_000_000) {
+    // Two decimals below ten million, so £1.24m doesn't collapse to £1m.
+    out = `£${(v / 1_000_000).toFixed(v >= 10_000_000 ? 1 : 2)}m`;
+  } else if (v >= 100_000) {
+    out = `£${Math.round(v / 1000)}k`;
+  } else if (v >= 10_000) {
+    out = `£${(v / 1000).toFixed(1)}k`;
+  } else {
+    out = `£${Math.round(v).toLocaleString("en-GB")}`;
+  }
+  return neg ? `-${out}` : out;
+}
+
+/** The full amount, pounds AND pence — what the hover shows. */
+export function formatGBPExact(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `£${n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
