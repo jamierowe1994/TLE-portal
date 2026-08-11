@@ -1,5 +1,5 @@
 import "server-only";
-import { payPropAccounts, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
+import { payPropAccounts, payPropCanAuth, payPropGetAll, type PayPropAccountId } from "@/lib/payprop";
 import { readCache, writeCache } from "@/lib/integration-cache";
 import { normaliseAgentName, propertyKey } from "@/lib/payprop-portfolio";
 
@@ -141,7 +141,21 @@ export interface AgencyIncome {
   /** What each partner earned this month, biggest first. */
   byPartner: Array<{ name: string; amount: number; payments: number }>;
   /** GCI per agency — the Income tab shows E&W and Glasgow separately. */
-  byAccount: Array<{ account: PayPropAccountId; label: string; agencyIncome: number; combinedGci: number }>;
+  byAccount: Array<{
+    account: PayPropAccountId;
+    label: string;
+    agencyIncome: number;
+    combinedGci: number;
+    /**
+     * False when the agency returned NO rows because we had no usable
+     * credential for it — as opposed to genuinely earning nothing.
+     * Without this, a dead account is indistinguishable from a quiet one and
+     * the combined total is silently short by a whole agency.
+     */
+    reachable: boolean;
+  }>;
+  /** Agencies we could not reach at all. Non-empty = the total is INCOMPLETE. */
+  unreachable: PayPropAccountId[];
   paymentCount: number;
   accounts: PayPropAccountId[];
   /**
@@ -355,6 +369,43 @@ function isAccountRows(v: unknown): v is AccountRows {
   });
 }
 
+/**
+ * PayProp's HARD LIMIT on report/all-payments: 94 days.
+ *
+ * Measured by day-bisection 11 Aug 2026 — 90 days returns rows, anything past
+ * 94 returns HTTP 400 "Report period cannot exceed 93 days". Nothing in the
+ * code knew this, so every year-to-date request built a ~304-day range
+ * (widened a month either side) and was rejected outright. The walk could
+ * never succeed: it burned ~17.5s and a shared-queue slot on each of roughly
+ * four attempts per page view, starving the walks that WOULD have worked, and
+ * the year-to-date GCI and Total Income tiles could never populate by that
+ * route no matter how long anyone waited.
+ *
+ * 90 rather than 94, to stay clear of the boundary and of any timezone
+ * rounding at either end.
+ */
+const MAX_WINDOW_DAYS = 90;
+
+/** Split [from, to] into consecutive windows PayProp will accept. */
+function windowsWithin(from: string, to: string): Array<{ from: string; to: string }> {
+  const DAY = 86_400_000;
+  const end = Date.parse(`${to}T00:00:00Z`);
+  const out: Array<{ from: string; to: string }> = [];
+  let cursor = Date.parse(`${from}T00:00:00Z`);
+  // Windows are half-open at the top (each starts the day after the last
+  // ended), so a payment cannot be counted twice — the reduced Payment shape
+  // carries no id, so duplicates could not be removed afterwards.
+  while (cursor <= end) {
+    const stop = Math.min(cursor + (MAX_WINDOW_DAYS - 1) * DAY, end);
+    out.push({
+      from: new Date(cursor).toISOString().slice(0, 10),
+      to: new Date(stop).toISOString().slice(0, 10),
+    });
+    cursor = stop + DAY;
+  }
+  return out.length ? out : [{ from, to }];
+}
+
 async function paymentsForRange(from: string, to: string): Promise<AccountRows> {
   const key = `${from}|${to}`;
   const fresh = () => {
@@ -393,10 +444,16 @@ async function paymentsForRange(from: string, to: string): Promise<AccountRows> 
       accounts.map(async (a) => ({
         account: a,
         rows: reduceRows(
-          await payPropGetAll<PaymentRow>(a, "report/all-payments", {
-            from_date: from,
-            to_date: to,
-          })
+          (
+            await Promise.all(
+              windowsWithin(from, to).map((w) =>
+                payPropGetAll<PaymentRow>(a, "report/all-payments", {
+                  from_date: w.from,
+                  to_date: w.to,
+                })
+              )
+            )
+          ).flat()
         ),
       }))
     );
@@ -525,11 +582,19 @@ async function computeIncomeRange(
     }
     return { agencyIncome: agency, combinedGci: agency + partners };
   };
+  // An agency with no rows is either quiet or unreachable, and the difference
+  // is a whole agency's income. Ask, rather than reporting £0 either way.
+  const reach = await Promise.all(
+    perAccount.map(async (p) => ({ account: p.account, ok: await payPropCanAuth(p.account) }))
+  );
+  const canAuth = new Map(reach.map((r) => [r.account, r.ok]));
   const byAccount = perAccount.map((p) => ({
     account: p.account,
     label: p.account === "scotland" ? "Glasgow" : "E&W",
     ...sliceOf(p.rows),
+    reachable: canAuth.get(p.account) !== false,
   }));
+  const unreachable = byAccount.filter((a) => !a.reachable).map((a) => a.account);
 
   let agencyIncome = 0;
   let paidToBeneficiaries = 0;
@@ -597,6 +662,7 @@ async function computeIncomeRange(
       .map(([name, v]) => ({ name, amount: v.amount, payments: v.payments }))
       .sort((a, b) => b.amount - a.amount),
     byAccount,
+    unreachable,
     paymentCount: rows.length,
     accounts,
     net: (() => {

@@ -92,6 +92,11 @@ export async function GET(req: NextRequest) {
         } as T);
 
   return NextResponse.json({
+    // Which agencies PayProp wouldn't let us read. The Overview needs this to
+    // say a total is INCOMPLETE rather than presenting one agency's money as
+    // the whole business — E&W's OAuth refresh token is currently rejected,
+    // and without this its absence looks like a smaller but plausible GCI.
+    unreachable: income?.unreachable ?? ytd?.unreachable ?? [],
     connected: true,
     month,
     income: netted(income),

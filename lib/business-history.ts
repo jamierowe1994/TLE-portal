@@ -236,10 +236,24 @@ export async function getYoYLive(): Promise<YoYLive> {
   const today = new Date().toISOString().slice(0, 10);
   const year = Number(today.slice(0, 4));
   const sameDayLastYear = `${year - 1}${today.slice(4)}`;
-  const [prevYtd, currYtd] = await Promise.all([
-    getPropolyMoveInsInRange(`${year - 1}-01-01`, sameDayLastYear).catch(() => null),
-    getPropolyMoveInsInRange(`${year}-01-01`, today).catch(() => null),
-  ]);
+  /*
+   * WARM FIRST, then ask sequentially.
+   *
+   * Both figures race the same 15s deadline over the same cold cache of every
+   * completed deal. Fired concurrently they time each other out; fired
+   * sequentially they BOTH still timed out (measured: 30,002ms = two deadlines
+   * back to back), because the cold fill alone exceeds one deadline and the
+   * losing race leaves the cache no warmer. So this tile had been quietly
+   * falling back to a 2025 snapshot rather than showing live figures.
+   *
+   * A cheap one-month call pays the fill first; the two year-long reads are
+   * then served from the warm cache in milliseconds.
+   */
+  await getPropolyMoveInsInRange(`${year}-01-01`, `${year}-01-31`).catch(() => null);
+  const prevYtd = await getPropolyMoveInsInRange(`${year - 1}-01-01`, sameDayLastYear).catch(
+    () => null
+  );
+  const currYtd = await getPropolyMoveInsInRange(`${year}-01-01`, today).catch(() => null);
   return {
     moveIns:
       prevYtd != null && currYtd != null

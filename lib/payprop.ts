@@ -277,6 +277,22 @@ export function payPropAccounts(): PayPropAccountId[] {
 }
 
 /** Which scheme an account will use — for the admin probe. */
+/**
+ * Can we actually authenticate to this agency RIGHT NOW?
+ *
+ * Distinct from payPropAccounts()/payPropAuthMode(), both of which report E&W
+ * as configured-via-oauth because oauthFor("uk") falls back to the SHARED
+ * generic PAYPROP_CLIENT_ID/SECRET. A client id is not a credential: E&W's
+ * stored refresh token is rejected by PayProp (HTTP 400 invalid_grant), there
+ * is no PAYPROP_API_KEY_UK to fall back to, and so no request is ever sent —
+ * the walk returns an empty array that the income code totalled as £0.
+ *
+ * Callers use this to tell "earned nothing" from "we couldn't ask".
+ */
+export async function payPropCanAuth(id: PayPropAccountId): Promise<boolean> {
+  return (await authHeader(id)) != null;
+}
+
 export function payPropAuthMode(id: PayPropAccountId): "oauth" | "apikey" | null {
   if (oauthFor(id)) return "oauth";
   return keyFor(id) ? "apikey" : null;

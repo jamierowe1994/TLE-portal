@@ -168,13 +168,12 @@ async function compute(month: string, force: boolean): Promise<Payload> {
     getPropolyRlpMtd(month).catch(() => null),
   ]);
 
-  const monthCounts = await getBusinessMonthCounts(
-    month,
-    agents.map((a) => a.id),
-    force
-  ).catch(() => null);
-
-  const rows = await mapLimit(agents, CONCURRENCY, async (a) => {
+  // These two are INDEPENDENT and were awaited one after the other, so a cold
+  // sweep paid for both in series — measured 14.3s for the month counts then
+  // 10.3s for the per-agent walk. Nothing in the second needs the first.
+  const [monthCounts, rows] = await Promise.all([
+    getBusinessMonthCounts(month, agents.map((a) => a.id), force).catch(() => null),
+    mapLimit(agents, CONCURRENCY, async (a) => {
     const [funnel, portfolio] = await Promise.all([
       getAgentFunnel(a.id, month).catch(() => null),
       getAgentPortfolio(a.id).catch(() => null),
@@ -188,7 +187,8 @@ async function compute(month: string, force: boolean): Promise<Payload> {
       managed: portfolio?.managed ?? 0,
       rentRoll: portfolio?.rentRoll ?? 0,
     };
-  });
+    }),
+  ]);
 
   const counted = rows.filter((r): r is NonNullable<typeof r> => r != null);
 

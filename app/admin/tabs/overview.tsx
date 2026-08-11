@@ -501,9 +501,15 @@ export default function Overview({ month }: { month: string }) {
         // ask for, whatever raced its way back here.
         if (j.month && j.month !== sel) return;
         setLive(j);
-        if (j.stale && retries < 6) {
+        if (j.stale && retries < 7) {
+          // Progressive backoff, not a flat 6s. Measured on a warm month the
+          // server answered its polls in 262ms, 29ms, 17ms and 19ms — but the
+          // fixed interval meant the tiles didn't settle until t+18.3s. Almost
+          // all of that wait was ours, not PayProp's or Rex's. Start fast,
+          // then ease off so a genuinely cold sweep isn't hammered.
+          const backoff = [400, 800, 1500, 3000, 5000, 6000, 6000][retries] ?? 6000;
           retries += 1;
-          timer = setTimeout(() => void run(), 6000);
+          timer = setTimeout(() => void run(), backoff);
           return; // keep the refreshing chip up while the sweep runs
         }
         setLiveLoading(false);
@@ -604,6 +610,8 @@ export default function Overview({ month }: { month: string }) {
   const [ytdMoney, setYtdMoney] = useState<{ combinedGci: number; paymentCount: number } | null>(
     null
   );
+  /** Agencies PayProp wouldn't let us read. Non-empty = every £ below is short. */
+  const [moneyGaps, setMoneyGaps] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
     let tries = 0;
@@ -614,9 +622,11 @@ export default function Overview({ month }: { month: string }) {
           income?: { combinedGci: number; agencyIncome: number; agentsEarning: number } | null;
           ytd?: { combinedGci: number; paymentCount: number } | null;
           moveIns?: { count: number } | null;
+          unreachable?: string[];
         }) => {
           if (cancelled) return;
           if (res.ytd) setYtdMoney({ combinedGci: res.ytd.combinedGci, paymentCount: res.ytd.paymentCount });
+          if (res.unreachable) setMoneyGaps(res.unreachable);
           if (res.income) {
             setLiveMoney({
               combinedGci: res.income.combinedGci,
@@ -894,13 +904,18 @@ export default function Overview({ month }: { month: string }) {
     const v = pct(num.value as number, den.value as number);
     if (v == null) return fallback;
     if (v > RATE_CEILING) {
+      // SHOW the number, but strip the live badge and say what it is. Hiding
+      // it entirely was worse: the owner reported the tile as "missing", which
+      // is exactly the wrong conclusion to invite. The figure is arithmetically
+      // right and structurally misleading — a move-in completing this month
+      // belongs to a listing instructed one to three months ago, so dividing
+      // by THIS month's listings compares two different cohorts. That is most
+      // visible early in a month, when the denominator has barely started.
       return {
-        value: null,
-        display: "—",
+        value: v,
+        display: `${v}%`,
         source: "derived",
-        note: `${num.value} ÷ ${den.value} is ${v}%, which isn't a meaningful conversion rate${
-          isCurrent ? " this early in the month" : ""
-        } — completions land against instructions from earlier months. Shown once the month has enough of both.`,
+        note: `${num.value} ÷ ${den.value}. Not a like-for-like rate: move-ins completing now belong to listings instructed in earlier months, so early in a month this runs far above 100%. Compare closed months instead.`,
       };
     }
     return asLive(v, note, `${v}%`);
@@ -1204,6 +1219,14 @@ export default function Overview({ month }: { month: string }) {
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide">KPI Metrics</h2>
+          {moneyGaps.length ? (
+            <span
+              className="rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700"
+              title="PayProp rejected the stored credential for this agency (HTTP 400, invalid_grant). No request reaches it, so its income counts as zero — which is why every £ figure below is short. Someone with admin access must re-authorise the connection, or PayProp must issue an API key for that agency."
+            >
+              £ figures incomplete — {moneyGaps.map((a) => (a === "uk" ? "E&W" : "Glasgow")).join(", ")} unreachable
+            </span>
+          ) : null}
           <span className="text-[11px] text-muted">
             Year to date · {ytdWindowLabel} · live tiles refresh on load
           </span>
@@ -1369,6 +1392,18 @@ export default function Overview({ month }: { month: string }) {
       <Section title="Year on Year Growth" source={d.sources.yoyGrowth}>
         <div className={TILE_GRID}>
           {d.yoyGrowth.map((g) => {
+            // Total portfolio: live.totals.managed is already in the payload and
+            // was simply never wired to this tile, so it sat on a snapshot.
+            if (g.label === "Total portfolio" && live?.totals) {
+              const stat: StatValue = {
+                value: live.totals.managed,
+                display: `${g.from} → ${live.totals.managed}`,
+                source: "live-rex",
+                note: `Live from REX — ${live.totals.managed} managed (let) properties across every lettings agent, as at today, against ${g.from} at the baseline.`,
+                asOf: new Date().toISOString().slice(0, 10),
+              };
+              return <Tile key={g.label} label={g.label} stat={stat} />;
+            }
             if (g.label === "YTD move-ins" && hist?.yoy.moveIns) {
               const { prevYtd, currYtd, to } = hist.yoy.moveIns;
               const pctUp = prevYtd > 0 ? Math.round(((currYtd - prevYtd) / prevYtd) * 100) : null;
