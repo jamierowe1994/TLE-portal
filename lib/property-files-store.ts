@@ -19,6 +19,15 @@ export interface PropertyFile {
   uploaderId: string;
   uploaderName: string;
   createdAt: string;
+  /**
+   * Where the file came from. Absent on everything uploaded before DocuSign
+   * filing existed, which is exactly right — those WERE hand-uploaded.
+   */
+  source?: "upload" | "docusign";
+  /** DocuSign envelope id. The dedupe key: one envelope files once, ever. */
+  envelopeId?: string;
+  /** DocuSign's completion certificate for the same envelope, if pulled. */
+  isCertificate?: boolean;
 }
 
 export const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15MB
@@ -51,6 +60,20 @@ export async function listPropertyFiles(listingId: string): Promise<PropertyFile
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/**
+ * Envelope ids already on file, so a re-run of the DocuSign backfill files
+ * each agreement exactly once. Keyed on envelope + which document, because an
+ * envelope yields both the signed agreement and its completion certificate.
+ */
+export async function filedEnvelopeKeys(): Promise<Set<string>> {
+  const all = await readMeta();
+  const keys = new Set<string>();
+  for (const f of all) {
+    if (f.envelopeId) keys.add(`${f.envelopeId}:${f.isCertificate ? "cert" : "doc"}`);
+  }
+  return keys;
+}
+
 export async function addPropertyFile(input: {
   listingId: string;
   name: string;
@@ -58,6 +81,9 @@ export async function addPropertyFile(input: {
   bytes: Buffer;
   uploaderId: string;
   uploaderName: string;
+  source?: "upload" | "docusign";
+  envelopeId?: string;
+  isCertificate?: boolean;
 }): Promise<PropertyFile> {
   const file: PropertyFile = {
     id: crypto.randomBytes(10).toString("hex"),
@@ -68,6 +94,9 @@ export async function addPropertyFile(input: {
     uploaderId: input.uploaderId,
     uploaderName: input.uploaderName,
     createdAt: new Date().toISOString(),
+    ...(input.source ? { source: input.source } : {}),
+    ...(input.envelopeId ? { envelopeId: input.envelopeId } : {}),
+    ...(input.isCertificate ? { isCertificate: true } : {}),
   };
   await fs.mkdir(BIN_DIR, { recursive: true });
   await fs.writeFile(path.join(BIN_DIR, file.id), input.bytes);
