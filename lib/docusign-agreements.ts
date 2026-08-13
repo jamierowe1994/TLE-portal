@@ -81,8 +81,48 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
 }
 
+/**
+ * One REX EsignRequests row → an Agreement, with the listing resolved only as
+ * far as the row itself allows. `listingId` is null when the row carries a
+ * property instead — call listingForProperty to finish the job.
+ *
+ * Exported so the Connect webhook reads a row exactly as the register does.
+ * Two parsers would eventually disagree, and the disagreement would show up as
+ * one agreement filed twice under two different names.
+ */
+export function parseAgreementRow(r: Record<string, unknown>): Agreement | null {
+  const envelopeId = str(r.provider_request_id);
+  if (!envelopeId) return null; // no envelope id, no document
+  const content = (r.content ?? {}) as Record<string, unknown>;
+  const listing = (content.listing ?? {}) as Record<string, unknown>;
+  const property = (content.property ?? {}) as Record<string, unknown>;
+  const status = str(((r.status ?? {}) as Record<string, unknown>).id).toLowerCase();
+  if (!status) return null; // an invented status is an invented answer
+
+  const roles = Array.isArray(content.roles) ? content.roles : [];
+  return {
+    envelopeId,
+    listingId: listing.id ? str(listing.id) : null,
+    propertyId: property.id ? str(property.id) : null,
+    status,
+    subject: str(content.email_subject),
+    templateId: r.provider_template_id ? str(r.provider_template_id) : null,
+    sentAt: stamp(r.system_sent_time),
+    completedAt: stamp(r.system_completed_time),
+    signers: roles
+      .map((x) => (x ?? {}) as Record<string, unknown>)
+      // role_type "user" is TLE staff; "contact" is the landlord.
+      .filter((x) => str(x.role_type) === "contact")
+      .map((x) => {
+        const rec = (x.record ?? {}) as Record<string, unknown>;
+        return { name: str(rec.name), email: str(rec.email_address) };
+      })
+      .filter((s) => s.name || s.email),
+  };
+}
+
 /** One property → its listing. Null when REX holds no listing for it. */
-async function listingForProperty(propertyId: string): Promise<string | null> {
+export async function listingForProperty(propertyId: string): Promise<string | null> {
   const res = await rexCall("Listings", "search", {
     criteria: [{ name: "property_id", type: "=", value: propertyId }],
     limit: 3,
@@ -141,45 +181,12 @@ async function walk(): Promise<Agreement[] | null> {
 
   const out: Agreement[] = [];
   for (const r of mine) {
-    const envelopeId = str(r.provider_request_id);
-    if (!envelopeId) continue; // no envelope id, no document — skip, don't invent
-    const content = (r.content ?? {}) as Record<string, unknown>;
-    const listing = (content.listing ?? {}) as Record<string, unknown>;
-    const property = (content.property ?? {}) as Record<string, unknown>;
-    const status = str(
-      ((r.status ?? {}) as Record<string, unknown>).id
-    ).toLowerCase();
-    if (!status) continue; // an invented status is an invented answer
-
-    const propertyId = property.id ? str(property.id) : null;
-    const listingId = listing.id
-      ? str(listing.id)
-      : propertyId
-        ? (resolved[propertyId] ?? null)
-        : null;
-
-    const roles = Array.isArray(content.roles) ? content.roles : [];
-    const signers = roles
-      .map((x) => (x ?? {}) as Record<string, unknown>)
-      // role_type "user" is TLE staff; "contact" is the landlord.
-      .filter((x) => str(x.role_type) === "contact")
-      .map((x) => {
-        const rec = (x.record ?? {}) as Record<string, unknown>;
-        return { name: str(rec.name), email: str(rec.email_address) };
-      })
-      .filter((s) => s.name || s.email);
-
-    out.push({
-      envelopeId,
-      listingId,
-      propertyId,
-      status,
-      subject: str(content.email_subject),
-      templateId: r.provider_template_id ? str(r.provider_template_id) : null,
-      sentAt: stamp(r.system_sent_time),
-      completedAt: stamp(r.system_completed_time),
-      signers,
-    });
+    const parsed = parseAgreementRow(r);
+    if (!parsed) continue;
+    if (!parsed.listingId && parsed.propertyId) {
+      parsed.listingId = resolved[parsed.propertyId] ?? null;
+    }
+    out.push(parsed);
   }
   return out.length ? out : null;
 }

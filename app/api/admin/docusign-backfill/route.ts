@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE, isAdminEmail } from "@/lib/auth";
 import { findById } from "@/lib/users-store";
-import { getAgreements, type Agreement } from "@/lib/docusign-agreements";
-import { docusignConfigured, getEnvelopeDocument } from "@/lib/docusign";
-import {
-  MAX_FILE_BYTES,
-  addPropertyFile,
-  filedEnvelopeKeys,
-} from "@/lib/property-files-store";
+import { getAgreements } from "@/lib/docusign-agreements";
+import { docusignConfigured } from "@/lib/docusign";
+import { filedEnvelopeKeys } from "@/lib/property-files-store";
+import { fileAgreement } from "@/lib/docusign-filing";
 
 // Pull every completed TLE agreement out of DocuSign and file it against its
 // property, so the signed document sits in the drawer the agent already opens.
@@ -108,44 +105,12 @@ export async function GET(req: NextRequest) {
 
   for (const a of batch) {
     try {
-      const doc = await getEnvelopeDocument(a.envelopeId, "combined");
-      if (doc.bytes.length > MAX_FILE_BYTES) {
-        skipped.push({ envelopeId: a.envelopeId, reason: `too large (${doc.bytes.length})` });
-        continue;
-      }
-      await addPropertyFile({
-        listingId: a.listingId as string,
-        name: `${agreementName(a)}.pdf`,
-        mime: doc.mime,
-        bytes: doc.bytes,
-        // Attributed to DocuSign, not to whichever admin ran the backfill —
-        // the drawer should not claim a person uploaded 300 documents.
-        uploaderId: "docusign",
-        uploaderName: "DocuSign",
-        source: "docusign",
-        envelopeId: a.envelopeId,
-      });
-      filed++;
-
-      if (wantCerts && !already.has(`${a.envelopeId}:cert`)) {
-        const cert = await getEnvelopeDocument(a.envelopeId, "certificate").catch(
-          () => null
-        );
-        if (cert && cert.bytes.length <= MAX_FILE_BYTES) {
-          await addPropertyFile({
-            listingId: a.listingId as string,
-            name: `${agreementName(a)} — certificate of completion.pdf`,
-            mime: cert.mime,
-            bytes: cert.bytes,
-            uploaderId: "docusign",
-            uploaderName: "DocuSign",
-            source: "docusign",
-            envelopeId: a.envelopeId,
-            isCertificate: true,
-          });
-          certificates++;
-        }
-      }
+      // Shared with the Connect webhook — one naming and dedupe behaviour,
+      // so the live path and the history walk can never disagree.
+      const r = await fileAgreement(a, { certificates: wantCerts, already });
+      if (r.filed) filed++;
+      else skipped.push({ envelopeId: a.envelopeId, reason: r.reason ?? "not filed" });
+      if (r.certificate) certificates++;
     } catch (err) {
       // One bad envelope must not abandon the other 300. Re-running resumes.
       skipped.push({ envelopeId: a.envelopeId, reason: (err as Error).message });
@@ -163,13 +128,3 @@ export async function GET(req: NextRequest) {
   });
 }
 
-/** A filename that reads as a document, not a GUID. */
-function agreementName(a: Agreement): string {
-  const subject = a.subject
-    .replace(/^(please|complete with)\s+docusign:?\s*/i, "")
-    .replace(/^requesting your signature for\s*/i, "")
-    .replace(/\.(pdf|docx?)$/i, "")
-    .trim();
-  const date = a.completedAt ? a.completedAt.slice(0, 10) : "undated";
-  return `${subject || "Signed agreement"} (${date})`;
-}
