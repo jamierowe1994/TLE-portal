@@ -257,7 +257,7 @@ const running = new Set<string>();
 // are figures missing the larger half of the business, and they would have been
 // served for the full hour-long TTL. Same cached-shape rule as the Payment
 // shape below: when what a stored payload MEANS changes, the key must change.
-const CACHE_VERSION = "v15";
+const CACHE_VERSION = "v16";
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -814,6 +814,9 @@ export interface TenantBalanceRow {
   property?: { id?: string; name?: string; is_active?: boolean };
   last_payment?: { date?: string };
   last_invoice?: { amount?: string; date?: string };
+  /** The recurring rent invoice. `start_date` is the tenancy start, and it is
+   *  the only thing that separates "late" from "hasn't moved in yet". */
+  invoice?: { start_date?: string; end_date?: string | null; payment_day?: number };
 }
 
 export interface ArrearsSummary {
@@ -827,6 +830,17 @@ export interface ArrearsSummary {
     lastInvoice: string | null;
     /** Which PayProp agency this debt sits in — the only country marker we get. */
     account: PayPropAccountId;
+    /**
+     * Tenancy start, from PayProp's recurring rent invoice.
+     *
+     * A balance owing on a tenancy that has not started yet is not a debt —
+     * it is an invoice raised ahead of a move-in that has not happened. Susan
+     * was right to doubt the count: without this field the two are identical
+     * on the page, and every not-yet-moved-in tenant reads as a late payer.
+     */
+    tenancyStart: string | null;
+    /** Last payment received, for telling "never paid" from "stopped paying". */
+    lastPayment: string | null;
   }>;
   totalOwed: number;
   /** How many tenancies were checked, so a count can be shown honestly. */
@@ -885,6 +899,8 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
         owed: -money(r.balance), // negative balance = in arrears
         lastInvoice: r.last_invoice?.date ?? null,
         account: p.account,
+        tenancyStart: r.invoice?.start_date ?? null,
+        lastPayment: r.last_payment?.date ?? null,
       }))
     )
     .filter((t) => t.owed > 0.005)

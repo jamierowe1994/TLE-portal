@@ -32,7 +32,7 @@ const COLUMNS: DataTableColumn<ArrearsTenantRow & Record<string, unknown>>[] = [
 ];
 
 interface LiveArrears {
-  tenants: Array<{ tenant: string; property: string; owed: number; lastInvoice: string | null; account?: string | null }>;
+  tenants: Array<{ tenant: string; property: string; owed: number; lastInvoice: string | null; account?: string | null; tenancyStart?: string | null; lastPayment?: string | null }>;
   totalOwed: number;
   checked: number;
   byAccount: Array<{ account: string; label: string; tenants: number; owed: number }>;
@@ -54,6 +54,9 @@ interface SnapshotPerson {
   property: string;
   owed: number;
   account?: string | null;
+  /** Tenancy start. Present on live rows; absent on older stored snapshots,
+   *  which is why notMovedIn treats absence as "moved in" rather than guessing. */
+  tenancyStart?: string | null;
 }
 interface StoredSnapshot {
   asAt: string;
@@ -101,6 +104,26 @@ const COUNTRY_GROUPS = [
     match: (acc?: string | null) => /scot|glasgow/i.test(acc ?? ""),
   },
 ] as const;
+
+/**
+ * A balance owing on a tenancy that has not started yet.
+ *
+ * PayProp raises the first rent invoice ahead of the move-in, so the moment a
+ * deal completes the tenant shows a balance — and the arrears report cannot
+ * tell that from someone who has stopped paying. Susan was right that the
+ * count looked too high: these are not late, they simply have not moved in.
+ *
+ * Deliberately narrow. Only a tenancy starting AFTER today counts, because
+ * that is the one case with no ambiguity. A tenancy that started earlier this
+ * month HAS begun, and if its rent is unpaid that is a real arrear, however
+ * young — it lands in the first age band on its own merit.
+ *
+ * No start date means MOVED IN, not excluded: stored snapshots from before
+ * this field existed carry none, and quietly dropping them would shrink the
+ * history the moment this shipped.
+ */
+const notMovedIn = (p: SnapshotPerson, asAt: string) =>
+  Boolean(p.tenancyStart && p.tenancyStart > asAt);
 
 /** Exclusive day bands — `from` inclusive, `to` exclusive. */
 const AGE_BANDS = [
@@ -226,6 +249,7 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
             property: t.property,
             owed: t.owed,
             account: t.account ?? null,
+            tenancyStart: t.tenancyStart ?? null,
           })),
         }
       : stored
@@ -554,7 +578,9 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
           </h2>
           <div className="grid gap-4 lg:grid-cols-2">
             {COUNTRY_GROUPS.map((g) => {
-              const people = panel.people.filter((p) => g.match(p.account));
+              const all = panel.people.filter((p) => g.match(p.account));
+              const pending = all.filter((p) => notMovedIn(p, panel.asAt));
+              const people = all.filter((p) => !notMovedIn(p, panel.asAt));
               const rows = AGE_BANDS.map((b) => {
                 const inBand = people.filter((p) => {
                   const spell = sinceOf.get(`${p.tenant}|${p.property}`);
@@ -568,6 +594,7 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
                 };
               });
               const total = people.reduce((n, p) => n + p.owed, 0);
+              // `people` excludes the not-yet-moved-in, so this total is arrears only.
               return (
                 <div key={g.key} className="card p-5">
                   <div className="flex items-baseline justify-between gap-3">
@@ -597,6 +624,27 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
                       ))}
                     </div>
                   )}
+                  {pending.length > 0 ? (
+                    <div className="mt-3 border-t border-line/60 pt-3">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[13px] text-muted">
+                          Not moved in yet
+                          <span
+                            className="ml-1.5 cursor-help text-muted/70"
+                            title="Tenancy starts after today. PayProp raises the first rent invoice ahead of the move-in, so a balance shows before anyone is late. Excluded from the bands above."
+                          >
+                            ⓘ
+                          </span>
+                        </span>
+                        <span className="text-[13px] tnum">
+                          <span className="font-semibold">{formatNum(pending.length)}</span>
+                          <span className="ml-2 text-muted">
+                            {gbp(pending.reduce((n, p) => n + p.owed, 0))}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
