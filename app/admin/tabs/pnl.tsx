@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
+import PnlImport from "@/components/PnlImport";
 import SourceBadge from "@/components/SourceBadge";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import { SNAPSHOT_DATE, liveMonth } from "@/lib/roster";
@@ -141,7 +142,16 @@ export default function PnlTab({ month, seed }: { month: string; seed: SeedData 
           <h2 className="text-sm font-semibold">
             H2 2026 P&amp;L — Jul to Dec (Jul column editable)
           </h2>
-          <SourceBadge source="snapshot" note={rf.sourceNote} asOf={SNAPSHOT_DATE} />
+          <div className="flex items-center gap-3">
+            <PnlImport
+              month={pnlMonth()}
+              lines={rf.rows}
+              onApplied={(applied) =>
+                setOverrides((prev) => ({ ...prev, ...applied }))
+              }
+            />
+            <SourceBadge source="snapshot" note={rf.sourceNote} asOf={SNAPSHOT_DATE} />
+          </div>
         </div>
         {error ? <p className="text-xs text-accent">{error}</p> : null}
         <div className="card overflow-x-auto">
