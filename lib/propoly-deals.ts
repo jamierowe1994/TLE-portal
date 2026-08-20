@@ -485,6 +485,12 @@ interface CompletedDeal {
   date: string | null; // move_in_date
   service: string | null; // full_managed | tenant_find | rent_collect
   propertyUuid: string | null;
+  /* Kept from 18 Aug 2026 so the move-ins TABLE can be live rather than a
+     hand-captured snapshot. The projection was three fields because all
+     anyone asked of it was a count. */
+  address: string | null;
+  rentPcm: number | null;
+  uuid: string | null;
 }
 
 let completesCache: { at: number; completes: CompletedDeal[] } | null = null;
@@ -495,8 +501,9 @@ async function ensureCompletes(): Promise<CompletedDeal[] | null> {
     return completesCache.completes;
   }
   if (!completesCache) {
-    // v2 snapshot key — v1 lacked propertyUuid; a clean re-pull fills it.
-    const snap = await loadSnapshot<CompletedDeal[]>("completes-v2");
+    // v3 snapshot key — v2 lacked address/rent, so a stored v2 blob would
+    // serve rows the table cannot render. A clean re-pull fills them.
+    const snap = await loadSnapshot<CompletedDeal[]>("completes-v3");
     if (snap) {
       completesCache = { at: snap.savedAt, completes: snap.data };
       if (Date.now() - snap.savedAt < COMPLETES_TTL_MS) return completesCache.completes;
@@ -511,9 +518,18 @@ async function ensureCompletes(): Promise<CompletedDeal[] | null> {
       service:
         typeof r.tenancy_service_level === "string" ? r.tenancy_service_level : null,
       propertyUuid: typeof r.property_uuid === "string" ? r.property_uuid : null,
+      // Propoly writes the address as one multi-line string; flattened here so
+      // a table cell does not have to care.
+      address:
+        typeof r.property_address === "string"
+          ? r.property_address.replace(/\s*\n\s*/g, ", ").replace(/,\s*,/g, ",").trim()
+          : null,
+      rentPcm:
+        typeof r.price_pcm_pence === "number" ? Math.round(r.price_pcm_pence) / 100 : null,
+      uuid: typeof r.uuid === "string" ? r.uuid : null,
     })),
   };
-  void saveSnapshot("completes-v2", completesCache.completes);
+  void saveSnapshot("completes-v3", completesCache.completes);
   return completesCache.completes;
 }
 
@@ -589,6 +605,50 @@ export async function getPropolyRlpMtd(
  * months run higher (June 2026: Propoly 21 vs her 30, of which ~10 were
  * transfers/marketing-only per her own notes).
  */
+export interface MoveInRow {
+  id: string;
+  agent: string | null;
+  address: string;
+  moveIn: string;
+  service: string | null;
+  rentPcm: number | null;
+}
+
+/**
+ * Completed move-ins for ONE month, as rows rather than a count.
+ *
+ * The tab has shown a hand-captured table since July, and the capture was taken
+ * on the 11th — so it held ten rows while Propoly's own answer for the month
+ * was thirty-five. Two numbers, both labelled July, twenty-five apart.
+ *
+ * Agent comes from the property→manager map, because a Propoly deal carries no
+ * agent of its own. A property we cannot map keeps the row and leaves the agent
+ * blank: losing a real move-in to a missing manager would be a worse lie than
+ * an empty cell.
+ */
+export async function getPropolyMoveInRows(month: string): Promise<MoveInRow[] | null> {
+  if (!propolyConfigured()) return null;
+  const [completes, managerMap] = await Promise.all([
+    ensureCompletes(),
+    propertyManagers(),
+  ]);
+  if (!completes) return null;
+  return completes
+    .filter((c: CompletedDeal) => (c.date ?? "").slice(0, 7) === month)
+    .map((c: CompletedDeal) => {
+      const mgr = c.propertyUuid ? managerMap?.get(c.propertyUuid) : undefined;
+      return {
+        id: c.uuid ?? `${c.propertyUuid ?? "?"}-${c.date ?? "?"}`,
+        agent: mgr?.name ?? null,
+        address: c.address ?? "—",
+        moveIn: c.date ?? "",
+        service: c.service,
+        rentPcm: c.rentPcm,
+      };
+    })
+    .sort((a: MoveInRow, b: MoveInRow) => a.moveIn.localeCompare(b.moveIn));
+}
+
 export async function getPropolyMoveInsInRange(
   start: string,
   end: string

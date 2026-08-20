@@ -16,7 +16,7 @@ import type { SeedData } from "@/lib/seed-data"; // type-only — erased at buil
 import { ROSTER } from "@/lib/roster";
 import type { PipelineRow, MoveInRow } from "@/lib/seed-types";
 import { resolveStat, type ManualOverride } from "@/lib/stats";
-import { formatDate, formatGBP, monthLabel } from "@/lib/format";
+import { formatDate, formatGBP, monthLabel, recentMonths } from "@/lib/format";
 import type { ActualOverride, StatValue } from "@/lib/types";
 const SNAPSHOT_MONTH = "2026-07"; // the one month the seed answers for
 
@@ -107,6 +107,91 @@ function overrideToRow(o: ActualOverride): MoveInRow | null {
   }
 }
 
+interface LiveRows {
+  configured?: boolean;
+  moveIns: Array<{
+    id: string;
+    agent: string | null;
+    address: string;
+    moveIn: string;
+    service: string | null;
+    rentPcm: number | null;
+  }> | null;
+  pipeline: Array<{
+    id: string;
+    agent: string | null;
+    property: string;
+    locality: string;
+    expected: string | null;
+    service: string | null;
+    status: string;
+    rentPcm: number | null;
+  }> | null;
+}
+
+/** Propoly's own words, tidied. Never invented — an unknown level shows raw. */
+const SERVICE = (s: string | null) =>
+  s == null
+    ? "—"
+    : s === "full_managed"
+      ? "Fully managed"
+      : s === "tenant_find"
+        ? "Tenant find"
+        : s === "rent_collect"
+          ? "Rent collect"
+          : s;
+
+const LIVE_MOVE_IN_COLUMNS = [
+  { key: "agent", label: "Agent", render: (r: Record<string, unknown>) => (r.agent as string) ?? "—" },
+  { key: "address", label: "Property" },
+  {
+    key: "moveIn",
+    label: "Move-in",
+    render: (r: Record<string, unknown>) => formatDate(r.moveIn as string),
+  },
+  {
+    key: "service",
+    label: "Service level",
+    render: (r: Record<string, unknown>) => SERVICE(r.service as string | null),
+  },
+  {
+    key: "rentPcm",
+    label: "Rent pcm",
+    align: "right" as const,
+    render: (r: Record<string, unknown>) =>
+      r.rentPcm == null ? "—" : formatGBP(r.rentPcm as number),
+  },
+];
+
+const LIVE_PIPELINE_COLUMNS = [
+  { key: "agent", label: "Agent", render: (r: Record<string, unknown>) => (r.agent as string) ?? "—" },
+  {
+    key: "property",
+    label: "Property",
+    render: (r: Record<string, unknown>) =>
+      [r.property, r.locality].filter(Boolean).join(", ") || "—",
+  },
+  {
+    key: "expected",
+    label: "Expected move-in",
+    render: (r: Record<string, unknown>) =>
+      r.expected ? formatDate(r.expected as string) : "TBC",
+  },
+  {
+    key: "service",
+    label: "Service level",
+    render: (r: Record<string, unknown>) => SERVICE(r.service as string | null),
+  },
+  { key: "status", label: "Status" },
+  {
+    key: "rentPcm",
+    label: "Rent pcm",
+    align: "right" as const,
+    render: (r: Record<string, unknown>) =>
+      r.rentPcm == null ? "—" : formatGBP(r.rentPcm as number),
+  },
+];
+
 /* --------------------------------- the tab --------------------------------- */
 
 interface PropolyBiz {
@@ -159,6 +244,37 @@ const MONTH_NAME = (m: string) =>
 
 export default function MoveInsTab({ month, seed }: { month: string; seed: SeedData }) {
   const h = seed.moveInHeader;
+
+  /* The two tables, live from Propoly, on their own month.
+     They have their own picker rather than following the tab's: the tab reports
+     the last COMPLETE month, but "who moved in this month so far" is a question
+     people ask about the month they are standing in. Defaulting the tables to
+     the tab's month and giving them a toggle serves both without either being
+     wrong. */
+  const [tableMonth, setTableMonth] = useState(month);
+  const [rows, setRows] = useState<LiveRows | null>(null);
+  const [rowsLoading, setRowsLoading] = useState(true);
+  useEffect(() => setTableMonth(month), [month]);
+  useEffect(() => {
+    let off = false;
+    setRowsLoading(true);
+    fetch(`/api/admin/move-in-rows?month=${encodeURIComponent(tableMonth)}`, {
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: LiveRows | null) => {
+        if (!off) setRows(d);
+      })
+      .catch(() => {
+        if (!off) setRows(null);
+      })
+      .finally(() => {
+        if (!off) setRowsLoading(false);
+      });
+    return () => {
+      off = true;
+    };
+  }, [tableMonth]);
 
   // Admin-added move-in rows + optional explicit count override for the month.
   const [addedRows, setAddedRows] = useState<MoveInRow[]>([]);
@@ -693,60 +809,75 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
         )}
       </div>
 
-      {/* July move-ins table (snapshot + admin-added rows) */}
+      {/* ── The two tables, live from Propoly, with their own month ──────────
+          They were a capture taken on 11 Jul 2026, which is why they sat on
+          July whatever was picked above — and why they disagreed with the
+          tracker beside them. The capture holds ten rows; Propoly's answer for
+          July is thirty-five, because the capture was taken on the 11th and the
+          month carried on. */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold">
-            July 2026 move-ins — {seed.moveInsJuly.rows.length} completed
-            {addedRows.length > 0 ? ` + ${addedRows.length} added` : ""}
-            <SourceNote tone="snapshot">
-              Propoly deals with tenancy_status=complete, captured by hand on 11 Jul
-              2026. Agent, address, move-in and rent are Propoly&rsquo;s; let type and
-              the three fee columns were worked out by hand and are in no system.
+            Move-ins — {monthLabel(tableMonth)}
+            {rows?.moveIns ? ` · ${rows.moveIns.length} completed` : ""}
+            <SourceNote tone="live">
+              Propoly deals with tenancy_status=complete and a move-in date in this
+              month. Agent comes from the property&rsquo;s manager in Propoly; a
+              property with no manager keeps its row and leaves the agent blank
+              rather than dropping a real move-in.
             </SourceNote>
           </h2>
-          <SourceBadge
-            source={seed.moveInsJuly.totalTwelveMonthValue.source}
-            note={seed.moveInsJuly.totalTwelveMonthValue.note}
-            asOf={seed.moveInsJuly.totalTwelveMonthValue.asOf}
-          />
+          <div className="flex items-center gap-1.5">
+            {recentMonths(6).slice().reverse().map((m: string) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setTableMonth(m)}
+                className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  m === tableMonth
+                    ? "border-ink bg-ink text-white"
+                    : "border-line text-muted hover:border-ink/40"
+                }`}
+              >
+                {monthLabel(m).split(" ")[0].slice(0, 3)}
+              </button>
+            ))}
+          </div>
         </div>
-        <DataTable columns={MOVE_IN_COLUMNS} rows={moveInTableRows} compact />
-        <p className="text-right text-[13px] font-semibold tnum">
-          Total 12-month value
-          <SourceNote tone="derived">
-            Set-up fee plus twelve months of management fee, summed across the rows
-            above. Only as good as those fee columns, which are hand-entered.
-          </SourceNote>
-          :{" "}
-          {addedRows.length > 0 && seed.moveInsJuly.totalTwelveMonthValue.value != null
-            ? formatGBP(
-                seed.moveInsJuly.totalTwelveMonthValue.value + addedTwelveMonthValue
-              )
-            : seed.moveInsJuly.totalTwelveMonthValue.display ?? "—"}
-        </p>
+        {rowsLoading ? (
+          <p className="text-xs text-muted">Fetching {monthLabel(tableMonth)} from Propoly…</p>
+        ) : rows?.moveIns == null ? (
+          <p className="text-xs text-muted">
+            Propoly didn&rsquo;t answer. Nothing shown rather than a stale month.
+          </p>
+        ) : rows.moveIns.length === 0 ? (
+          <p className="text-xs text-muted">
+            No completed move-ins with a {monthLabel(tableMonth)} date.
+          </p>
+        ) : (
+          <DataTable columns={LIVE_MOVE_IN_COLUMNS} rows={rows.moveIns} compact />
+        )}
       </section>
 
-      {/* July pipeline */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">
-            July pipeline — {seed.julyPipeline.length} properties expected this month
-            <SourceNote tone="snapshot">
-              Propoly deals not yet complete, captured 11 Jul 2026. Every column here
-              — agent, address, expected move-in, service level, status, rent — is
-              available live from Propoly; this table simply has not been moved over
-              yet.
-            </SourceNote>
-          </h2>
-          {/* Was unlabelled, so there was no way to tell it from a live table. */}
-          <SourceBadge
-            source="snapshot"
-            asOf="2026-07-11"
-            note="Captured from the Propoly pipeline on 11 Jul 2026. Not a live feed, and it does not follow the month selector."
-          />
-        </div>
-        <DataTable columns={PIPELINE_COLUMNS} rows={seed.julyPipeline} compact />
+        <h2 className="text-sm font-semibold">
+          Pipeline — {monthLabel(tableMonth)}
+          {rows?.pipeline ? ` · ${rows.pipeline.length} expected` : ""}
+          <SourceNote tone="live">
+            Propoly deals still in progression, expected in this month. Deals with
+            no expected date are included rather than hidden — an undated deal is
+            still real work, and it shows as TBC.
+          </SourceNote>
+        </h2>
+        {rowsLoading ? (
+          <p className="text-xs text-muted">Fetching…</p>
+        ) : rows?.pipeline == null ? (
+          <p className="text-xs text-muted">Propoly didn&rsquo;t answer.</p>
+        ) : rows.pipeline.length === 0 ? (
+          <p className="text-xs text-muted">Nothing in progression for {monthLabel(tableMonth)}.</p>
+        ) : (
+          <DataTable columns={LIVE_PIPELINE_COLUMNS} rows={rows.pipeline} compact />
+        )}
       </section>
 
       {/* Forward pipeline */}
