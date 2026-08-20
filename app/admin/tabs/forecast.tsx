@@ -12,6 +12,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import StatCard from "@/components/StatCard";
+import SusanForecast from "@/components/SusanForecast";
+import SourceNote from "@/components/SourceNote";
+import { Bars } from "@/components/charts/Bars";
 import DataTable from "@/components/DataTable";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { AgentForecast, StatValue } from "@/lib/types";
@@ -25,6 +28,17 @@ import {
 } from "@/lib/format";
 
 /** Just the slice of /api/admin/payprop-live the business-value block needs. */
+interface ForecastSeries {
+  months: string[];
+  rows: Array<{
+    month: string;
+    susan: number | null;
+    partners: number | null;
+    actual: number | null;
+    agentsForecasted: number;
+  }>;
+}
+
 interface LivePayProp {
   income?: {
     byCategory?: Array<{ category: string; amount: number }>;
@@ -171,6 +185,23 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
      income is in no connected system. MRI is therefore management fees only
      until the P&L upload lands, and is marked short rather than quietly
      understated. */
+  /* The three forecasts side by side. Susan sets one for the business, the
+     partners each set their own, and the month produces a third. They lived in
+     three places and nobody could say whether the first two agreed — which was
+     the entire question being asked. */
+  const [series, setSeries] = useState<ForecastSeries | null>(null);
+  const loadSeries = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin/forecast-series?months=12", { cache: "no-store" });
+      if (r.ok) setSeries((await r.json()) as ForecastSeries);
+    } catch {
+      /* leave it empty — an absent chart beats an invented one */
+    }
+  }, []);
+  useEffect(() => {
+    void loadSeries();
+  }, [loadSeries]);
+
   const [live, setLive] = useState<LivePayProp | null>(null);
   const fees = useCallback(async () => {
     try {
@@ -188,6 +219,9 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
   useEffect(() => {
     void fees();
   }, [fees]);
+
+  const susanThisMonth =
+    series?.rows.find((r) => r.month === month)?.susan ?? null;
 
   const feeMonth = previousMonth();
   const cats = live?.income?.byCategory ?? [];
@@ -262,6 +296,23 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
         />
         <StatCard
           big
+          label={`Susan's forecast for ${monthLabel(month)}`}
+          stat={{
+            value: susanThisMonth,
+            display: susanThisMonth == null ? "—" : formatGBP(susanThisMonth),
+            source: "manual",
+            note: "Set by hand on this tab and stored with the other manual figures. Not derived from anything — it is the number Susan expects.",
+          }}
+          sub={
+            susanThisMonth == null
+              ? "Not set for this month"
+              : rollup.totalGciTarget
+                ? `${susanThisMonth >= rollup.totalGciTarget ? "Above" : "Below"} the partners' roll-up by ${formatGBP(Math.abs(susanThisMonth - rollup.totalGciTarget))}`
+                : "No partner forecasts to compare with yet"
+          }
+        />
+        <StatCard
+          big
           label="Actual MTD (combined GCI)"
           stat={data?.actualMtd ?? { value: null, source: "snapshot" }}
         />
@@ -284,6 +335,46 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
           }
         />
       </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <SusanForecast month={month} current={susanThisMonth} onSaved={loadSeries} />
+      </div>
+
+      {series && series.rows.some((r) => r.susan != null || r.partners != null) ? (
+        <>
+          <SectionTitle>
+            Forecast vs forecast vs actual
+          </SectionTitle>
+          <div className="card p-5">
+            <div className="mb-2 text-xs text-muted">
+              Do the two forecasts agree, and does either one land?
+              <SourceNote tone="derived">
+                Susan&rsquo;s figure and the partners&rsquo; roll-up are both typed by
+                people; the actual is live from PayProp, net of VAT. A month nobody
+                forecast is left blank rather than drawn as zero — &ldquo;nobody has
+                said yet&rdquo; and &ldquo;they forecast nothing&rdquo; are different
+                claims.
+              </SourceNote>
+            </div>
+            <Bars
+              labels={series.rows.map((r) => monthLabel(r.month).slice(0, 3))}
+              series={[
+                { name: "Susan", color: "#101014", values: series.rows.map((r) => r.susan) },
+                { name: "Partners", color: "#E31F36", values: series.rows.map((r) => r.partners) },
+                { name: "Actual", color: "#5FA87C", values: series.rows.map((r) => r.actual) },
+              ]}
+              format={(n) => `£${Math.round(n / 1000)}k`}
+              height={240}
+              details={series.rows.map((r) => [
+                ["Susan", r.susan == null ? "not set" : formatGBP(r.susan)],
+                ["Partners", r.partners == null ? "none set" : formatGBP(r.partners)],
+                ["Actual", r.actual == null ? "—" : formatGBP(r.actual)],
+                ["Partners forecasting", String(r.agentsForecasted)],
+              ])}
+            />
+          </div>
+        </>
+      ) : null}
 
       <p className="mt-3 text-xs text-muted">
         {loading
