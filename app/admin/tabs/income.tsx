@@ -11,7 +11,7 @@ import Donut from "@/components/charts/Donut";
 import Bars from "@/components/charts/Bars";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { IncomeMonthlyRow, LicenceFeeRow } from "@/lib/seed-types";
-import { exVat, formatGBP, formatNum, monthLabel } from "@/lib/format";
+import { exVat, formatGBP, formatNum, monthLabel, monthsThisYearToDate } from "@/lib/format";
 const SNAPSHOT_MONTH = "2026-07"; // the one month the seed answers for
 
 
@@ -271,21 +271,39 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
         }
       : null;
 
-  // GCI vs total income bars, Jan–Jun (from the monthly income table rows)
+  // GCI vs total income bars — January to the last COMPLETE month.
+  //
+  // These ran Jan–Jun because the six keys were typed out here, so in August
+  // the chart still stopped at June and looked like the year had ended. The
+  // window now derives from the calendar and rolls on the 1st.
+  //
+  // A month the snapshot has no column for plots as a GAP rather than being
+  // dropped off the end: "July, and we don't have it yet" is the truth, where
+  // a chart that quietly stops at June says the year is six months long.
   const gciRow = inc.monthlyTable.find((r) => r.metric === "Combined GCI (exc VAT)");
   const totalRow = inc.monthlyTable.find((r) => r.metric === "TOTAL INCOME");
-  const monthKeys = ["jan", "feb", "mar", "apr", "may", "jun"] as const;
-  const barLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+  const windowMonths = monthsThisYearToDate();
+  const monthKeys = windowMonths.map((m) =>
+    new Date(`${m}-01T00:00:00Z`)
+      .toLocaleString("en-GB", { month: "short", timeZone: "UTC" })
+      .toLowerCase()
+  );
+  const barLabels = monthKeys.map((k) => k[0].toUpperCase() + k.slice(1));
+  const rangeLabel = barLabels.length
+    ? `Jan–${barLabels[barLabels.length - 1]} ${windowMonths[0].slice(0, 4)}`
+    : "this year";
+  const cell = (row: unknown, k: string) =>
+    ((row as Record<string, number | null> | undefined)?.[k] ?? null);
   const barSeries = [
     {
       name: "Combined GCI (exc VAT)",
       color: "#E31F36",
-      values: monthKeys.map((k) => gciRow?.[k] ?? null),
+      values: monthKeys.map((k) => cell(gciRow, k)),
     },
     {
       name: "Total income",
       color: "#101014",
-      values: monthKeys.map((k) => totalRow?.[k] ?? null),
+      values: monthKeys.map((k) => cell(totalRow, k)),
     },
   ];
 
@@ -464,7 +482,7 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
       {/* Monthly income table */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">
-          TLE business income — Jan–Jun 2026 (all fees exc VAT)
+          TLE business income — {rangeLabel} (all fees exc VAT)
         </h2>
         <DataTable columns={MONTHLY_COLUMNS} rows={inc.monthlyTable} compact />
         <p className="text-xs text-muted">{inc.modelNote}</p>
@@ -472,7 +490,7 @@ export default function IncomeTab({ month, seed }: { month: string; seed: SeedDa
 
       {/* GCI vs total income bars */}
       <section className="card p-5">
-        <h2 className="text-sm font-semibold">Combined GCI vs total income — Jan–Jun 2026</h2>
+        <h2 className="text-sm font-semibold">Combined GCI vs total income — {rangeLabel}</h2>
         <div className="mt-4">
           <Bars labels={barLabels} series={barSeries} format={(n) => `£${formatNum(n / 1000)}k`} />
         </div>

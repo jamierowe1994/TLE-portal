@@ -488,18 +488,20 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
       ) : null}
 
       {/* Header stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label={`Completed (${monthLabel(month)})`}
           stat={completed}
           sub="6 new lets + 4 relets"
           big
         />
-        <StatCard label="Remaining in July pipeline" stat={h.julyRemainingPipeline} />
-        <StatCard label="July forecast" stat={h.julyForecast} sub="10 completed + 26 remaining" />
-        <StatCard label="Aug–Sep pipeline" stat={h.augSepPipeline} />
-        <StatCard label="Q2 move-ins" stat={h.q2TotalMoveIns} sub="Apr 20 + May 60 + Jun 30" />
-        <StatCard label="YTD move-ins" stat={h.ytdMoveIns} sub="Q1 65 + Q2 110 + Jul 10" />
+        {/* Removed 18 Aug 2026 (James): "Remaining in July pipeline",
+            "July forecast", "Aug–Sep pipeline", "Q2 move-ins" and "YTD move-ins" all named a
+            fixed month in their label and carried a hand-typed sub — they were
+            answering July whatever the picker said, and would have gone on
+            saying July into next year. The tab now reports one month, the last
+            complete one, and rolls itself. */}
+
       </div>
 
       {/* Add a move-in */}

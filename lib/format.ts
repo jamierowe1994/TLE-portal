@@ -98,6 +98,40 @@ export function recentMonths(count = 12): string[] {
   return out;
 }
 
+/**
+ * The last month that has actually finished — "2026-07" during August.
+ *
+ * The reporting rule for anything that counts completed work: a figure for the
+ * month you are standing in is always wrong, because the month is still
+ * happening. Move-ins on the 3rd look catastrophic against a full July, and
+ * nobody reading it pauses to correct for that.
+ *
+ * Rolls itself on the 1st, like recentMonths — so on 1 September this starts
+ * answering August with no edit and no deploy.
+ */
+export function previousMonth(from: string = currentMonth()): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(from) ?? /^(\d{4})-(\d{2})$/.exec(currentMonth())!;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Months from January of the current year up to the last COMPLETE month.
+ *
+ * The income charts ran to a month typed out by hand, so they still ended at
+ * June in August. This ends where the data actually ends and moves on its own.
+ * Returns an empty list in January, when there is no complete month this year —
+ * callers must handle that rather than assume at least one.
+ */
+export function monthsThisYearToDate(): string[] {
+  const end = previousMonth();
+  const [y, m] = end.split("-").map(Number);
+  const now = new Date();
+  if (y < now.getFullYear()) return []; // January: last complete month was December
+  return Array.from({ length: m }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
+}
+
 /** True when `month` is the month we're living in — i.e. still accumulating. */
 export function isLiveMonth(month: string): boolean {
   return month === currentMonth();

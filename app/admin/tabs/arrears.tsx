@@ -32,7 +32,7 @@ const COLUMNS: DataTableColumn<ArrearsTenantRow & Record<string, unknown>>[] = [
 ];
 
 interface LiveArrears {
-  tenants: Array<{ tenant: string; property: string; owed: number; lastInvoice: string | null }>;
+  tenants: Array<{ tenant: string; property: string; owed: number; lastInvoice: string | null; account?: string | null }>;
   totalOwed: number;
   checked: number;
   byAccount: Array<{ account: string; label: string; tenants: number; owed: number }>;
@@ -84,6 +84,31 @@ interface ArrearsLog {
 }
 
 const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
+
+/** The two books PayProp actually keeps. Scotland is matched rather than
+ *  equality-checked because the agency string has been seen as "Glasgow" and
+ *  as "Scotland" depending on which export it came from; anything that isn't
+ *  Scotland is the England & Wales agency. */
+const COUNTRY_GROUPS = [
+  {
+    key: "ew",
+    label: "England & Wales",
+    match: (acc?: string | null) => !/scot|glasgow/i.test(acc ?? ""),
+  },
+  {
+    key: "sco",
+    label: "Scotland",
+    match: (acc?: string | null) => /scot|glasgow/i.test(acc ?? ""),
+  },
+] as const;
+
+/** Exclusive day bands — `from` inclusive, `to` exclusive. */
+const AGE_BANDS = [
+  { label: "Less than 7 days", from: 0, to: 7 },
+  { label: "Less than 14 days", from: 7, to: 14 },
+  { label: "Less than 30 days", from: 14, to: 30 },
+  { label: "30 days+", from: 30, to: Infinity },
+] as const;
 
 const daysBetween = (from: string, to: string) =>
   Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000));
@@ -196,7 +221,12 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
           largest: live.largest,
           average: live.average,
           checked: live.checked as number | null,
-          people: live.tenants.map((t) => ({ tenant: t.tenant, property: t.property, owed: t.owed })),
+          people: live.tenants.map((t) => ({
+            tenant: t.tenant,
+            property: t.property,
+            owed: t.owed,
+            account: t.account ?? null,
+          })),
         }
       : stored
         ? {
@@ -504,24 +534,81 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
         />
       </div>
 
-      {/* Aging buckets */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Arrears aging</h2>
-        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {a.aging.map((b) => (
-            <div key={b.label} className="card p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                {b.label}
-              </div>
-              <div className="stat-value mt-1.5 text-[24px]">{formatNum(b.count)}</div>
-              <div className="mt-0.5 text-xs text-muted tnum">
-                {formatGBP(b.value, true)}
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-muted">{a.agingNote}</p>
-      </section>
+      {/* ── Arrears by country and age ──────────────────────────────────────
+          Two books, not one. PayProp keeps England & Wales in one agency and
+          Scotland in another, and they are chased by different people under
+          different rules — a pooled total hides which book is actually behind.
+
+          England and Wales are NOT separable here: PayProp's agency is the only
+          country marker on an arrears row and it covers both. Splitting Wales
+          out needs the property's postcode joined on, which these rows don't
+          carry (James, 18 Aug 2026 — two buckets now, Wales later).
+
+          The bands are EXCLUSIVE, not cumulative. "Less than 14 days" means
+          7–13, not everything under 14 — overlapping bands would count the same
+          tenant four times and make the columns sum to nonsense. */}
+      {panel ? (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold">
+            Arrears by country and age — as at {formatDate(panel.asAt)}
+          </h2>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {COUNTRY_GROUPS.map((g) => {
+              const people = panel.people.filter((p) => g.match(p.account));
+              const rows = AGE_BANDS.map((b) => {
+                const inBand = people.filter((p) => {
+                  const spell = sinceOf.get(`${p.tenant}|${p.property}`);
+                  const days = spell ? daysBetween(spell.since, panel.asAt) : 0;
+                  return days >= b.from && days < b.to;
+                });
+                return {
+                  label: b.label,
+                  count: inBand.length,
+                  owed: inBand.reduce((n, p) => n + p.owed, 0),
+                };
+              });
+              const total = people.reduce((n, p) => n + p.owed, 0);
+              return (
+                <div key={g.key} className="card p-5">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h3 className="text-sm font-semibold">{g.label}</h3>
+                    <span className="text-xs text-muted tnum">
+                      {people.length} · {gbp(total)}
+                    </span>
+                  </div>
+                  {people.length === 0 ? (
+                    <p className="mt-3 text-xs text-muted">
+                      Nothing in arrears in this book, or this export didn&rsquo;t
+                      carry it.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-1.5">
+                      {rows.map((r) => (
+                        <div
+                          key={r.label}
+                          className="flex items-baseline justify-between gap-3 border-b border-line/60 pb-1.5 last:border-0"
+                        >
+                          <span className="text-[13px] text-muted">{r.label}</span>
+                          <span className="text-[13px] tnum">
+                            <span className="font-semibold">{formatNum(r.count)}</span>
+                            <span className="ml-2 text-muted">{gbp(r.owed)}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted">
+            Days counted from the first snapshot in the current unbroken run of
+            arrears, not from the missed payment — the portal only knows what it
+            has seen. A tenant first seen today counts as nought days, so a new
+            arrear lands in the first band rather than being guessed at.
+          </p>
+        </section>
+      ) : null}
 
       {/* Tenant table */}
       <section className="space-y-3">

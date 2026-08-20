@@ -257,7 +257,7 @@ const running = new Set<string>();
 // are figures missing the larger half of the business, and they would have been
 // served for the full hour-long TTL. Same cached-shape rule as the Payment
 // shape below: when what a stored payload MEANS changes, the key must change.
-const CACHE_VERSION = "v14";
+const CACHE_VERSION = "v15";
 
 async function cachedAsync<T>(rawKey: string, run: () => Promise<T>): Promise<T | null> {
   const key = `${CACHE_VERSION}:${rawKey}`;
@@ -825,6 +825,8 @@ export interface ArrearsSummary {
     propertyId: string | null;
     owed: number;
     lastInvoice: string | null;
+    /** Which PayProp agency this debt sits in — the only country marker we get. */
+    account: PayPropAccountId;
   }>;
   totalOwed: number;
   /** How many tenancies were checked, so a count can be shown honestly. */
@@ -870,14 +872,21 @@ async function computeArrears(): Promise<ArrearsSummary | null> {
     };
   });
 
-  const tenants = rows
-    .map((r) => ({
-      tenant: r.tenant?.name ?? "Unknown",
-      property: r.property?.name ?? "—",
-      propertyId: r.property?.id ?? null,
-      owed: -money(r.balance), // negative balance = in arrears
-      lastInvoice: r.last_invoice?.date ?? null,
-    }))
+  // Built from perAccount rather than the flattened rows, so every tenant
+  // keeps the agency they came from. The flatten used to drop it, which meant
+  // the arrears tab could show a total per country but could not say WHICH
+  // country any individual debt belonged to.
+  const tenants = perAccount
+    .flatMap((p) =>
+      p.rows.map((r) => ({
+        tenant: r.tenant?.name ?? "Unknown",
+        property: r.property?.name ?? "—",
+        propertyId: r.property?.id ?? null,
+        owed: -money(r.balance), // negative balance = in arrears
+        lastInvoice: r.last_invoice?.date ?? null,
+        account: p.account,
+      }))
+    )
     .filter((t) => t.owed > 0.005)
     .sort((a, b) => b.owed - a.owed);
 

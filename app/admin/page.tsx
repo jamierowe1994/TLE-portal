@@ -14,7 +14,7 @@ import { getUser, logIn, refreshUser, signOut } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import type { UserProfile } from "@/lib/types";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
-import { currentMonth, monthLabel, monthProgressLabel, recentMonths } from "@/lib/format";
+import { currentMonth, monthLabel, monthProgressLabel, previousMonth, recentMonths } from "@/lib/format";
 
 import Overview from "@/app/admin/tabs/overview";
 import PaidLeads from "@/app/admin/tabs/paid-leads";
@@ -271,9 +271,16 @@ function AdminShell({
 }) {
   const { presenting } = usePresent();
   const [tabIndex, setTabIndex] = useState(0);
+  // Opens on the last COMPLETE month, not the one we're standing in.
+  //
+  // Susan's centre reports finished work, and the current month is never
+  // finished — move-ins on the 3rd read as a collapse against a full July when
+  // they are simply three days old. The picker still offers the live month for
+  // anyone who wants to watch it accumulate; it just isn't the default answer.
+  //
   // Resolved once per mount rather than at module load, so a tab left open
   // overnight on the 31st picks up the new month on its next visit.
-  const [month, setMonth] = useState(currentMonth);
+  const [month, setMonth] = useState(previousMonth);
   const [autoCycle, setAutoCycle] = useState(false);
   const [seed, setSeed] = useState<SeedData | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
