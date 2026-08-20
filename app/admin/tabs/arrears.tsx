@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
+import SourceNote from "@/components/SourceNote";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { ArrearsTenantRow } from "@/lib/seed-types";
@@ -575,6 +576,12 @@ export default function ArrearsTab({ month, seed }: { month: string; seed: SeedD
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">
             Arrears by country and age — as at {formatDate(panel.asAt)}
+            <SourceNote tone="live">
+              PayProp report/tenant/balances, both agencies, counting only negative
+              balances. Country is PayProp&rsquo;s own agency — England and Wales share
+              one, so they cannot be told apart here. Age counts from the first
+              snapshot of the current unbroken run, not from the missed payment.
+            </SourceNote>
           </h2>
           <div className="grid gap-4 lg:grid-cols-2">
             {COUNTRY_GROUPS.map((g) => {

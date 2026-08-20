@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import StatCard from "@/components/StatCard";
+import SourceNote from "@/components/SourceNote";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import SourceBadge from "@/components/SourceBadge";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
@@ -508,7 +509,14 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
       <section className="card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Add a move-in</h2>
+            <h2 className="text-sm font-semibold">
+              Add a move-in
+              <SourceNote tone="derived">
+                Typed here and stored in the portal as a manual actual. It bumps the
+                completed count and appends a row marked ADDED — it does not write
+                back to Propoly.
+              </SourceNote>
+            </h2>
             <p className="mt-0.5 text-xs text-muted">
               Adds a row to the move-ins table for {monthLabel(month)} (marked
               ADDED, stored as a manual actual) and bumps the completed count —
@@ -691,6 +699,11 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
           <h2 className="text-sm font-semibold">
             July 2026 move-ins — {seed.moveInsJuly.rows.length} completed
             {addedRows.length > 0 ? ` + ${addedRows.length} added` : ""}
+            <SourceNote tone="snapshot">
+              Propoly deals with tenancy_status=complete, captured by hand on 11 Jul
+              2026. Agent, address, move-in and rent are Propoly&rsquo;s; let type and
+              the three fee columns were worked out by hand and are in no system.
+            </SourceNote>
           </h2>
           <SourceBadge
             source={seed.moveInsJuly.totalTwelveMonthValue.source}
@@ -700,7 +713,12 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
         </div>
         <DataTable columns={MOVE_IN_COLUMNS} rows={moveInTableRows} compact />
         <p className="text-right text-[13px] font-semibold tnum">
-          Total 12-month value:{" "}
+          Total 12-month value
+          <SourceNote tone="derived">
+            Set-up fee plus twelve months of management fee, summed across the rows
+            above. Only as good as those fee columns, which are hand-entered.
+          </SourceNote>
+          :{" "}
           {addedRows.length > 0 && seed.moveInsJuly.totalTwelveMonthValue.value != null
             ? formatGBP(
                 seed.moveInsJuly.totalTwelveMonthValue.value + addedTwelveMonthValue
@@ -714,6 +732,12 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">
             July pipeline — {seed.julyPipeline.length} properties expected this month
+            <SourceNote tone="snapshot">
+              Propoly deals not yet complete, captured 11 Jul 2026. Every column here
+              — agent, address, expected move-in, service level, status, rent — is
+              available live from Propoly; this table simply has not been moved over
+              yet.
+            </SourceNote>
           </h2>
           {/* Was unlabelled, so there was no way to tell it from a live table. */}
           <SourceBadge
@@ -729,6 +753,11 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">
           Forward pipeline (Aug–Sep) — {seed.forwardPipeline.length} properties
+          <SourceNote tone="snapshot">
+            Propoly deals with an expected move-in after July, captured 11 Jul 2026.
+            This table carried no source marking at all until now, so there was no
+            way to tell it from a live one.
+          </SourceNote>
         </h2>
         <DataTable columns={PIPELINE_COLUMNS} rows={seed.forwardPipeline} compact />
       </section>
