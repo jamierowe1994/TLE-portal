@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import StatCard from "@/components/StatCard";
+import SourceNote from "@/components/SourceNote";
 import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import type { SeedData } from "@/lib/seed-data"; // type-only — erased at build
 import type { PortfolioRow } from "@/lib/seed-types";
@@ -44,6 +45,34 @@ const COLUMNS: DataTableColumn<PortfolioRow & Record<string, unknown>>[] = [
   },
 ];
 
+const LIVE_PARTNER_COLUMNS = [
+  { key: "partner", label: "Partner" },
+  { key: "managed", label: "Managed", align: "right" as const },
+  { key: "letOnly", label: "Let only", align: "right" as const },
+  {
+    key: "total",
+    label: "Total",
+    align: "right" as const,
+    render: (r: Record<string, unknown>) => (
+      <span className="font-semibold">{(r.total as number).toLocaleString("en-GB")}</span>
+    ),
+  },
+  {
+    key: "rentRoll",
+    label: "Rent roll",
+    align: "right" as const,
+    render: (r: Record<string, unknown>) =>
+      r.rentRoll == null ? "—" : formatGBP(r.rentRoll as number),
+  },
+  {
+    key: "avgRent",
+    label: "Avg rent",
+    align: "right" as const,
+    render: (r: Record<string, unknown>) =>
+      r.avgRent == null ? "—" : formatGBP(r.avgRent as number),
+  },
+];
+
 interface LiveBook {
   totalProperties: number;
   totalRentRoll: number;
@@ -54,7 +83,18 @@ interface LiveBook {
   byAccount: Array<{ account: string; label: string; properties: number; rentRoll: number; avgRent: number }>;
   unattributed: number;
   accounts: string[];
-  byAgent: Record<string, { names: string[]; properties: number; rentRoll: number; activeTenancies: number }>;
+  byAgent: Record<
+    string,
+    {
+      names: string[];
+      properties: number;
+      rentRoll: number;
+      activeTenancies: number;
+      /** This partner's own split, e.g. { "Fully managed": 12, "Let only": 5 }.
+       *  Always been on the wire; the tab simply never declared it. */
+      serviceLevels?: Record<string, number>;
+    }
+  >;
 }
 
 export default function PortfolioTab({ month, seed }: { month: string; seed: SeedData }) {
@@ -159,6 +199,46 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
 
   const p = seed.portfolio;
   const o = p.overview;
+  /* Portfolio by partner, live.
+     Everything except RLP/LEC is already in the PayProp book — the managed /
+     let-only split comes from each partner's own serviceLevels, which the walk
+     has always collected and this tab simply never read.
+
+     RLP/LEC is NOT carried. It appears in no PayProp service level, no Propoly
+     service level (censused across all 575 completed deals: full_managed,
+     tenant_find, rent_collect and nothing else) and no readable fee category.
+     The old column was typed by a person. A column we cannot source is dropped
+     and said so, rather than shown half-full. */
+  const livePartnerRows = live
+    ? Object.values(live.byAgent)
+        .map((b) => {
+          const lv = b.serviceLevels ?? {};
+          const count = (re: RegExp) =>
+            Object.entries(lv)
+              .filter(([k]) => re.test(k))
+              .reduce((n, [, v]) => n + v, 0);
+          return {
+            partner: b.names[0] ?? "—",
+            managed: count(/managed|efm/i),
+            letOnly: count(/let\s*only/i),
+            total: b.properties,
+            rentRoll: b.rentRoll,
+            avgRent: b.properties ? b.rentRoll / b.properties : null,
+          };
+        })
+        .sort((a, b) => b.total - a.total)
+    : [];
+  const liveTotals = live
+    ? {
+        partner: "TOTAL",
+        managed: livePartnerRows.reduce((n, r) => n + r.managed, 0),
+        letOnly: livePartnerRows.reduce((n, r) => n + r.letOnly, 0),
+        total: livePartnerRows.reduce((n, r) => n + r.total, 0),
+        rentRoll: livePartnerRows.reduce((n, r) => n + r.rentRoll, 0),
+        avgRent: null,
+      }
+    : null;
+
   const rows = [...p.byPartner, p.totals];
 
   return (
@@ -436,10 +516,35 @@ export default function PortfolioTab({ month, seed }: { month: string; seed: See
       {/* By partner */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">
-          Portfolio by partner — June 2026 ({p.byPartner.length} partners)
+          Portfolio by partner{" "}
+          {live
+            ? `— live (${livePartnerRows.length} partners)`
+            : `— June 2026 (${p.byPartner.length} partners)`}
+          <SourceNote tone={live ? "live" : "snapshot"}>
+            {live
+              ? "PayProp portfolio walk, both agencies, as it stands today. Managed and let-only come from each partner's own service-level split; average rent is worked out per partner rather than blended down from the whole book."
+              : "The June capture. The live PayProp book has not answered yet."}
+          </SourceNote>
         </h2>
-        <DataTable columns={COLUMNS} rows={rows} compact />
-        <p className="text-xs text-muted">{p.source}</p>
+        {live && liveTotals ? (
+          <>
+            <DataTable
+              columns={LIVE_PARTNER_COLUMNS}
+              rows={[...livePartnerRows, liveTotals]}
+              compact
+            />
+            <p className="text-xs text-muted">
+              RLP / LEC is not shown. It appears in no PayProp service level, no
+              Propoly service level and no fee category we can read — the column on
+              the old table was typed by hand, so there is nothing to pull it from.
+            </p>
+          </>
+        ) : (
+          <>
+            <DataTable columns={COLUMNS} rows={rows} compact />
+            <p className="text-xs text-muted">{p.source}</p>
+          </>
+        )}
       </section>
     </div>
   );
