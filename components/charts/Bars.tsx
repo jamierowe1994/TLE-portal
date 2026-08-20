@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
 import {
   CHART_GRID,
   CHART_MUTED,
@@ -14,9 +16,20 @@ interface BarsProps {
   series: ChartSeries[];
   format?: (n: number) => string;
   height?: number;
+  /** What each bar is MADE OF, one entry per label. A total on its own invites
+   *  "made up of what?", and until now the only way to answer was to go and
+   *  ask. Rendered on hover; omit it and the chart behaves as it always did. */
+  details?: Array<Array<[string, string]>>;
 }
 
-export function Bars({ labels, series, format = defaultFormat, height = 220 }: BarsProps) {
+export function Bars({
+  labels,
+  series,
+  format = defaultFormat,
+  height = 220,
+  details,
+}: BarsProps) {
+  const [hover, setHover] = useState<number | null>(null);
   const width = 640;
   const pad = { top: 12, right: 12, bottom: 26, left: 48 };
   const plotW = width - pad.left - pad.right;
@@ -31,7 +44,7 @@ export function Bars({ labels, series, format = defaultFormat, height = 220 }: B
   const barW = Math.max((groupW - gap) / Math.max(series.length, 1), 2);
 
   return (
-    <div>
+    <div className="relative">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         width="100%"
@@ -50,7 +63,22 @@ export function Bars({ labels, series, format = defaultFormat, height = 220 }: B
         {labels.map((label, li) => {
           const gx = pad.left + li * groupW + gap / 2;
           return (
-            <g key={li}>
+            <g
+              key={li}
+              onMouseEnter={() => setHover(li)}
+              onMouseLeave={() => setHover(null)}
+            >
+              {/* Full-height catcher: aiming at a short bar is fiddly, and a
+                  January that earned little is exactly the month someone wants
+                  to interrogate. */}
+              <rect
+                x={pad.left + li * groupW}
+                y={pad.top}
+                width={groupW}
+                height={plotH}
+                fill={hover === li ? "currentColor" : "transparent"}
+                opacity={hover === li ? 0.04 : 0}
+              />
               {series.map((s, si) => {
                 const v = s.values[li];
                 if (v == null) return null;
@@ -83,6 +111,28 @@ export function Bars({ labels, series, format = defaultFormat, height = 220 }: B
           );
         })}
       </svg>
+      {details && hover != null && details[hover]?.length ? (
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute z-50 w-[15rem] rounded-lg bg-ink px-3 py-2 text-[11.5px] leading-relaxed text-white shadow-lg"
+          style={{
+            left: `${((hover + 0.5) / Math.max(labels.length, 1)) * 100}%`,
+            top: 8,
+            transform:
+              hover > labels.length / 2 ? "translateX(-105%)" : "translateX(5%)",
+          }}
+        >
+          <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-wider text-white/60">
+            {labels[hover]}
+          </div>
+          {details[hover].map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-3">
+              <span className="text-white/70">{k}</span>
+              <span className="tnum">{v}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {series.length > 1 && (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6 }}>
           {series.map((s, i) => (

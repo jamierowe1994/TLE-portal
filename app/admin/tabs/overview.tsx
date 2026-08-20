@@ -78,6 +78,8 @@ interface OverviewPayload {
     /** False when a month is missing or an agency was unreachable. */
     complete?: boolean;
     unreachable?: string[];
+    /** Per month, what the bar is made of — shown on hover. */
+    detail?: Array<Array<[string, string]>>;
   };
   sources: SeedData["sources"];
   periods: Record<string, PeriodKpis>;
@@ -762,18 +764,28 @@ export default function Overview({ month }: { month: string }) {
       : isCurrent && live?.totals /* current-state fallback — live month only */
         ? asLive(live.totals.marketAppraisals, "Live from REX — recorded appraisals summed across every lettings agent.")
         : kpiPeriod.funnel.marketAppraisals;
-  // STOCK, not a flow: live.totals.onMarketListings is what is on the market
-  // RIGHT NOW, summed across agents. Rex keeps no history of it, so it can
-  // only ever answer for the live month — the gate here is load-bearing.
-  const funnelLiveListings =
-    isCurrent && live?.totals
-      ? asLive(live.totals.onMarketListings, "Live from REX — on-market listings right now.")
-      : kpiPeriod.funnel.liveListings;
-  // STOCK, same as Live Listings above. Deliberately still gated.
-  const funnelPipeline =
-    isCurrent && live?.totals
-      ? asLive(live.totals.pipeline, "Live from REX — let-agreed forward pipeline right now.")
-      : kpiPeriod.funnel.pipeline;
+  // STOCK, not a flow: this is what is on the market RIGHT NOW, summed across
+  // agents. REX keeps no history of it, so "on the market in July" does not
+  // exist and never did.
+  //
+  // It used to fall back to the snapshot on any past month, which meant that
+  // once the centre started opening on the last COMPLETE month these two went
+  // amber permanently and showed a July capture instead. A stock is better
+  // reported as today's and SAID to be today's than swapped for a stale one —
+  // the same call as the rent roll on business value.
+  const funnelLiveListings = live?.totals
+    ? asLive(
+        live.totals.onMarketListings,
+        "Live from REX — on-market listings as at TODAY. This is a stock: REX keeps no history of it, so it cannot answer for a past month and is not trying to."
+      )
+    : kpiPeriod.funnel.liveListings;
+  // STOCK, same as Live Listings above, and treated the same way.
+  const funnelPipeline = live?.totals
+    ? asLive(
+        live.totals.pipeline,
+        "Live from REX — let-agreed forward pipeline as at TODAY. A stock, like Live Listings: today's figure, not the selected month's."
+      )
+    : kpiPeriod.funnel.pipeline;
   const funnelMoveIns: StatValue =
     live?.propoly
       ? {
@@ -1481,6 +1493,7 @@ export default function Overview({ month }: { month: string }) {
           series={[{ name: "Actual GCI (exc VAT)", color: "#e31f36", values: d.gciByMonth.actual }]}
           format={(n) => `£${Math.round(n / 1000)}k`}
           height={240}
+          details={d.gciByMonth.detail}
         />
         <p className="hide-when-presenting mt-2 text-[11px] text-muted">{d.gciByMonth.budgetNote}</p>
       </Section>

@@ -79,6 +79,22 @@ export async function GET(req: NextRequest) {
         // sheet is not. Charting the gross figure would overstate every bar
         // by 20%.
         actual: live.map((m) => Math.round(m.combinedGciNet)),
+        // What each bar is MADE OF. A total invites "made up of what?", and
+        // until now the only way to find out was to ask someone.
+        detail: live.map((m) => {
+          const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
+          return [
+            ["Combined GCI", gbp(m.combinedGciNet)] as [string, string],
+            ...m.byAccount.map(
+              (a) => [a.label, gbp(a.combinedGci)] as [string, string]
+            ),
+            ["TLE kept", gbp(m.agencyIncomeNet)] as [string, string],
+            ["Partners", gbp(m.combinedGciNet - m.agencyIncomeNet)] as [string, string],
+            ["VAT taken off", gbp(m.vat)] as [string, string],
+            ["Partners earning", String(m.agentsEarning)] as [string, string],
+            ["Payments", String(m.paymentCount)] as [string, string],
+          ];
+        }),
         budget: null,
         budgetNote:
           series && !series.complete
