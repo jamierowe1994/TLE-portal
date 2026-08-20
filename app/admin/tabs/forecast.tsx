@@ -21,7 +21,14 @@ import {
   formatNum,
   formatPct,
   monthLabel,
+  previousMonth,
 } from "@/lib/format";
+
+/** Just the slice of /api/admin/payprop-live the business-value block needs. */
+interface LivePayProp {
+  income?: { byCategory?: Array<{ category: string; amount: number }> } | null;
+  portfolio?: { totalRentRoll?: number; totalProperties?: number } | null;
+}
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -134,6 +141,64 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
     notes: r.forecast?.notes ?? "",
     updatedAt: r.forecast?.updatedAt ?? null,
   }));
+
+  /* ------------------------- business value, live -------------------------
+     Rent roll and management fees were the June snapshot. Both are reachable,
+     but they are DIFFERENT KINDS of figure and the section had been treating
+     them as one:
+
+       Management fees are a FLOW — they belong to a month, and July is the
+       last month that finished, so July is what we ask for.
+
+       Rent roll is a STOCK — what the book is worth right now. PayProp keeps
+       no history of it, so "the rent roll at the end of July" does not exist
+       anywhere and cannot be recovered. Today's is the honest answer, and it
+       says so rather than being labelled July.
+
+     Licence income and partner joining fees are in NEITHER: joining fees run
+     through a separate bank account (Barclays/QuickBooks only) and licence
+     income is in no connected system. MRI is therefore management fees only
+     until the P&L upload lands, and is marked short rather than quietly
+     understated. */
+  const [live, setLive] = useState<LivePayProp | null>(null);
+  const fees = useCallback(async () => {
+    try {
+      const r = await fetch(
+        `/api/admin/payprop-live?month=${encodeURIComponent(previousMonth())}`,
+        { cache: "no-store" }
+      );
+      if (!r.ok) return;
+      const d: unknown = await r.json();
+      if (d && typeof d === "object") setLive(d as LivePayProp);
+    } catch {
+      /* leave the snapshot showing — a missing live read is not a zero */
+    }
+  }, []);
+  useEffect(() => {
+    void fees();
+  }, [fees]);
+
+  const feeMonth = previousMonth();
+  const cats = live?.income?.byCategory ?? [];
+  const sumCats = (names: string[]) =>
+    cats.filter((c) => names.includes(c.category)).reduce((t, c) => t + c.amount, 0);
+  const liveMgmtFees = cats.length
+    ? sumCats([
+        "Management Fee",
+        "Monthly Management Fee",
+        "First Month Management Fee",
+        "Management Fee - Investor Services",
+      ])
+    : null;
+  const liveSetUp = cats.length ? sumCats(["Set Up Fee"]) : null;
+  const rentRoll = live?.portfolio?.totalRentRoll ?? null;
+  const managed = live?.portfolio?.totalProperties ?? null;
+  const liveStat = (
+    value: number | null,
+    display: string,
+    note: string
+  ): StatValue | null =>
+    value == null ? null : { value, display, source: "live-payprop", note, asOf: feeMonth };
 
   const bv = seed.businessValue;
   const h2 = seed.h2Reforecast;
@@ -252,12 +317,43 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
 
       {/* ------------------------- business value ------------------------- */}
       <SectionTitle source={seed.sources.businessValue}>
-        Business Value — Monthly Rent Roll & Recurring Income (June 2026)
+        Business Value — Monthly Rent Roll &amp; Recurring Income (
+        {monthLabel(feeMonth)})
       </SectionTitle>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="Monthly Rent Roll" stat={bv.monthlyRentRoll} sub="362 managed properties" />
-        <StatCard label="Monthly Management Fees" stat={bv.monthlyManagementFees} />
-        <StatCard label="MRI — Monthly Recurring Income" stat={bv.mri} />
+        <StatCard
+          label="Monthly Rent Roll"
+          stat={
+            liveStat(
+              rentRoll,
+              rentRoll == null ? "—" : formatGBP(rentRoll),
+              "Live from the PayProp portfolio walk, both agencies. This is a STOCK — what the book is worth today. PayProp keeps no history of it, so the rent roll as at the end of a past month cannot be recovered."
+            ) ?? bv.monthlyRentRoll
+          }
+          sub={managed != null ? `${managed} managed properties · as at today` : "362 managed properties"}
+        />
+        <StatCard
+          label="Monthly Management Fees"
+          stat={
+            liveStat(
+              liveMgmtFees,
+              liveMgmtFees == null ? "—" : formatGBP(liveMgmtFees),
+              `Live from PayProp for ${monthLabel(feeMonth)}, net of VAT — Management Fee, Monthly Management Fee, First Month Management Fee and Investor Services summed across both agencies.`
+            ) ?? bv.monthlyManagementFees
+          }
+          sub={monthLabel(feeMonth)}
+        />
+        <StatCard
+          label="MRI — Monthly Recurring Income"
+          stat={
+            liveStat(
+              liveMgmtFees,
+              liveMgmtFees == null ? "—" : formatGBP(liveMgmtFees),
+              "SHORT BY LICENCE INCOME. Management fees are live; licence income is in no connected system and needs the P&L upload, and partner joining fees run through a separate bank account entirely. This is the reachable part, not the whole of MRI."
+            ) ?? bv.mri
+          }
+          sub="management fees only — licence income not yet reachable"
+        />
         <StatCard label="One-off Fees" stat={bv.oneOffFees} />
         <StatCard label="Total Monthly Income" stat={bv.totalMonthlyIncome} />
       </div>
