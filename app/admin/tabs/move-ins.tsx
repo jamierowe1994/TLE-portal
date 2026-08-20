@@ -16,7 +16,7 @@ import type { SeedData } from "@/lib/seed-data"; // type-only — erased at buil
 import { ROSTER } from "@/lib/roster";
 import type { PipelineRow, MoveInRow } from "@/lib/seed-types";
 import { resolveStat, type ManualOverride } from "@/lib/stats";
-import { formatDate, formatGBP, monthLabel, recentMonths } from "@/lib/format";
+import { currentMonth, formatDate, formatGBP, monthLabel, recentMonths } from "@/lib/format";
 import type { ActualOverride, StatValue } from "@/lib/types";
 const SNAPSHOT_MONTH = "2026-07"; // the one month the seed answers for
 
@@ -251,10 +251,15 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
      people ask about the month they are standing in. Defaulting the tables to
      the tab's month and giving them a toggle serves both without either being
      wrong. */
-  const [tableMonth, setTableMonth] = useState(month);
+  /* These open on the CURRENT month, not the tab's.
+     The tab reports the last complete month, which is right for counting
+     finished work. But "who is moving in this month, and who has already"
+     is a question about the month we are standing in — answering it with July
+     on the 18th of August is answering a different question. The toggle still
+     reaches back. */
+  const [tableMonth, setTableMonth] = useState(currentMonth);
   const [rows, setRows] = useState<LiveRows | null>(null);
   const [rowsLoading, setRowsLoading] = useState(true);
-  useEffect(() => setTableMonth(month), [month]);
   useEffect(() => {
     let off = false;
     setRowsLoading(true);
@@ -429,10 +434,6 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
     return base;
   }, [countOverride, addedRows, h.julyMtdCompleted, month]);
 
-  const moveInTableRows: MoveInTableRow[] = [
-    ...(seed.moveInsJuly.rows as MoveInTableRow[]),
-    ...addedRows.map((r) => ({ ...r, added: true }) as MoveInTableRow),
-  ];
 
   const addedTwelveMonthValue = addedRows.reduce(
     (s, r) => s + r.twelveMonthValue,
@@ -815,11 +816,36 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
           tracker beside them. The capture holds ten rows; Propoly's answer for
           July is thirty-five, because the capture was taken on the 11th and the
           month carried on. */}
+      {/* One month, both halves of it: who has moved in, and who is still to.
+          They were separate tables with separate counts, which meant the answer
+          to "how many move-ins in August" had to be worked out by the reader. */}
+      {rows?.moveIns || rows?.pipeline ? (
+        <div className="card p-5">
+          <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                {monthLabel(tableMonth)} — total
+              </div>
+              <div className="stat-value mt-1 text-[30px]">
+                {(rows.moveIns?.length ?? 0) + (rows.pipeline?.length ?? 0)}
+              </div>
+            </div>
+            <div className="text-[13px] text-muted">
+              <span className="font-semibold text-ink">{rows.moveIns?.length ?? 0}</span>{" "}
+              moved in so far
+              <span className="mx-2 text-line">·</span>
+              <span className="font-semibold text-ink">{rows.pipeline?.length ?? 0}</span>{" "}
+              still expected
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold">
-            Move-ins — {monthLabel(tableMonth)}
-            {rows?.moveIns ? ` · ${rows.moveIns.length} completed` : ""}
+            Moved in — {monthLabel(tableMonth)}
+            {rows?.moveIns ? ` · ${rows.moveIns.length}` : ""}
             <SourceNote tone="live">
               Propoly deals with tenancy_status=complete and a move-in date in this
               month. Agent comes from the property&rsquo;s manager in Propoly; a
@@ -861,8 +887,8 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">
-          Pipeline — {monthLabel(tableMonth)}
-          {rows?.pipeline ? ` · ${rows.pipeline.length} expected` : ""}
+          Still to move in — {monthLabel(tableMonth)}
+          {rows?.pipeline ? ` · ${rows.pipeline.length}` : ""}
           <SourceNote tone="live">
             Propoly deals still in progression, expected in this month. Deals with
             no expected date are included rather than hidden — an undated deal is
@@ -880,18 +906,8 @@ export default function MoveInsTab({ month, seed }: { month: string; seed: SeedD
         )}
       </section>
 
-      {/* Forward pipeline */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold">
-          Forward pipeline (Aug–Sep) — {seed.forwardPipeline.length} properties
-          <SourceNote tone="snapshot">
-            Propoly deals with an expected move-in after July, captured 11 Jul 2026.
-            This table carried no source marking at all until now, so there was no
-            way to tell it from a live one.
-          </SourceNote>
-        </h2>
-        <DataTable columns={PIPELINE_COLUMNS} rows={seed.forwardPipeline} compact />
-      </section>
+      {/* The Aug–Sep forward pipeline table is gone: it was the 11 Jul capture,
+          and the month toggle above now reaches any month either side, live. */}
     </div>
   );
 }
