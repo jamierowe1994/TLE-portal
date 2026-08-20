@@ -26,7 +26,18 @@ import {
 
 /** Just the slice of /api/admin/payprop-live the business-value block needs. */
 interface LivePayProp {
-  income?: { byCategory?: Array<{ category: string; amount: number }> } | null;
+  income?: {
+    byCategory?: Array<{ category: string; amount: number }>;
+    /** Commission TLE kept — the TLE side of the split. Net of VAT. */
+    agencyIncome?: number;
+    /** Every fee charged, whoever received it. Net of VAT. */
+    combinedGci?: number;
+    /** Paid out to partners — the partner side of the split. Net of VAT. */
+    paidToBeneficiaries?: number;
+    /** Partners who actually earned a fee this month: the honest denominator
+     *  for "per trading partner", rather than everyone on the roster. */
+    agentsEarning?: number;
+  } | null;
   portfolio?: { totalRentRoll?: number; totalProperties?: number } | null;
 }
 
@@ -193,6 +204,27 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
   const liveSetUp = cats.length ? sumCats(["Set Up Fee"]) : null;
   const rentRoll = live?.portfolio?.totalRentRoll ?? null;
   const managed = live?.portfolio?.totalProperties ?? null;
+  const inc = live?.income ?? null;
+  // Recurring is the management fee; everything else charged in the month is
+  // one-off by definition — set-up, let-only, transfers. Derived by subtraction
+  // rather than by naming categories, so a fee type PayProp adds tomorrow lands
+  // in one-off instead of vanishing from the total.
+  const liveOneOff =
+    inc?.combinedGci != null && liveMgmtFees != null
+      ? Math.max(0, inc.combinedGci - liveMgmtFees)
+      : null;
+  const liveTotalIncome = inc?.combinedGci ?? null;
+  const perProperty =
+    liveMgmtFees != null && managed ? liveMgmtFees / managed : null;
+  const pctOfRentRoll =
+    liveMgmtFees != null && rentRoll ? (liveMgmtFees / rentRoll) * 100 : null;
+  const perPartner =
+    liveMgmtFees != null && inc?.agentsEarning
+      ? liveMgmtFees / inc.agentsEarning
+      : null;
+  const SHORT =
+    " Short by licence income, which is in no connected system until the P&L is uploaded.";
+
   const liveStat = (
     value: number | null,
     display: string,
@@ -354,15 +386,84 @@ export default function Forecast({ month, seed }: { month: string; seed: SeedDat
           }
           sub="management fees only — licence income not yet reachable"
         />
-        <StatCard label="One-off Fees" stat={bv.oneOffFees} />
-        <StatCard label="Total Monthly Income" stat={bv.totalMonthlyIncome} />
+        <StatCard
+          label="One-off Fees"
+          stat={
+            liveStat(
+              liveOneOff,
+              liveOneOff == null ? "—" : formatGBP(liveOneOff),
+              `Live for ${monthLabel(feeMonth)}: every fee charged, less the management fee — set-up, let-only and transfers. Partner JOINING fees are not in here and cannot be: they run through a separate bank account, reachable only via Barclays/QuickBooks.`
+            ) ?? bv.oneOffFees
+          }
+          sub={monthLabel(feeMonth)}
+        />
+        <StatCard
+          label="Total Monthly Income"
+          stat={
+            liveStat(
+              liveTotalIncome,
+              liveTotalIncome == null ? "—" : formatGBP(liveTotalIncome),
+              `Live combined GCI for ${monthLabel(feeMonth)}, net of VAT, both agencies — recurring plus one-off.${SHORT} Joining fees are absent for the same reason as above.`
+            ) ?? bv.totalMonthlyIncome
+          }
+          sub={monthLabel(feeMonth)}
+        />
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="MRI per Property" stat={bv.mriPerProperty} sub="avg rent £987" />
-        <StatCard label="MRI % per Property" stat={bv.mriPctPerProperty} />
-        <StatCard label="MRI per Trading Partner" stat={bv.mriPerTradingPartner} sub="21 trading · 30 active" />
-        <StatCard label="MRI Split — TLE Retained" stat={bv.mriSplitTle} />
-        <StatCard label="MRI Split — Partner" stat={bv.mriSplitPartner} />
+        <StatCard
+          label="MRI per Property"
+          stat={
+            liveStat(
+              perProperty,
+              perProperty == null ? "—" : formatGBP(perProperty),
+              `Management fees for ${monthLabel(feeMonth)} divided by the managed book as it stands today.${SHORT}`
+            ) ?? bv.mriPerProperty
+          }
+          sub={managed != null ? `÷ ${managed} managed` : "avg rent £987"}
+        />
+        <StatCard
+          label="MRI % per Property"
+          stat={
+            liveStat(
+              pctOfRentRoll,
+              pctOfRentRoll == null ? "—" : `${pctOfRentRoll.toFixed(1)}%`,
+              `Management fees as a share of the rent roll. The fee is ${monthLabel(feeMonth)}; the rent roll is today's, because PayProp keeps no history of it.${SHORT}`
+            ) ?? bv.mriPctPerProperty
+          }
+        />
+        <StatCard
+          label="MRI per Trading Partner"
+          stat={
+            liveStat(
+              perPartner,
+              perPartner == null ? "—" : formatGBP(perPartner),
+              `Divided by partners who actually EARNED a fee this month, not everyone on the roster — a quiet month would otherwise flatter this figure.${SHORT}`
+            ) ?? bv.mriPerTradingPartner
+          }
+          sub={inc?.agentsEarning ? `÷ ${inc.agentsEarning} earning` : "21 trading · 30 active"}
+        />
+        <StatCard
+          label="MRI Split — TLE Retained"
+          stat={
+            liveStat(
+              inc?.agencyIncome ?? null,
+              inc?.agencyIncome == null ? "—" : formatGBP(inc.agencyIncome),
+              `Commission the agency kept in ${monthLabel(feeMonth)}, net of VAT. This one is COMPLETE — it is measured from the payments themselves, not derived from MRI, so no licence gap applies.`
+            ) ?? bv.mriSplitTle
+          }
+          sub={monthLabel(feeMonth)}
+        />
+        <StatCard
+          label="MRI Split — Partner"
+          stat={
+            liveStat(
+              inc?.paidToBeneficiaries ?? null,
+              inc?.paidToBeneficiaries == null ? "—" : formatGBP(inc.paidToBeneficiaries),
+              `Fees paid out to partners in ${monthLabel(feeMonth)}, net of VAT. Also complete, and measured the same way.`
+            ) ?? bv.mriSplitPartner
+          }
+          sub={monthLabel(feeMonth)}
+        />
       </div>
       <p className="mt-3 text-xs text-muted">{bv.glasgowNote}</p>
 
